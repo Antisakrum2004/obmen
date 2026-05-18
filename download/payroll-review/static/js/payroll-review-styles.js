@@ -10,6 +10,7 @@ var PR_CSS = '\
 .pr-title::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}\
 .pr-header-info{display:flex;align-items:center;gap:12px}\
 .pr-header-stat{font-family:var(--mono);font-size:10px;color:var(--text3);padding:3px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:4px}\
+.pr-version{font-family:var(--mono);font-size:9px;color:var(--text3);padding:2px 6px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:4px;margin-left:6px;letter-spacing:.04em}\
 .pr-badge{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;display:inline-flex;align-items:center;gap:4px}\
 .pr-badge-mock{background:rgba(245,166,35,.1);color:var(--yellow);border:1px solid rgba(245,166,35,.25)}\
 .pr-badge-live{background:rgba(34,212,126,.1);color:var(--green);border:1px solid rgba(34,212,126,.25)}\

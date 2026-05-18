@@ -129,7 +129,7 @@ function _prRenderHeader() {
   var taskCount = _pr.rows.length;
 
   var h = '<div class="pr-header">';
-  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + '</div>';
+  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
   h += '<div class="pr-header-info">';
   h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
   h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
