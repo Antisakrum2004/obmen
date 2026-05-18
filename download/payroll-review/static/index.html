@@ -20,6 +20,10 @@ body>*{position:relative;z-index:1}
 .bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:glow 2s infinite}
 @keyframes glow{0%,100%{box-shadow:0 0 8px var(--accent)}50%{box-shadow:0 0 20px var(--accent)}}
 .topbar-r{display:flex;align-items:center;gap:8px}
+.mode-toggle{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg2);transition:all .15s;user-select:none}
+.mode-toggle:hover{border-color:var(--border2)}
+.mode-toggle.mock{color:var(--yellow);border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.08)}
+.mode-toggle.live{color:var(--green);border-color:rgba(34,212,126,.3);background:rgba(34,212,126,.08)}
 .tabs{display:flex;gap:4px}
 .tab-btn{padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text3);background:rgba(18,21,31,.6);border:1px solid var(--glass-border);border-radius:8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
 .tab-btn:hover{color:var(--text2);border-color:var(--border2);transform:translateY(-1px)}
@@ -28,8 +32,8 @@ body>*{position:relative;z-index:1}
 .gear:hover{border-color:var(--accent);transform:translateY(-1px)}.gear.active{border-color:var(--yellow)}
 .gdot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--yellow);border:2px solid var(--bg)}.gdot.hide{display:none}
 .spanel{position:sticky;top:52px;z-index:99;background:rgba(11,15,23,.85);border-bottom:1px solid var(--glass-border);overflow:hidden;max-height:0;transition:max-height .3s,padding .3s;padding:0 24px}
-.spanel.open{max-height:110px;padding:14px 24px}
-.si{display:flex;align-items:flex-end;gap:10px}.sf{flex:1}
+.spanel.open{max-height:140px;padding:14px 24px}
+.si{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.sf{flex:1;min-width:200px}
 .sf label{display:block;font-family:var(--mono);font-size:10px;color:var(--yellow);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px}
 .si input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 11px;outline:none;transition:border-color .15s,box-shadow .15s;box-shadow:inset 0 1px 3px rgba(0,0,0,.20)}
 .si input:focus{border-color:var(--border-accent);box-shadow:inset 0 1px 3px rgba(0,0,0,.20),0 0 0 3px rgba(79,139,255,.10)}
@@ -51,12 +55,12 @@ body>*{position:relative;z-index:1}
     <span class="version" id="appVersion"></span>
   </div>
   <div class="topbar-r">
+    <div class="mode-toggle" id="modeToggle" onclick="toggleMockMode()">
+      <span id="modeLabel">MOCK</span>
+    </div>
     <div class="tabs">
       <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Review</button>
-      <button class="tab-btn" id="tabBtn1" onclick="switchTab(1)">Projection</button>
-      <button class="tab-btn" id="tabBtn2" onclick="switchTab(2)">Export</button>
     </div>
-    <div class="cbadge" id="cb"><span>&#10003;</span>Подключено</div>
     <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot" id="gd"></span></button>
   </div>
 </div>
@@ -70,18 +74,16 @@ body>*{position:relative;z-index:1}
     </div>
     <button class="bsave" onclick="saveH()">Сохранить</button>
   </div>
+  <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text3)">
+    Хук зашит по умолчанию. Нажмите MOCK/LIVE для переключения режима данных.
+    В режиме MOCK — тестовые данные, в LIVE — реальные из Bitrix24.
+  </div>
 </div>
 
 <!-- Main content -->
 <div class="main">
   <div class="tab-content active" id="tab0">
     <div id="pr-container"></div>
-  </div>
-  <div class="tab-content" id="tab1">
-    <div id="pr-projection-container"></div>
-  </div>
-  <div class="tab-content" id="tab2">
-    <div id="pr-export-container"></div>
   </div>
 </div>
 
@@ -95,15 +97,8 @@ body>*{position:relative;z-index:1}
 <script src="js/tab-payroll-review.js"></script>
 
 <script>
-var currentTab = 0;
-
 function switchTab(t) {
-  currentTab = t;
-  for (var i = 0; i < 3; i++) {
-    document.getElementById('tab' + i).classList.toggle('active', i === t);
-    document.getElementById('tabBtn' + i).classList.toggle('active', i === t);
-  }
-  /* All tabs render from the same data, just re-render */
+  /* Single tab for now — just re-render */
   if (window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));
   }
@@ -116,6 +111,25 @@ function toggleS() {
   gear.classList.toggle('active');
 }
 
+function toggleMockMode() {
+  PR_MOCK_MODE = !PR_MOCK_MODE;
+  PR_FORCE_MOCK = PR_MOCK_MODE;
+  updateModeUI();
+  if (window.TabPayrollReview) window.TabPayrollReview.refresh();
+}
+
+function updateModeUI() {
+  var toggle = document.getElementById('modeToggle');
+  var label = document.getElementById('modeLabel');
+  if (PR_MOCK_MODE) {
+    toggle.className = 'mode-toggle mock';
+    label.textContent = 'MOCK';
+  } else {
+    toggle.className = 'mode-toggle live';
+    label.textContent = 'LIVE';
+  }
+}
+
 function saveH() {
   var v = document.getElementById('hi').value.trim();
   if (!v || !v.includes('bitrix24')) {
@@ -124,15 +138,11 @@ function saveH() {
   }
   HOOK = v.endsWith('/') ? v : v + '/';
   try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
-  PR_MOCK_MODE = !HOOK;
-  setConn(true);
+  PR_MOCK_MODE = false;
+  PR_FORCE_MOCK = false;
+  updateModeUI();
   toggleS();
   if (window.TabPayrollReview) window.TabPayrollReview.refresh();
-}
-
-function setConn(v) {
-  document.getElementById('gd').classList.toggle('hide', v);
-  document.getElementById('cb').classList.toggle('show', v);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -140,11 +150,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var vEl = document.getElementById('appVersion');
   if (vEl && typeof APP_VERSION !== 'undefined') vEl.textContent = APP_VERSION;
 
-  /* Load hook */
+  /* Init hook input */
   if (HOOK) {
     document.getElementById('hi').value = HOOK;
-    setConn(true);
   }
+
+  /* Init mode UI */
+  updateModeUI();
 
   /* Render main tab */
   if (window.TabPayrollReview) {

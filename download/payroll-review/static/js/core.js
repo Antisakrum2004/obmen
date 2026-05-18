@@ -40,12 +40,18 @@ var DEV_RATES = {
 /* ─── Excluded projects ─── */
 var EXCLUDE_GROUPS = {'2':1,'22':1,'24':1,'28':1,'42':1,'48':1};
 
-/* ─── Hook ─── */
+/* ─── Hook (hardcoded for prototype) ─── */
+var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
-try { HOOK = localStorage.getItem('bx_hook') || ''; } catch(e) {}
+try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
-/* ─── Mock mode flag ─── */
-var PR_MOCK_MODE = !HOOK;
+/* ─── Mock mode ───
+   PR_FORCE_MOCK = true  → всегда мок (тест без API)
+   PR_FORCE_MOCK = false → живые данные через Bitrix24 API
+   Переключатель есть в UI: кнопка MOCK/LIVE в топбаре
+*/
+var PR_FORCE_MOCK = true;
+var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
 
 /* ─── Utilities ─── */
 function fmt(d) {
