@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-1.1.0';
+var APP_VERSION = 'ПР-2.0.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -163,12 +163,12 @@ var EXCLUDE_GROUPS = {
 /* ─── Вебхук (зашит прямо в код) ─── */
 var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
-/* Чтение хука через абстракцию storage, если доступна */
+/* Чтение хука через PayrollStorage (единственная точка доступа) */
 try {
   if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadHook) {
     HOOK = PayrollStorage.loadHook() || PR_DEFAULT_HOOK;
   } else {
-    HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK;
+    HOOK = PR_DEFAULT_HOOK;
   }
 } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
@@ -216,27 +216,35 @@ function parseBitrixDate(s) {
 }
 
 function prGetRate(developerId) {
-  /* Сначала из сохранённых настроек, потом из конфига */
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.rate) return saved.rate;
+  /* Единственная точка доступа — PayrollStorage */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.rate) return saved.rate;
+  }
   return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
 }
 
 function prGetBase(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.base) return saved.base;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.base) return saved.base;
+  }
   return DEV_BASE[String(developerId)] || 0;
 }
 
 function prGetInn(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.inn) return saved.inn;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.inn) return saved.inn;
+  }
   return DEV_INN[String(developerId)] || '';
 }
 
 function prGetDevName(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.name) return saved.name;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.name) return saved.name;
+  }
   return DEVELOPERS[String(developerId)] || ('ID ' + developerId);
 }
 

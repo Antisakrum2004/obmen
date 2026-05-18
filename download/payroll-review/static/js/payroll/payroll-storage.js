@@ -86,26 +86,40 @@ var PayrollStorage = (function() {
 
     /**
      * Сохранить ревью за период
+     * WRITE GUARD: нельзя перезаписать ревью если период в immutable состоянии
      * @param {Number} year
      * @param {Number} month
      * @param {Object} reviews — map[reviewKey] = review data
-     * @returns {Boolean}
+     * @returns {Object} { success: Boolean, error: String|null }
      */
     saveReviews: function(year, month, reviews) {
-      return _set(_periodKey(year, month), {
+      /* Проверить immutable-статус периода */
+      var pk = year + '-' + String(month).padStart(2, '0');
+      var pState = _get(_periodStateKey(pk));
+      var status = pState && pState.state ? pState.state.status : null;
+      if (status && typeof isPeriodSnapshotImmutable === 'function' &&
+          isPeriodSnapshotImmutable(status)) {
+        console.warn('PayrollStorage: ЗАПИСЬ РЕВЬЮ ЗАПРЕЩЕНА. Период ' +
+          pk + ' immutable: ' + status);
+        return { success: false, error: 'period_immutable', status: status };
+      }
+
+      var result = _set(_periodKey(year, month), {
         _v: VERSION,
         _ts: Date.now(),
         reviews: reviews || {}
       });
+      return { success: result, error: null };
     },
 
     /**
      * Сохранить одно ревью
+     * WRITE GUARD: наследует от saveReviews — immutable период нельзя менять
      * @param {Number} year
      * @param {Number} month
      * @param {String} reviewKey
      * @param {Object} reviewData
-     * @returns {Boolean}
+     * @returns {Object} { success: Boolean, error: String|null }
      */
     saveSingleReview: function(year, month, reviewKey, reviewData) {
       var reviews = this.loadReviews(year, month);
@@ -224,16 +238,49 @@ var PayrollStorage = (function() {
 
     /**
      * Сохранить состояние периода
+     * WRITE GUARD: проверяет transition rules — нельзя поставить недопустимый статус
+     * Нельзя изменить статус paid периода. Нельзя откатить locked/exported.
      * @param {String} periodKey
      * @param {Object} state — { status, snapshotId, updatedAt }
-     * @returns {Boolean}
+     * @returns {Object} { success: Boolean, error: String|null }
      */
     savePeriodState: function(periodKey, state) {
-      return _set(_periodStateKey(periodKey), {
+      if (!state || !state.status) {
+        return { success: false, error: 'missing_status' };
+      }
+
+      /* Проверить transition от текущего статуса к новому */
+      var existing = _get(_periodStateKey(periodKey));
+      var currentStatus = existing && existing.state ? existing.state.status : 'draft';
+      var newStatus = state.status;
+
+      /* Если статус не меняется — разрешить (обновление метаданных) */
+      if (currentStatus === newStatus) {
+        var r = _set(_periodStateKey(periodKey), {
+          _v: VERSION,
+          _ts: Date.now(),
+          state: state
+        });
+        return { success: r, error: null };
+      }
+
+      /* Проверить допустимость перехода */
+      if (typeof validatePeriodTransition === 'function') {
+        var transition = validatePeriodTransition(currentStatus, newStatus);
+        if (!transition.allowed) {
+          console.warn('PayrollStorage: ПЕРЕХОД ЗАПРЕЩЕН ' + currentStatus + ' → ' +
+            newStatus + ': ' + transition.message);
+          return { success: false, error: 'invalid_transition',
+            message: transition.message, currentStatus: currentStatus };
+        }
+      }
+
+      var result = _set(_periodStateKey(periodKey), {
         _v: VERSION,
         _ts: Date.now(),
         state: state
       });
+      return { success: result, error: null };
     },
 
     /**

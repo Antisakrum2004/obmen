@@ -22,14 +22,15 @@ var _projectionCache = {
 function _computeRowsHash(rows) {
   if (!rows || !rows.length) return 'empty';
   var hash = 5381;
-  var sampleSize = Math.min(rows.length, 50); /* Sample first 50 rows for speed */
-  for (var i = 0; i < sampleSize; i++) {
+  /* Полный проход — не сэмплируем, чтобы не пропустить изменения в конце списка */
+  for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var str = (r._reviewKey || '') + ':' +
       (r.payrollHours || 0) + ':' +
       (r.billableHours || 0) + ':' +
       (r.reviewStatus || '') + ':' +
-      (r.payrollAmount || 0);
+      (r.payrollAmount || 0) + ':' +
+      (r.version || 0);
     for (var j = 0; j < str.length; j++) {
       hash = ((hash << 5) + hash) + str.charCodeAt(j);
       hash = hash & hash;

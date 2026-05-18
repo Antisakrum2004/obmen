@@ -159,25 +159,37 @@ function calculateProfitability(review) {
   if (!review) return review;
   var r = review;
 
+  /* Safe financial math: гарантируем валидные числа на каждом шаге */
+  var billableHours = isValidNumber(r.billableHours) ? r.billableHours : 0;
+  var payrollHours = isValidNumber(r.payrollHours) ? r.payrollHours : 0;
+  var payrollAmount = isValidNumber(r.payrollAmount) ? r.payrollAmount : 0;
+
   /* clientAmount: если clientRate не задан, используем payroll rate как fallback */
-  var effectiveClientRate = r.clientRate || r.rate || 0;
+  var effectiveClientRate = isValidNumber(r.clientRate) ? r.clientRate :
+                            (isValidNumber(r.rate) ? r.rate : 0);
   r.clientRate = effectiveClientRate;
-  r.clientAmount = Math.round(r.billableHours * effectiveClientRate);
+  r.clientAmount = Math.round(billableHours * effectiveClientRate);
 
   /* grossMargin: client revenue - payroll cost */
-  r.grossMargin = r.clientAmount - r.payrollAmount;
+  r.grossMargin = r.clientAmount - payrollAmount;
 
-  /* marginPercent */
-  if (r.clientAmount > 0) {
+  /* marginPercent: защита от division by zero и NaN */
+  if (r.clientAmount > 0 && isValidNumber(r.grossMargin)) {
     r.marginPercent = safeRound(r.grossMargin / r.clientAmount * 100, 1);
   } else {
     r.marginPercent = 0;
   }
 
   /* overburnHours: если billable > payroll, это переработка */
-  r.overburnHours = r.billableHours > r.payrollHours
-    ? safeRound(r.billableHours - r.payrollHours, 1)
+  r.overburnHours = billableHours > payrollHours
+    ? safeRound(billableHours - payrollHours, 1)
     : 0;
+
+  /* Финальная проверка — ни одно поле не должно быть NaN/Infinity */
+  if (!isValidNumber(r.clientAmount)) r.clientAmount = 0;
+  if (!isValidNumber(r.grossMargin)) r.grossMargin = 0;
+  if (!isValidNumber(r.marginPercent)) r.marginPercent = 0;
+  if (!isValidNumber(r.overburnHours)) r.overburnHours = 0;
 
   return r;
 }
@@ -297,12 +309,10 @@ function createReviewSnapshot(review, periodKey) {
     _immutable:     true
   };
 
-  /* Freeze: предотвращает мутацию через ссылку */
+  /* Freeze: глубокая заморозка — включая вложенные объекты */
   try {
+    _deepFreeze(adjustments);
     Object.freeze(snapshot);
-    if (adjustments && typeof adjustments === 'object') {
-      Object.freeze(adjustments);
-    }
   } catch(e) {
     /* Object.freeze не поддерживается в старых браузерах — не критично */
   }
@@ -403,10 +413,9 @@ function createPeriodSnapshot(periodKey, reviews) {
     _immutable:     true
   };
 
-  /* Freeze всего snapshot и вложенных массивов */
+  /* Deep freeze всего snapshot (включая все вложенные объекты) */
   try {
-    Object.freeze(snapshot);
-    Object.freeze(reviewSnapshots);
+    _deepFreeze(snapshot);
   } catch(e) {}
 
   return snapshot;
@@ -900,6 +909,25 @@ function deepClone(obj) {
   var clone = {};
   Object.keys(obj).forEach(function(k) { clone[k] = deepClone(obj[k]); });
   return clone;
+}
+
+/**
+ * Глубокая заморозка объекта (рекурсивный Object.freeze)
+ * Замораживает все вложенные объекты, а не только верхний уровень.
+ * @param {*} obj
+ * @returns {*} замороженный объект
+ */
+function _deepFreeze(obj) {
+  if (obj === null || typeof obj !== 'object') return obj;
+  /* Сначала заморозить все вложенные объекты */
+  Object.keys(obj).forEach(function(k) {
+    var val = obj[k];
+    if (val && typeof val === 'object' && !Object.isFrozen(val)) {
+      _deepFreeze(val);
+    }
+  });
+  Object.freeze(obj);
+  return obj;
 }
 
 /**

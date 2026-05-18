@@ -74,11 +74,15 @@ function buildNormalizedModel(options) {
       console.warn('buildNormalizedModel: Период ' + periodKey +
         ' в статусе ' + periodStatus + ', но snapshot не найден. Fallback на live.');
       model.source = 'live_fallback';
-      model.rows = _buildRowsFromLive(opts.rawData, opts.savedReviews, opts.rateProvider);
+      var liveResult = _buildRowsFromLiveWithReport(opts.rawData, opts.savedReviews, opts.rateProvider);
+      model.rows = liveResult.rows;
+      model.qualityReport = liveResult.qualityReport;
     }
   } else {
     /* ── DRAFT/REVIEW: источник = live elapsed + saved reviews ── */
-    model.rows = _buildRowsFromLive(opts.rawData, opts.savedReviews, opts.rateProvider);
+    var liveResult = _buildRowsFromLiveWithReport(opts.rawData, opts.savedReviews, opts.rateProvider);
+    model.rows = liveResult.rows;
+    model.qualityReport = liveResult.qualityReport;
   }
 
   return model;
@@ -132,16 +136,14 @@ function _restoreRowsFromSnapshot(snapshot) {
 }
 
 /**
- * Построить TaskReview[] из live данных
+ * Построить TaskReview[] из live данных (с qualityReport)
  * @param {Object} rawData
  * @param {Object} savedReviews
  * @param {Object} rateProvider
- * @returns {Array} TaskReview[]
+ * @returns {Object} { rows, qualityReport }
  */
-function _buildRowsFromLive(rawData, savedReviews, rateProvider) {
-  var result = buildReviewRows(rawData, savedReviews, rateProvider);
-  /* Note: qualityReport нужно получать отдельно из buildReviewRows */
-  return result.rows;
+function _buildRowsFromLiveWithReport(rawData, savedReviews, rateProvider) {
+  return buildReviewRows(rawData, savedReviews, rateProvider);
 }
 
 /* ═══════════════════════════════════════════════════════════════

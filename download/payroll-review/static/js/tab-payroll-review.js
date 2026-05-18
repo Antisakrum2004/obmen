@@ -40,6 +40,14 @@ function _prDestroy() {
     _pr.styleEl.parentNode.removeChild(_pr.styleEl);
     _pr.styleEl = null;
   }
+  /* Очистить кэш projections/totals */
+  if (typeof invalidateProjectionCache === 'function') {
+    invalidateProjectionCache();
+  }
+  /* Очистить подписки PayrollEvents чтобы избежать memory leaks */
+  if (typeof PayrollEvents !== 'undefined') {
+    PayrollEvents.off();
+  }
   _pr.container = null;
   _pr.rows = [];
   _pr.projection = [];
@@ -119,14 +127,7 @@ function _prLoadData() {
       _pr.modelSource = model.source;
       _pr.snapshotId = model.snapshotId;
       _pr.snapshotChecksum = model.snapshotChecksum;
-
-      /* Для live-режима — получаем qualityReport из buildReviewRows */
-      if (model.source !== 'snapshot') {
-        var result = buildReviewRows(data, savedReviews, _prRateProvider());
-        _pr.qualityReport = result.qualityReport;
-      } else {
-        _pr.qualityReport = null;
-      }
+      _pr.qualityReport = model.qualityReport; /* qualityReport уже из модели */
     } else {
       /* Fallback на прямое построение (не должно происходить) */
       var result = buildReviewRows(data, savedReviews, _prRateProvider());
@@ -169,8 +170,17 @@ function _prLoadReviews(year, month) {
 
 function _prSaveReviews(year, month, reviews) {
   var store = _prStorage();
-  if (store) return store.saveReviews(year, month, reviews);
-  if (typeof prSaveReviews === 'function') return prSaveReviews(year, month, reviews);
+  if (store) {
+    var result = store.saveReviews(year, month, reviews);
+    if (result && !result.success) {
+      console.warn('_prSaveReviews: blocked -', result.error);
+      if (result.error === 'period_immutable') {
+        alert('Невозможно сохранить: период заблокирован для изменений');
+      }
+      return false;
+    }
+    return result ? result.success : false;
+  }
   return false;
 }
 
@@ -212,7 +222,18 @@ function _prLoadPeriodState(periodKey) {
 
 function _prSavePeriodState(periodKey, state) {
   var store = _prStorage();
-  if (store) return store.savePeriodState(periodKey, state);
+  if (store) {
+    var result = store.savePeriodState(periodKey, state);
+    if (result && !result.success) {
+      console.warn('_prSavePeriodState: blocked -', result.error, result.message || '');
+      if (result.error === 'invalid_transition') {
+        alert('Недопустимый переход статуса: ' + (result.message || ''));
+      }
+      return false;
+    }
+    return result ? result.success : false;
+  }
+  return false;
 }
 
 function _prLoadAuditLog(periodKey) {
@@ -724,11 +745,41 @@ function _prSortInd(field) {
 }
 
 function _prSaveAll() {
+  var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+
+  /* Проверить immutable-статус ДО попытки сохранения */
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) {
+    alert('Невозможно сохранить: период в статусе "' +
+      (typeof PR_PERIOD_STATUS_LABELS !== 'undefined' ? PR_PERIOD_STATUS_LABELS[_pr.periodStatus] : _pr.periodStatus) +
+      '". Разблокируйте период для редактирования.');
+    return;
+  }
+
+  /* Version conflict check — проверить, не изменился ли период в другой вкладке */
+  var savedReviews = _prLoadReviews(prCurrentPeriod.year, prCurrentPeriod.month);
+  if (savedReviews && typeof savedReviews === 'object') {
+    var currentSerialized = serializeReviews(_pr.rows);
+    var conflictFound = false;
+    Object.keys(currentSerialized).forEach(function(key) {
+      if (savedReviews[key] && currentSerialized[key].version && savedReviews[key].version) {
+        if (savedReviews[key].version > currentSerialized[key].version) {
+          conflictFound = true;
+        }
+      }
+    });
+    if (conflictFound) {
+      if (!confirm('Обнаружен конфликт версий! Данные были изменены в другой вкладке. Перезаписать?')) {
+        return;
+      }
+    }
+  }
+
   var reviews = serializeReviews(_pr.rows);
-  _prSaveReviews(prCurrentPeriod.year, prCurrentPeriod.month, reviews);
+  var saveResult = _prSaveReviews(prCurrentPeriod.year, prCurrentPeriod.month, reviews);
+  if (!saveResult) return;
 
   /* Сохранить состояние периода */
-  var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
   _prSavePeriodState(periodKey, {
     status: _pr.periodStatus,
     snapshotId: null,

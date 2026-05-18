@@ -86,7 +86,7 @@ body>*{position:relative;z-index:1}
   </div>
 </div>
 
-<!-- Скрипты: доменные модули (v1.0.0 refactor) -->
+<!-- Скрипты: доменные модули (v2.0.0 hardening) -->
 <script src="js/payroll/payroll-domain.js"></script>
 <script src="js/payroll/payroll-normalizer.js"></script>
 <script src="js/payroll/payroll-review-engine.js"></script>
@@ -94,12 +94,9 @@ body>*{position:relative;z-index:1}
 <script src="js/payroll/payroll-storage.js"></script>
 <script src="js/payroll/payroll-export.js"></script>
 
-<!-- Скрипты: legacy (оставлены для обратной совместимости) -->
+<!-- Скрипты: core + mock (DEPRECATED legacy calc/storage/export REMOVED) -->
 <script src="js/core.js"></script>
 <script src="js/mock-data.js"></script>
-<script src="js/payroll-review-calc.js"></script>
-<script src="js/payroll-review-storage.js"></script>
-<script src="js/payroll-review-export.js"></script>
 <script src="js/payroll-review-styles.js"></script>
 <script src="js/tab-payroll-review.js"></script>
 
@@ -143,11 +140,9 @@ function saveH() {
     return;
   }
   HOOK = v.endsWith('/') ? v : v + '/';
-  /* Сохраняем через абстракцию storage */
+  /* Сохраняем через PayrollStorage — единая точка доступа */
   if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveHook) {
     PayrollStorage.saveHook(HOOK);
-  } else {
-    try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
   }
   PR_MOCK_MODE = false;
   PR_FORCE_MOCK = false;
