@@ -121,7 +121,11 @@ function createTaskReview(params) {
     entryCount:     Number(p.entryCount) || 0,
     factMinutes:    Number(p.factMinutes) || 0,
     createdAt:      Number(p.createdAt) || Date.now(),
-    updatedAt:      Number(p.updatedAt) || Date.now()
+    updatedAt:      Number(p.updatedAt) || Date.now(),
+
+    /* Version conflict protection */
+    version:        Number(p.version) || 1,            /* optimistic locking version */
+    revisionId:     p.revisionId || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8))
   };
 }
 
@@ -452,6 +456,226 @@ function isSnapshotFrozen(snapshot) {
     /* Strict mode: присвоение выбрасывает TypeError = заморожен */
     return true;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VERSION CONFLICT PROTECTION — Optimistic locking
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Проверить конфликт версий между двумя ревью
+ * Если версия в storage новее — кто-то другой уже сохранил изменения
+ *
+ * @param {Object} currentReview — текущий TaskReview (в памяти)
+ * @param {Object} storedReview — сохранённый TaskReview (из storage)
+ * @returns {Object} { hasConflict: Boolean, currentVersion, storedVersion }
+ */
+function checkVersionConflict(currentReview, storedReview) {
+  if (!currentReview || !storedReview) {
+    return { hasConflict: false, currentVersion: 0, storedVersion: 0 };
+  }
+
+  var currentVersion = currentReview.version || 1;
+  var storedVersion = storedReview.version || 1;
+
+  return {
+    hasConflict: storedVersion > currentVersion,
+    currentVersion: currentVersion,
+    storedVersion: storedVersion,
+    message: storedVersion > currentVersion
+      ? 'Конфликт версий: сохранённая версия (' + storedVersion +
+        ') новее текущей (' + currentVersion + ')'
+      : null
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VALIDATION ENGINE — Расширенная валидация
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Создать ValidationReport
+ * @returns {Object} ValidationReport
+ */
+function createValidationReport() {
+  return {
+    errors: [],     /* Критические ошибки — блокируют операции */
+    warnings: [],   /* Предупреждения — не блокируют, но информируют */
+    info: [],       /* Информационные сообщения */
+    isValid: true,
+    hasWarnings: false,
+    checkedAt: Date.now()
+  };
+}
+
+/**
+ * Добавить ошибку в ValidationReport
+ * @param {Object} report — ValidationReport
+ * @param {String} code — код ошибки
+ * @param {String} message — описание
+ * @param {Object} context — доп. контекст
+ * @returns {Object} обновлённый report
+ */
+function addValidationError(report, code, message, context) {
+  if (!report) report = createValidationReport();
+  report.errors.push({
+    code: code,
+    message: message,
+    context: context || {},
+    severity: 'error'
+  });
+  report.isValid = false;
+  return report;
+}
+
+/**
+ * Добавить предупреждение в ValidationReport
+ * @param {Object} report — ValidationReport
+ * @param {String} code
+ * @param {String} message
+ * @param {Object} context
+ * @returns {Object} обновлённый report
+ */
+function addValidationWarning(report, code, message, context) {
+  if (!report) report = createValidationReport();
+  report.warnings.push({
+    code: code,
+    message: message,
+    context: context || {},
+    severity: 'warning'
+  });
+  report.hasWarnings = true;
+  return report;
+}
+
+/**
+ * Валидировать TaskReview
+ * Комплексная проверка всех полей
+ * @param {Object} review — TaskReview
+ * @param {Object} options — { periodStatus }
+ * @returns {Object} ValidationReport
+ */
+function validateTaskReview(review, options) {
+  var report = createValidationReport();
+  if (!review) {
+    addValidationError(report, 'null_review', 'Отсутствует объект ревью');
+    return report;
+  }
+
+  var opts = options || {};
+
+  /* Negative hours */
+  if (review.billableHours < 0) {
+    addValidationError(report, 'negative_billable', 'Billable hours не может быть отрицательным', {
+      billableHours: review.billableHours, reviewKey: review._reviewKey
+    });
+  }
+  if (review.payrollHours < 0) {
+    addValidationError(report, 'negative_payroll', 'Payroll hours не может быть отрицательным', {
+      payrollHours: review.payrollHours, reviewKey: review._reviewKey
+    });
+  }
+  if (review.factHours < 0) {
+    addValidationError(report, 'negative_fact', 'Fact hours не может быть отрицательным', {
+      factHours: review.factHours, reviewKey: review._reviewKey
+    });
+  }
+
+  /* Hours > 24/day per entry (heuristic: > 200 hours per task/month is suspicious) */
+  if (review.billableHours > 200) {
+    addValidationWarning(report, 'excessive_billable', 'Billable hours > 200 за месяц — подозрительно', {
+      billableHours: review.billableHours, reviewKey: review._reviewKey
+    });
+  }
+
+  /* Missing rate */
+  if (review.rate <= 0 && review.payrollHours > 0) {
+    addValidationError(report, 'missing_rate', 'Ставка не задана при наличии payroll hours', {
+      rate: review.rate, payrollHours: review.payrollHours, reviewKey: review._reviewKey
+    });
+  }
+
+  /* Invalid rate values */
+  if (!isValidNumber(review.rate)) {
+    addValidationError(report, 'invalid_rate', 'Ставка не является валидным числом', {
+      rate: review.rate, reviewKey: review._reviewKey
+    });
+  }
+
+  /* NaN/Infinity checks */
+  if (!isValidNumber(review.factHours)) {
+    addValidationError(report, 'nan_fact', 'Fact hours не является валидным числом', {
+      factHours: review.factHours, reviewKey: review._reviewKey
+    });
+  }
+  if (!isValidNumber(review.payrollAmount)) {
+    addValidationError(report, 'nan_amount', 'Payroll amount не является валидным числом', {
+      payrollAmount: review.payrollAmount, reviewKey: review._reviewKey
+    });
+  }
+
+  /* Missing user */
+  if (!review.developerId) {
+    addValidationError(report, 'missing_developer', 'Отсутствует ID разработчика', {
+      reviewKey: review._reviewKey
+    });
+  }
+
+  /* Missing task */
+  if (!review.taskId) {
+    addValidationError(report, 'missing_task', 'Отсутствует ID задачи', {
+      reviewKey: review._reviewKey
+    });
+  }
+
+  /* Locked period mutation attempt */
+  if (opts.periodStatus && isPeriodSnapshotImmutable(opts.periodStatus)) {
+    addValidationError(report, 'locked_period_mutation', 'Попытка изменить immutable период', {
+      periodStatus: opts.periodStatus, reviewKey: review._reviewKey
+    });
+  }
+
+  /* Invalid status transition */
+  if (review.reviewStatus && Object.keys(PR_REVIEW_STATUS).every(function(k) {
+    return PR_REVIEW_STATUS[k] !== review.reviewStatus;
+  })) {
+    addValidationError(report, 'invalid_status', 'Неизвестный статус ревью', {
+      reviewStatus: review.reviewStatus, reviewKey: review._reviewKey
+    });
+  }
+
+  return report;
+}
+
+/**
+ * Валидировать массив TaskReview
+ * @param {Array} reviews — TaskReview[]
+ * @param {Object} options
+ * @returns {Object} ValidationReport
+ */
+function validateReviewBatch(reviews, options) {
+  var report = createValidationReport();
+  var seenKeys = {};
+
+  (reviews || []).forEach(function(r) {
+    var singleReport = validateTaskReview(r, options);
+    report.errors = report.errors.concat(singleReport.errors);
+    report.warnings = report.warnings.concat(singleReport.warnings);
+
+    /* Duplicate detection */
+    if (r._reviewKey) {
+      if (seenKeys[r._reviewKey]) {
+        addValidationError(report, 'duplicate_review', 'Дублирующийся reviewKey', {
+          reviewKey: r._reviewKey
+        });
+      }
+      seenKeys[r._reviewKey] = true;
+    }
+  });
+
+  report.isValid = report.errors.length === 0;
+  report.hasWarnings = report.warnings.length > 0;
+  return report;
 }
 
 /* ═══════════════════════════════════════════════════════════════

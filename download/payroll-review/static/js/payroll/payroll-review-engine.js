@@ -321,12 +321,16 @@ function updateReviewField(review, field, value, periodStatus) {
   updated = calculateReviewAmount(updated);
   updated.updatedAt = Date.now();
 
+  /* Increment version for optimistic locking */
+  updated.version = (review.version || 0) + 1;
+  updated.revisionId = 'rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
   /* Создать audit entry */
   var audit = createAuditEntry(
     'update_' + field,
     'review',
     review._reviewKey,
-    { field: field, oldValue: oldValue, newValue: updated[field] }
+    { field: field, oldValue: oldValue, newValue: updated[field], version: updated.version }
   );
 
   return { review: updated, audit: audit, error: null };
@@ -359,11 +363,15 @@ function transitionReviewStatus(review, targetStatus, periodStatus) {
   updated.reviewStatus = targetStatus;
   updated.updatedAt = Date.now();
 
+  /* Increment version for optimistic locking */
+  updated.version = (review.version || 0) + 1;
+  updated.revisionId = 'rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
   var audit = createAuditEntry(
     'change_status',
     'review',
     review._reviewKey,
-    { oldStatus: oldStatus, newStatus: targetStatus }
+    { oldStatus: oldStatus, newStatus: targetStatus, version: updated.version }
   );
 
   return { review: updated, audit: audit, error: null };
@@ -418,7 +426,10 @@ function serializeReviews(reviews) {
       clientAmount: r.clientAmount || 0,
       grossMargin: r.grossMargin || 0,
       marginPercent: r.marginPercent || 0,
-      overburnHours: r.overburnHours || 0
+      overburnHours: r.overburnHours || 0,
+      /* Version conflict protection */
+      version: r.version || 1,
+      revisionId: r.revisionId || ''
     };
   });
   return map;
