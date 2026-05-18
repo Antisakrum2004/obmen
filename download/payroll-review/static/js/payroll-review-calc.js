@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   payroll-review-calc.js — Normalization & Aggregation Layer
+   payroll-review-calc.js — Слой нормализации и агрегации
    Чистые функции, НЕ зависят от DOM
    SECONDS и MINUTES — строки из Bitrix24 API
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Normalize single elapsed entry ─── */
+/* ─── Нормализация одной записи elapsed ─── */
 function normalizeElapsed(entry) {
   if (!entry) return null;
 
-  /* SECONDS — строка из Bitrix24 ("11400"), parseInt корректно обработает */
+  /* SECONDS — строка из Bitrix24 ("11400"), parseInt обработает */
   var seconds = parseInt(entry.SECONDS || 0, 10);
   if (isNaN(seconds) || seconds < 0) return null;
 
@@ -16,10 +16,10 @@ function normalizeElapsed(entry) {
   var userId = String(entry.USER_ID || '');
   if (!taskId || !userId) return null;
 
-  /* Filter unknown developers */
+  /* Фильтр неизвестных разработчиков */
   if (DEV_IDS.indexOf(Number(userId)) < 0) return null;
 
-  /* MINUTES — тоже строка из Bitrix24 ("190"), но пересчитываем из SECONDS для точности */
+  /* MINUTES — тоже строка ("190"), пересчитываем из SECONDS для точности */
   var minutes = Math.round(seconds / 60);
 
   return {
@@ -28,23 +28,23 @@ function normalizeElapsed(entry) {
     userId: userId,
     seconds: seconds,
     minutes: minutes,
-    hours: Math.round(minutes / 6) / 10, /* one decimal */
+    hours: Math.round(minutes / 6) / 10, /* один знак после точки */
     comment: entry.COMMENT_TEXT || '',
     createdDate: (entry.CREATED_DATE || '').substring(0, 10),
     rawEntry: entry
   };
 }
 
-/* ─── Group elapsed by (taskId, userId) ─── */
+/* ─── Группировка elapsed по (taskId, userId) ─── */
 function groupElapsedByTask(elapsedEntries) {
   var groups = {};
-  var seen = {}; /* duplicate protection */
+  var seen = {}; /* защита от дублей */
 
   elapsedEntries.forEach(function(entry) {
     var norm = normalizeElapsed(entry);
     if (!norm) return;
 
-    /* Duplicate protection: same elapsed ID */
+    /* Защита от дублей: один и тот же elapsed ID */
     if (norm.id && seen[norm.id]) return;
     if (norm.id) seen[norm.id] = true;
 
@@ -66,19 +66,19 @@ function groupElapsedByTask(elapsedEntries) {
   return groups;
 }
 
-/* ─── Aggregate hours for a group ─── */
+/* ─── Агрегация часов для группы ─── */
 function aggregateTaskHours(group) {
   if (!group) return null;
   return {
     taskId: group.taskId,
     userId: group.userId,
-    factHours: Math.round(group.totalMinutes / 6) / 10, /* one decimal */
+    factHours: Math.round(group.totalMinutes / 6) / 10,
     factMinutes: group.totalMinutes,
     entryCount: group.entries.length
   };
 }
 
-/* ─── Build TaskReview rows from raw data ─── */
+/* ─── Построить строки TaskReview из сырых данных ─── */
 function buildTaskReviewRows(data, savedReviews) {
   if (!data || !data.elapsed) return [];
 
@@ -87,7 +87,7 @@ function buildTaskReviewRows(data, savedReviews) {
   var tasks = data.tasks || [];
   var projects = data.projects || {};
 
-  /* Build task title lookup */
+  /* Словарь названий задач */
   var taskTitles = {};
   tasks.forEach(function(t) {
     var id = String(t.id || t.ID);
@@ -95,7 +95,7 @@ function buildTaskReviewRows(data, savedReviews) {
     if (id && ti) taskTitles[id] = ti;
   });
 
-  /* Merge with tasksMeta */
+  /* Дополнить из tasksMeta */
   Object.keys(tasksMeta).forEach(function(tid) {
     if (!taskTitles[tid] && tasksMeta[tid].title) {
       taskTitles[tid] = tasksMeta[tid].title;
@@ -111,10 +111,11 @@ function buildTaskReviewRows(data, savedReviews) {
     var meta = tasksMeta[agg.taskId] || {};
     var gid = meta.groupId || '0';
     var projectName = (projects[gid] && projects[gid].name) || meta.groupName || PROJECTS[gid] || 'Без проекта';
-    var developerName = DEVELOPERS[agg.userId] || ('ID ' + agg.userId);
+    var developerName = prGetDevName(agg.userId);
     var rate = prGetRate(agg.userId);
+    var base = prGetBase(agg.userId);
 
-    /* Check for saved review (manager adjustments) */
+    /* Проверка сохранённого ревью (корректировки менеджера) */
     var reviewKey = agg.taskId + '_' + agg.userId;
     var saved = (savedReviews && savedReviews[reviewKey]) || null;
 
@@ -130,7 +131,8 @@ function buildTaskReviewRows(data, savedReviews) {
       billableHours: saved ? saved.billableHours : agg.factHours,
       payrollHours: saved ? saved.payrollHours : agg.factHours,
       rate: saved ? saved.rate : rate,
-      payrollAmount: 0, /* computed below */
+      base: saved ? saved.base : base,
+      payrollAmount: 0, /* вычисляется ниже */
       reviewStatus: saved ? saved.reviewStatus : 'pending',
       managerComment: saved ? saved.managerComment : '',
       updatedAt: saved ? saved.updatedAt : Date.now(),
@@ -139,12 +141,12 @@ function buildTaskReviewRows(data, savedReviews) {
     });
   });
 
-  /* Compute payrollAmount */
+  /* Вычислить payrollAmount = часы × ставка + базовая */
   rows.forEach(function(r) {
-    r.payrollAmount = Math.round(r.payrollHours * r.rate);
+    r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
   });
 
-  /* Sort: pending first, then by developer name, then by task title */
+  /* Сортировка: ожидает первой, потом по имени разработчика, потом по задаче */
   rows.sort(function(a, b) {
     if (a.reviewStatus === 'pending' && b.reviewStatus !== 'pending') return -1;
     if (a.reviewStatus !== 'pending' && b.reviewStatus === 'pending') return 1;
@@ -156,7 +158,7 @@ function buildTaskReviewRows(data, savedReviews) {
   return rows;
 }
 
-/* ─── Build PayrollProjection (per developer) ─── */
+/* ─── Построить прогноз выплат (по разработчикам) ─── */
 function buildPayrollProjection(rows) {
   var byDev = {};
   rows.forEach(function(r) {
@@ -169,6 +171,7 @@ function buildPayrollProjection(rows) {
         totalFactHours: 0,
         totalBillable: 0,
         totalPayroll: 0,
+        totalBase: 0,
         totalAmount: 0,
         taskCount: 0,
         approvedCount: 0,
@@ -180,6 +183,7 @@ function buildPayrollProjection(rows) {
     d.totalFactHours += r.factHours;
     d.totalBillable += r.billableHours;
     d.totalPayroll += r.payrollHours;
+    d.totalBase += r.base;
     d.totalAmount += r.payrollAmount;
     d.taskCount++;
     if (r.reviewStatus === 'approved') d.approvedCount++;
@@ -187,7 +191,7 @@ function buildPayrollProjection(rows) {
     if (r.reviewStatus === 'disputed') d.disputedCount++;
   });
 
-  /* Round values */
+  /* Округление */
   Object.keys(byDev).forEach(function(uid) {
     var d = byDev[uid];
     d.totalFactHours = Math.round(d.totalFactHours * 10) / 10;
@@ -196,17 +200,18 @@ function buildPayrollProjection(rows) {
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
   });
 
-  /* Sort by totalAmount desc */
+  /* Сортировка по сумме выплаты ↓ */
   var result = Object.values(byDev).sort(function(a, b) { return b.totalAmount - a.totalAmount; });
   return result;
 }
 
-/* ─── Compute period totals ─── */
+/* ─── Итоги периода ─── */
 function buildPeriodTotals(rows) {
   var totals = {
     totalFactHours: 0,
     totalBillable: 0,
     totalPayroll: 0,
+    totalBase: 0,
     totalPayrollAmount: 0,
     totalTasks: 0,
     approvedTasks: 0,
@@ -226,6 +231,7 @@ function buildPeriodTotals(rows) {
       totals.totalFactHours += r.factHours;
       totals.totalBillable += r.billableHours;
       totals.totalPayroll += r.payrollHours;
+      totals.totalBase += r.base;
       totals.totalPayrollAmount += r.payrollAmount;
     }
   });

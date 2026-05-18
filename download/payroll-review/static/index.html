@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Payroll Review — 1С-АйтиЛаб</title>
+<title>Зарплатный обзор — 1С-АйтиЛаб</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0B0F17;--bg1:#111827;--bg2:#151C2C;--bg3:#1E293B;--bg-hover:#192236;--border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.10);--border-accent:rgba(59,130,246,.35);--text:#F3F7FF;--text2:#A1AEC3;--text3:#6B7A90;--accent:#4f8bff;--accent-hover:#60A5FA;--green:#22d47e;--red:#ff4f6a;--yellow:#f5a623;--cyan:#00d4ff;--orange:#ff8c42;--mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;--glass:rgba(11,15,23,.88);--glass-border:rgba(148,163,184,.08);--shadow-card:0 2px 8px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.22);--shadow-card-hover:0 4px 12px rgba(0,0,0,.22),0 12px 32px rgba(0,0,0,.30);--shadow-btn:0 1px 3px rgba(0,0,0,.20),0 2px 8px rgba(0,0,0,.15);--shadow-btn-hover:0 2px 6px rgba(0,0,0,.25),0 4px 12px rgba(0,0,0,.20);--highlight:inset 0 1px 0 rgba(255,255,255,.05);--highlight-strong:inset 0 1px 0 rgba(255,255,255,.07);--radius:12px}
@@ -40,54 +40,52 @@ body>*{position:relative;z-index:1}
 .bsave{background:var(--yellow);color:#000;border:none;border-radius:8px;padding:8px 16px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;cursor:pointer;white-space:nowrap;flex-shrink:0;align-self:flex-start;margin-top:19px;box-shadow:var(--shadow-btn);transition:all .15s}.bsave:hover{opacity:.85;transform:translateY(-1px)}
 .main{padding:20px 24px 60px;max-width:1400px;margin:0 auto}
 .tab-content{display:none}.tab-content.active{display:block}
-.cbadge{font-family:var(--mono);font-size:10px;color:var(--green);padding:3px 8px;background:rgba(34,212,126,.1);border:1px solid rgba(34,212,126,.25);border-radius:4px;display:none}
-.cbadge.show{display:flex;align-items:center;gap:4px}
 .version{font-family:var(--mono);font-size:10px;color:var(--text3);opacity:.5}
 </style>
 </head>
 <body>
 
-<!-- Topbar -->
+<!-- Верхняя панель -->
 <div class="topbar">
   <div class="brand">
     <span class="bdot"></span>
-    Payroll Review
+    Зарплатный обзор
     <span class="version" id="appVersion"></span>
   </div>
   <div class="topbar-r">
     <div class="mode-toggle" id="modeToggle" onclick="toggleMockMode()">
-      <span id="modeLabel">MOCK</span>
+      <span id="modeLabel">МОК</span>
     </div>
     <div class="tabs">
-      <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Review</button>
+      <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Обзор</button>
     </div>
     <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot" id="gd"></span></button>
   </div>
 </div>
 
-<!-- Settings panel -->
+<!-- Панель настроек -->
 <div class="spanel" id="sp">
   <div class="si">
     <div class="sf">
-      <label>Bitrix24 Webhook URL</label>
+      <label>URL вебхука Bitrix24</label>
       <input type="text" id="hi" placeholder="https://1c-cms.bitrix24.ru/rest/116/...">
     </div>
     <button class="bsave" onclick="saveH()">Сохранить</button>
   </div>
   <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text3)">
-    Хук зашит по умолчанию. Нажмите MOCK/LIVE для переключения режима данных.
-    В режиме MOCK — тестовые данные, в LIVE — реальные из Bitrix24.
+    Вебхук зашит по умолчанию. Нажмите МОК/ЖИВОЙ для переключения режима данных.
+    В режиме МОК — тестовые данные, в ЖИВОЙ — реальные из Bitrix24.
   </div>
 </div>
 
-<!-- Main content -->
+<!-- Основное содержимое -->
 <div class="main">
   <div class="tab-content active" id="tab0">
     <div id="pr-container"></div>
   </div>
 </div>
 
-<!-- Scripts -->
+<!-- Скрипты -->
 <script src="js/core.js"></script>
 <script src="js/mock-data.js"></script>
 <script src="js/payroll-review-calc.js"></script>
@@ -98,7 +96,6 @@ body>*{position:relative;z-index:1}
 
 <script>
 function switchTab(t) {
-  /* Single tab for now — just re-render */
   if (window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));
   }
@@ -123,10 +120,10 @@ function updateModeUI() {
   var label = document.getElementById('modeLabel');
   if (PR_MOCK_MODE) {
     toggle.className = 'mode-toggle mock';
-    label.textContent = 'MOCK';
+    label.textContent = 'МОК';
   } else {
     toggle.className = 'mode-toggle live';
-    label.textContent = 'LIVE';
+    label.textContent = 'ЖИВОЙ';
   }
 }
 
@@ -146,24 +143,19 @@ function saveH() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  /* Show version */
   var vEl = document.getElementById('appVersion');
   if (vEl && typeof APP_VERSION !== 'undefined') vEl.textContent = APP_VERSION;
 
-  /* Init hook input */
   if (HOOK) {
     document.getElementById('hi').value = HOOK;
   }
 
-  /* Init mode UI */
   updateModeUI();
 
-  /* Render main tab */
   if (window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));
   }
 
-  /* Close settings on outside click */
   document.addEventListener('click', function(e) {
     var sp = document.getElementById('sp');
     var gear = document.getElementById('gear');

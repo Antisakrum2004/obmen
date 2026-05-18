@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   payroll-review-styles.js — CSS Styles for Payroll Review Tab
-   Каждая строка заканчивается \ (CSS-as-JS-string pattern)
+   payroll-review-styles.js — Стили для вкладки зарплатного обзора
+   CSS-как-JS-строка с \ на конце каждой строки
    ═══════════════════════════════════════════════════════════════ */
 
 var PR_CSS = '\
@@ -43,17 +43,16 @@ var PR_CSS = '\
 .pr-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2)}\
 .pr-table-wrap::-webkit-scrollbar{height:5px}\
 .pr-table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}\
-.pr-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:900px}\
-.pr-table th{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;text-align:left;border-bottom:1px solid var(--glass-border);background:rgba(18,21,31,.5);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}\
+.pr-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:1100px}\
+.pr-table th{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:10px 8px;text-align:left;border-bottom:1px solid var(--glass-border);background:rgba(18,21,31,.5);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}\
 .pr-table th:hover{color:var(--text2)}\
-.pr-table th.sorted{color:var(--cyan)}\
 .pr-table th.c-num{text-align:right}\
-.pr-table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;white-space:nowrap}\
+.pr-table td{padding:8px 8px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;white-space:nowrap}\
 .pr-table tbody tr{transition:background .15s}\
 .pr-table tbody tr:hover{background:var(--bg-hover)}\
 .pr-table tbody tr.row-approved{opacity:.7}\
 .pr-table tbody tr.row-excluded{opacity:.35;text-decoration:line-through}\
-.pr-table tfoot td{background:rgba(18,21,31,.35);font-weight:700;padding:10px 12px;border-bottom:none;font-family:var(--mono);font-size:11px}\
+.pr-table tfoot td{background:rgba(18,21,31,.35);font-weight:700;padding:10px 8px;border-bottom:none;font-family:var(--mono);font-size:11px}\
 .pr-task-link{color:var(--accent);text-decoration:none;font-weight:500;cursor:pointer}\
 .pr-task-link:hover{text-decoration:underline}\
 .pr-dev-name{font-weight:600;display:flex;align-items:center;gap:6px}\
@@ -72,26 +71,25 @@ var PR_CSS = '\
 .pr-proj-tag{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;background:rgba(79,139,255,.08);color:var(--accent);border:1px solid rgba(79,139,255,.15);white-space:nowrap}\
 .pr-section-title{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px}\
 .pr-section-title::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}\
-.pr-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}\
+.pr-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}\
 .pr-proj-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-card),var(--highlight)}\
 .pr-proj-dev{display:flex;align-items:center;gap:12px;margin-bottom:10px}\
 .pr-proj-dev-info{flex:1;display:flex;flex-direction:column;gap:2px}\
 .pr-proj-dev-name{font-weight:600;font-size:13px}\
 .pr-proj-dev-meta{font-family:var(--mono);font-size:9px;color:var(--text3)}\
-.pr-proj-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}\
-@media(max-width:600px){.pr-proj-stats{grid-template-columns:repeat(2,1fr)}}\
-.pr-proj-stat{text-align:center;padding:4px}\
-.pr-proj-stat-val{font-family:var(--mono);font-size:16px;font-weight:700}\
-.pr-proj-stat-lbl{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}\
+.pr-proj-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}\
+@media(max-width:600px){.pr-proj-stats{grid-template-columns:repeat(3,1fr)}}\
+.pr-proj-stat{text-align:center;padding:3px}\
+.pr-proj-stat-val{font-family:var(--mono);font-size:13px;font-weight:700}\
+.pr-proj-stat-lbl{font-family:var(--mono);font-size:7px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}\
 .pr-proj-bar{height:4px;background:var(--bg);border-radius:2px;margin-top:10px;overflow:hidden}\
 .pr-proj-bar-fill{height:100%;border-radius:2px;transition:width .3s}\
-.pr-comment-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:4px 8px;outline:none;width:140px;transition:border-color .15s}\
+.pr-comment-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:4px 8px;outline:none;width:120px;transition:border-color .15s}\
 .pr-comment-input:focus{border-color:var(--accent)}\
 .pr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}\
 .pr-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}\
 .pr-ring{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:prspin .7s linear infinite}\
 @keyframes prspin{to{transform:rotate(360deg)}}\
-.pr-hint{font-family:var(--mono);font-size:9px;color:var(--text3);opacity:.6}\
 .pr-save-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:8px;margin-top:4px}\
 .pr-save-indicator{width:8px;height:8px;border-radius:50%;transition:background .3s}\
 .pr-save-indicator.saved{background:var(--green);box-shadow:0 0 6px var(--green)}\
@@ -100,4 +98,17 @@ var PR_CSS = '\
 .pr-debug{margin-top:16px;padding:12px 16px;background:rgba(0,0,0,.3);border:1px solid rgba(245,166,35,.15);border-radius:8px;font-family:var(--mono);font-size:10px;color:var(--text3)}\
 .pr-debug-title{color:var(--yellow);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}\
 .pr-debug-row{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}\
+.pr-modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px}\
+.pr-modal{background:var(--bg1);border:1px solid var(--border2);border-radius:var(--radius);width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}\
+.pr-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}\
+.pr-modal-title{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.06em}\
+.pr-modal-close{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px 8px;transition:color .15s}\
+.pr-modal-close:hover{color:var(--text)}\
+.pr-modal-body{padding:20px;overflow-y:auto;flex:1}\
+.pr-modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--border)}\
+.pr-admin-table{width:100%;border-collapse:collapse}\
+.pr-admin-table th{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:8px 6px;text-align:left;border-bottom:1px solid var(--border);background:rgba(18,21,31,.5)}\
+.pr-admin-table td{padding:6px;border-bottom:1px solid var(--border)}\
+.pr-admin-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;outline:none;width:100%;transition:border-color .15s}\
+.pr-admin-input:focus{border-color:var(--accent)}\
 ';

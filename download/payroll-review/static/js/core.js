@@ -1,18 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════
-   core.js — Payroll Review Prototype
+   core.js — Зарплатный обзор (Payroll Review)
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'PR-0.2.0';
+var APP_VERSION = 'ПР-0.3.0';
 
-/* ─── Constants ─── */
+/* ─── Константы ─── */
 var PH = 7;
 var CL = ['#4f8bff','#22d47e','#f5a623','#7c5cfc','#ff4f6a','#00d4ff','#ff8c42','#a8ff78'];
-var MONTHS_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
-var MONTHS_FULL = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-var DAYS_RU = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+var МЕСЯЦЫ_КР = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+var МЕСЯЦЫ_ПОЛН = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+var ДНИ_НЕД = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+/* Оставляем английские алиасы для обратной совместимости */
+var MONTHS_RU = МЕСЯЦЫ_КР;
+var MONTHS_FULL = МЕСЯЦЫ_ПОЛН;
+var DAYS_RU = ДНИ_НЕД;
 
-/* ─── Developers (реальные из 1С-АйтиЛаб Bitrix24) ─── */
+/* ─── Разработчики (реальные из 1С-АйтиЛаб Bitrix24) ─── */
 var DEVELOPERS = {
   '1':   'Владимир Макаров',
   '18':  'Константин Приходько',
@@ -28,22 +32,55 @@ var DEVELOPERS = {
 };
 var DEV_IDS = Object.keys(DEVELOPERS).map(Number);
 
-/* ─── Rates (MVP: временный конфиг, потом из справочника) ─── */
+/* ─── Ставка по умолчанию (1000 р/час) ─── */
+var СТАВКА_ПО_УМОЛЧ = 1000;
+
+/* ─── Ставки (MVP: временный конфиг, можно менять в таблице) ─── */
 var DEV_RATES = {
-  '1':   800,
+  '1':   1000,
   '18':  1000,
-  '38':  1300,
-  '54':  900,
-  '80':  1100,
-  '82':  1100,
-  '92':  850,
-  '94':  750,
-  '96':  800,
-  '98':  800,
-  '116': 750
+  '38':  1000,
+  '54':  1000,
+  '80':  1000,
+  '82':  1000,
+  '92':  1000,
+  '94':  1000,
+  '96':  1000,
+  '98':  1000,
+  '116': 1000
 };
 
-/* ─── Projects (из GROUP_ID Bitrix24) ─── */
+/* ─── Базовая часть (оклад/премия) — можно менять в админке ─── */
+var DEV_BASE = {
+  '1':   0,
+  '18':  0,
+  '38':  0,
+  '54':  0,
+  '80':  0,
+  '82':  0,
+  '92':  0,
+  '94':  0,
+  '96':  0,
+  '98':  0,
+  '116': 0
+};
+
+/* ─── ИНН разработчиков ─── */
+var DEV_INN = {
+  '1':   '',
+  '18':  '',
+  '38':  '',
+  '54':  '',
+  '80':  '',
+  '82':  '',
+  '92':  '',
+  '94':  '',
+  '96':  '',
+  '98':  '',
+  '116': ''
+};
+
+/* ─── Проекты (из GROUP_ID Bitrix24) ─── */
 var PROJECTS = {
   '2':  'Обучение 1с',
   '4':  'Живое пиво',
@@ -85,7 +122,33 @@ var PROJECTS = {
   '82': 'ЮРИСТЫ БИГАП'
 };
 
-/* ─── Excluded projects (служебные группы) ─── */
+/* ─── STAGE_MAP — проекты, у которых есть пайплайны стадий ─── */
+var STAGE_MAP = {
+  '2':  {name:'Обучение 1с', stages:['Новые','Работа','Контроль','Готово']},
+  '4':  {name:'Живое пиво', stages:['Новые','Работа','Контроль','Готово']},
+  '6':  {name:'Бигап', stages:['Новые','Работа','Контроль','Готово']},
+  '20': {name:'ВДЛ', stages:['Новые','Работа','Контроль','Готово']},
+  '22': {name:'Тацинка', stages:['Новые','Работа','Контроль','Готово']},
+  '24': {name:'Обучение 1с скрам', stages:['Новые','Работа','Контроль','Готово']},
+  '32': {name:'Дакар', stages:['Новые','Работа','Контроль','Готово']},
+  '36': {name:'Медицина КЗ', stages:['Новые','Работа','Контроль','Готово']},
+  '42': {name:'ИТ Контроль', stages:['Новые','Работа','Контроль','Готово']},
+  '48': {name:'[APP GBL] Просроченные', stages:['Новые','Работа','Контроль','Готово']},
+  '50': {name:'ИП Белолапотко', stages:['Новые','Работа','Контроль','Готово']},
+  '52': {name:'ООО ОПТИМАПЛАСТ', stages:['Новые','Работа','Контроль','Готово']},
+  '60': {name:'Кондитеры', stages:['Новые','Работа','Контроль','Готово']},
+  '62': {name:'Нейс-Юг', stages:['Новые','Работа','Контроль','Готово']},
+  '64': {name:'Завод Милл ФАУЗ', stages:['Новые','Работа','Контроль','Готово']},
+  '66': {name:'ИП Иванов', stages:['Новые','Работа','Контроль','Готово']},
+  '70': {name:'МАРКДЖЕТ ООО', stages:['Новые','Работа','Контроль','Готово']},
+  '72': {name:'Керамика Фабрика', stages:['Новые','Работа','Контроль','Готово']},
+  '74': {name:'Керамика', stages:['Новые','Работа','Контроль','Готово']},
+  '76': {name:'1с Разработка Валерий Вишневский', stages:['Новые','Работа','Контроль','Готово']},
+  '82': {name:'ЮРИСТЫ БИГАП', stages:['Новые','Работа','Контроль','Готово']}
+};
+/* ⚠️ Проекты БЕЗ STAGE_MAP (нет пайплайнов): 8,10,12,14,16,26,30,34,38,40,44,54,58,68 */
+
+/* ─── Исключённые проекты (служебные группы) ─── */
 var EXCLUDE_GROUPS = {
   '2':1,  /* Обучение 1с */
   '22':1, /* Тацинка */
@@ -97,20 +160,20 @@ var EXCLUDE_GROUPS = {
   '80':1  /* Все проекты */
 };
 
-/* ─── Hook (зашит прямо в код) ─── */
+/* ─── Вебхук (зашит прямо в код) ─── */
 var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
 try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
-/* ─── Mock mode ───
+/* ─── Режим мок ───
    PR_FORCE_MOCK = true  → всегда мок (тест без API)
    PR_FORCE_MOCK = false → живые данные через Bitrix24 API
-   Переключатель есть в UI: кнопка MOCK/LIVE в топбаре
+   Переключатель в UI: кнопка МОК/ЖИВОЙ в топбаре
 */
 var PR_FORCE_MOCK = true;
 var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
 
-/* ─── Utilities ─── */
+/* ─── Утилиты ─── */
 function fmt(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
@@ -146,7 +209,28 @@ function parseBitrixDate(s) {
 }
 
 function prGetRate(developerId) {
-  return DEV_RATES[String(developerId)] || 0;
+  /* Сначала из сохранённых настроек, потом из конфига */
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.rate) return saved.rate;
+  return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
+}
+
+function prGetBase(developerId) {
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.base) return saved.base;
+  return DEV_BASE[String(developerId)] || 0;
+}
+
+function prGetInn(developerId) {
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.inn) return saved.inn;
+  return DEV_INN[String(developerId)] || '';
+}
+
+function prGetDevName(developerId) {
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.name) return saved.name;
+  return DEVELOPERS[String(developerId)] || ('ID ' + developerId);
 }
 
 /* ─── API ─── */
@@ -160,7 +244,7 @@ function bxPost(method, body) {
     body: JSON.stringify(body)
   }).then(function(r) { return r.json(); })
     .then(function(d) { if (d.error) { console.error('BX', method, d.error); return d; } return d; })
-    .catch(function(e) { console.error('NET', method, e); return {error: e.message}; });
+    .catch(function(e) { console.error('СЕТЬ', method, e); return {error: e.message}; });
 }
 
 function bxPostAsDev(method, body, devId) {
@@ -175,7 +259,7 @@ function bxPostAsDev(method, body, devId) {
     body: JSON.stringify(body)
   }).then(function(r) { return r.json(); })
     .then(function(d) { if (d.error) { console.error('BX-asDev', method, 'devId=' + devId, d.error); return d; } return d; })
-    .catch(function(e) { console.error('NET-asDev', method, e); return {error: e.message}; });
+    .catch(function(e) { console.error('СЕТЬ-asDev', method, e); return {error: e.message}; });
 }
 
 function fetchTasksPaginated(body, maxPages) {
@@ -183,7 +267,7 @@ function fetchTasksPaginated(body, maxPages) {
   function step() {
     pages++;
     if (pages > maxP) {
-      console.warn('fetchTasksPaginated: limit ' + maxP + ' pages reached, ' + all.length + ' tasks');
+      console.warn('fetchTasksPaginated: лимит ' + maxP + ' страниц, ' + all.length + ' задач');
       return all;
     }
     return bxPost('tasks.task.list', Object.assign({start: start}, body)).then(function(r) {
@@ -196,7 +280,7 @@ function fetchTasksPaginated(body, maxPages) {
   return step();
 }
 
-/* ─── Period helpers ─── */
+/* ─── Помощники периода ─── */
 function prGetCurrentMonth() {
   var n = new Date();
   return { year: n.getFullYear(), month: n.getMonth() + 1 };
@@ -212,6 +296,6 @@ function prGetPeriodKey(year, month) {
   return year + '-' + String(month).padStart(2, '0');
 }
 
-/* ─── Global state ─── */
+/* ─── Глобальное состояние ─── */
 var allData = null;
 var prCurrentPeriod = prGetCurrentMonth();

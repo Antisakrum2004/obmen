@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   tab-payroll-review.js — Main Module
-   Task Review + Manager Adjustment + Payroll Projection + CSV Export
+   tab-payroll-review.js — Главный модуль
+   Обзор задач + Корректировки менеджера + Прогноз выплат + Экспорт CSV
    ═══════════════════════════════════════════════════════════════ */
 
 var _pr = {
@@ -16,10 +16,10 @@ var _pr = {
   sortField: 'developerName',
   sortDir: 1,
   filters: {developer: '', project: '', status: ''},
-  activeSection: 'review' /* review | projection */
+  modalOpen: false
 };
 
-/* Destroy helper */
+/* Уничтожение */
 function _prDestroy() {
   _pr.intervals.forEach(function(id) { clearInterval(id); });
   _pr.intervals = [];
@@ -36,7 +36,7 @@ function _prDestroy() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   MODULE REGISTRATION
+   РЕГИСТРАЦИЯ МОДУЛЯ
    ═══════════════════════════════════════════════════════════════ */
 window.TabPayrollReview = {
   render: function(container) {
@@ -44,21 +44,14 @@ window.TabPayrollReview = {
     _prDestroy();
     _pr.container = container;
 
-    /* Inject CSS */
     _pr.styleEl = document.createElement('style');
     _pr.styleEl.textContent = PR_CSS;
     document.head.appendChild(_pr.styleEl);
 
-    /* Load saved filters */
     _pr.filters = prLoadFilters();
-
-    /* Render initial state */
     _prRenderLoading();
-
-    /* Load data */
     _prLoadData();
 
-    /* Auto-refresh interval (5 min) */
     _pr.intervals.push(setInterval(function() {
       if (!_pr.loading) _prLoadData();
     }, 300000));
@@ -74,7 +67,7 @@ window.TabPayrollReview = {
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   DATA LOADING
+   ЗАГРУЗКА ДАННЫХ
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadData() {
   _pr.loading = true;
@@ -93,18 +86,18 @@ function _prLoadData() {
     _pr.loading = false;
     _prRenderAll();
   }).catch(function(e) {
-    console.error('prLoadData error', e);
+    console.error('Ошибка загрузки', e);
     _pr.loading = false;
     _prRenderError(e.message || 'Ошибка загрузки');
   });
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   RENDERING
+   РЕНДЕРИНГ
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderLoading() {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div>Загрузка данных за ' + esc(MONTHS_FULL[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
+  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div>Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
 }
 
 function _prRenderError(msg) {
@@ -122,63 +115,65 @@ function _prRenderAll() {
   h += _prRenderProjection();
   h += _prRenderSaveBar();
   h += _prRenderDebug();
+  h += _prRenderAdminModal();
   _pr.container.innerHTML = h;
-  _prAttachEvents();
 }
 
-/* ─── Header ─── */
+/* ─── Шапка ─── */
 function _prRenderHeader() {
-  var periodStr = MONTHS_FULL[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year;
   var modeBadge = PR_MOCK_MODE
-    ? '<span class="pr-badge pr-badge-mock">MOCK</span>'
-    : '<span class="pr-badge pr-badge-live">LIVE</span>';
+    ? '<span class="pr-badge pr-badge-mock">МОК</span>'
+    : '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
 
   var devCount = Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
 
   var h = '<div class="pr-header">';
-  h += '<div class="pr-title">Payroll Review ' + modeBadge + '</div>';
+  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + '</div>';
   h += '<div class="pr-header-info">';
   h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
   h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
   h += '</div>';
   h += '<div class="pr-controls">';
 
-  /* Period selector */
+  /* Выбор периода */
   h += '<select class="pr-select" id="prPeriodSelect" onchange="_prOnPeriodChange()">';
   var now = new Date();
   for (var i = 0; i < 6; i++) {
     var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var y = d.getFullYear(), m = d.getMonth() + 1;
     var sel = (y === prCurrentPeriod.year && m === prCurrentPeriod.month) ? ' selected' : '';
-    h += '<option value="' + y + '-' + m + '"' + sel + '>' + MONTHS_FULL[m - 1] + ' ' + y + '</option>';
+    h += '<option value="' + y + '-' + m + '"' + sel + '>' + МЕСЯЦЫ_ПОЛН[m - 1] + ' ' + y + '</option>';
   }
   h += '</select>';
 
-  /* Refresh */
+  /* Обновить */
   h += '<button class="pr-btn pr-btn-ghost" onclick="window.TabPayrollReview.refresh()" title="Обновить данные">&#8635;</button>';
 
-  /* Export */
+  /* Админка */
+  h += '<button class="pr-btn pr-btn-orange" onclick="_prOpenAdmin()">&#9881; Админка</button>';
+
+  /* Экспорт */
   h += '<button class="pr-btn pr-btn-green" onclick="_prExport()">&#11015; CSV</button>';
 
-  /* Approve All */
+  /* Подтвердить все */
   h += '<button class="pr-btn pr-btn-primary" onclick="_prApproveAll()">&#10003; Подтвердить все</button>';
 
   h += '</div></div>';
   return h;
 }
 
-/* ─── KPI Cards ─── */
+/* ─── KPI Карточки ─── */
 function _prRenderKPIs() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
   var marginVal = Math.round((t.totalBillable - t.totalPayroll) * 1000) / 10;
   var h = '<div class="pr-kpi-grid">';
   h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Billable', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
-  h += _prKpiCard('Payroll часы', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
-  h += _prKpiCard('Сумма выплаты', _prFmtMoney(t.totalPayrollAmount), 'var(--cyan)', t.disputedTasks + ' споров');
-  h += _prKpiCard('Маржа (B-P)', _prFmtMoney(Math.round(marginVal * 100)), 'var(--orange)', 'Billable - Payroll');
+  h += _prKpiCard('Оплачиваемые', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
+  h += _prKpiCard('К выплате часы', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
+  h += _prKpiCard('Базовая часть', _prFmtMoney(t.totalBase), 'var(--cyan)', 'оклад/премия');
+  h += _prKpiCard('Сумма выплаты', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.disputedTasks + ' споров');
   h += '</div>';
   return h;
 }
@@ -192,12 +187,11 @@ function _prKpiCard(label, value, color, sub) {
   return h;
 }
 
-/* ─── Filters ─── */
+/* ─── Фильтры ─── */
 function _prRenderFilters() {
   var f = _pr.filters;
   var h = '<div class="pr-filters">';
 
-  /* Developer filter */
   h += '<select class="pr-select" id="prFilterDev" onchange="_prOnFilterChange()">';
   h += '<option value="">Все разработчики</option>';
   var devSet = {};
@@ -208,7 +202,6 @@ function _prRenderFilters() {
   });
   h += '</select>';
 
-  /* Project filter */
   h += '<select class="pr-select" id="prFilterProj" onchange="_prOnFilterChange()">';
   h += '<option value="">Все проекты</option>';
   var projSet = {};
@@ -219,7 +212,6 @@ function _prRenderFilters() {
   });
   h += '</select>';
 
-  /* Status chips */
   var statuses = [
     {key: 'pending', label: 'Ожидает', cls: ''},
     {key: 'approved', label: 'Подтв.', cls: 'chip-green'},
@@ -236,20 +228,21 @@ function _prRenderFilters() {
   return h;
 }
 
-/* ─── Main Table ─── */
+/* ─── Основная таблица ─── */
 function _prRenderTable() {
   var filtered = _prGetFilteredRows();
   if (!filtered.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет задач за выбранный период</div></div>';
 
   var h = '<div class="pr-table-wrap"><table class="pr-table"><thead><tr>';
-  h += '<th onclick="_prSort(\'taskTitle\')">Задача ' + _prSortIndicator('taskTitle') + '</th>';
-  h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortIndicator('projectName') + '</th>';
-  h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortIndicator('developerName') + '</th>';
-  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт ' + _prSortIndicator('factHours') + '</th>';
-  h += '<th class="c-num">Billable</th>';
-  h += '<th class="c-num">Payroll</th>';
-  h += '<th class="c-num" onclick="_prSort(\'rate\')">Ставка ' + _prSortIndicator('rate') + '</th>';
-  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма ' + _prSortIndicator('payrollAmount') + '</th>';
+  h += '<th onclick="_prSort(\'taskTitle\')">Задача ' + _prSortInd('taskTitle') + '</th>';
+  h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortInd('projectName') + '</th>';
+  h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortInd('developerName') + '</th>';
+  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт ' + _prSortInd('factHours') + '</th>';
+  h += '<th class="c-num">Оплачиваемые</th>';
+  h += '<th class="c-num">К выплате</th>';
+  h += '<th class="c-num">Ставка</th>';
+  h += '<th class="c-num">Базовая</th>';
+  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма ' + _prSortInd('payrollAmount') + '</th>';
   h += '<th>Статус</th>';
   h += '<th>Коммент</th>';
   h += '</tr></thead><tbody>';
@@ -259,38 +252,38 @@ function _prRenderTable() {
     rowCls += r.reviewStatus === 'excluded' ? ' row-excluded' : '';
 
     h += '<tr class="' + rowCls.trim() + '">';
+    h += '<td><span class="pr-task-link" title="' + esc(r.taskTitle) + '">' + esc(truncate(r.taskTitle, 35)) + '</span></td>';
+    h += '<td><span class="pr-proj-tag">' + esc(truncate(r.projectName, 18)) + '</span></td>';
 
-    /* Task */
-    h += '<td><span class="pr-task-link" title="' + esc(r.taskTitle) + '">' + esc(truncate(r.taskTitle, 40)) + '</span></td>';
-
-    /* Project */
-    h += '<td><span class="pr-proj-tag">' + esc(truncate(r.projectName, 20)) + '</span></td>';
-
-    /* Developer */
     var firstName = getFirstName(r.developerName);
     h += '<td><span class="pr-dev-name"><span class="pr-dev-av">' + esc(firstName.charAt(0)) + '</span>' + esc(firstName) + '</span></td>';
 
-    /* Fact Hours (readonly) */
+    /* Факт (только чтение) */
     h += '<td class="c-num"><span class="pr-readonly">' + r.factHours.toFixed(1) + '</span></td>';
 
-    /* Billable Hours (editable) */
+    /* Оплачиваемые (Billable) — редактируемое */
     var billChanged = r.billableHours !== r.factHours;
     h += '<td class="c-num"><input class="pr-editable' + (billChanged ? ' changed' : '') + '" type="number" step="0.5" min="0" value="' + r.billableHours.toFixed(1) + '" data-idx="' + idx + '" data-field="billableHours" onchange="_prOnEdit(this)"></td>';
 
-    /* Payroll Hours (editable) */
+    /* К выплате (Payroll) — редактируемое */
     var payChanged = r.payrollHours !== r.factHours;
     h += '<td class="c-num"><input class="pr-editable' + (payChanged ? ' changed' : '') + '" type="number" step="0.5" min="0" value="' + r.payrollHours.toFixed(1) + '" data-idx="' + idx + '" data-field="payrollHours" onchange="_prOnEdit(this)"></td>';
 
-    /* Rate */
-    h += '<td class="c-num"><span class="pr-readonly">' + _prFmtMoney(r.rate) + '</span></td>';
+    /* Ставка — редактируемая прямо в таблице */
+    var rateChanged = r.rate !== СТАВКА_ПО_УМОЛЧ;
+    h += '<td class="c-num"><input class="pr-editable' + (rateChanged ? ' changed' : '') + '" type="number" step="100" min="0" value="' + r.rate + '" data-idx="' + idx + '" data-field="rate" onchange="_prOnEdit(this)" style="width:70px"></td>';
 
-    /* Amount */
+    /* Базовая (оклад/премия) — редактируемая */
+    var baseChanged = r.base !== 0;
+    h += '<td class="c-num"><input class="pr-editable' + (baseChanged ? ' changed' : '') + '" type="number" step="1000" min="0" value="' + r.base + '" data-idx="' + idx + '" data-field="base" onchange="_prOnEdit(this)" style="width:80px" placeholder="0"></td>';
+
+    /* Сумма */
     h += '<td class="c-num"><span class="pr-readonly pr-amount">' + _prFmtMoney(r.payrollAmount) + '</span></td>';
 
-    /* Status */
+    /* Статус */
     h += '<td><span class="pr-status pr-status-' + r.reviewStatus + '" data-idx="' + idx + '" onclick="_prCycleStatus(' + idx + ')">' + _prStatusLabel(r.reviewStatus) + '</span></td>';
 
-    /* Comment */
+    /* Комментарий */
     h += '<td><input class="pr-comment-input" type="text" value="' + esc(r.managerComment) + '" data-idx="' + idx + '" data-field="managerComment" onchange="_prOnEdit(this)" placeholder="..."></td>';
 
     h += '</tr>';
@@ -302,6 +295,7 @@ function _prRenderTable() {
   h += '<td class="c-num">' + _prSumField(filtered, 'billableHours').toFixed(1) + '</td>';
   h += '<td class="c-num">' + _prSumField(filtered, 'payrollHours').toFixed(1) + '</td>';
   h += '<td></td>';
+  h += '<td class="c-num">' + _prFmtMoney(_prSumField(filtered, 'base')) + '</td>';
   h += '<td class="c-num">' + _prFmtMoney(_prSumField(filtered, 'payrollAmount')) + '</td>';
   h += '<td colspan="2"></td>';
   h += '</tr></tfoot></table></div>';
@@ -309,7 +303,7 @@ function _prRenderTable() {
   return h;
 }
 
-/* ─── Projection Section ─── */
+/* ─── Прогноз выплат ─── */
 function _prRenderProjection() {
   if (!_pr.projection.length) return '';
   var h = '<div class="pr-projection">';
@@ -331,19 +325,18 @@ function _prRenderProjection() {
 
     h += '<div class="pr-proj-stats">';
     h += _prProjStat(d.totalFactHours.toFixed(1), 'Факт', 'var(--accent)');
-    h += _prProjStat(d.totalBillable.toFixed(1), 'Billable', 'var(--green)');
-    h += _prProjStat(d.totalPayroll.toFixed(1), 'Payroll', 'var(--yellow)');
-    h += _prProjStat(_prFmtMoney(d.totalAmount), 'Сумма', 'var(--cyan)');
+    h += _prProjStat(d.totalBillable.toFixed(1), 'Опл.', 'var(--green)');
+    h += _prProjStat(d.totalPayroll.toFixed(1), 'Выпл.', 'var(--yellow)');
+    h += _prProjStat(_prFmtMoney(d.totalBase), 'Базовая', 'var(--cyan)');
+    h += _prProjStat(_prFmtMoney(d.totalAmount), 'Сумма', 'var(--orange)');
     h += '</div>';
 
-    /* Mini bar: Payroll / Fact ratio */
     h += '<div class="pr-proj-bar">';
     h += '<div class="pr-proj-bar-fill" style="width:' + Math.min(pctPayroll, 100) + '%;background:' + barColor + '"></div>';
     h += '</div>';
     h += '</div>';
   });
   h += '</div>';
-
   h += '</div>';
   return h;
 }
@@ -352,7 +345,7 @@ function _prProjStat(val, lbl, color) {
   return '<div class="pr-proj-stat"><div class="pr-proj-stat-val" style="color:' + (color || 'var(--text)') + '">' + val + '</div><div class="pr-proj-stat-lbl">' + lbl + '</div></div>';
 }
 
-/* ─── Save Bar ─── */
+/* ─── Панель сохранения ─── */
 function _prRenderSaveBar() {
   var indCls = _pr.dirty ? 'dirty' : 'saved';
   var indTxt = _pr.dirty ? 'Есть несохранённые изменения' : 'Все изменения сохранены';
@@ -366,33 +359,74 @@ function _prRenderSaveBar() {
   return h;
 }
 
-/* ─── Debug info (only in MOCK mode) ─── */
+/* ─── Отладка (только в режиме МОК) ─── */
 function _prRenderDebug() {
   if (!PR_MOCK_MODE) return '';
   var h = '<div class="pr-debug">';
-  h += '<div class="pr-debug-title">DEBUG (MOCK)</div>';
+  h += '<div class="pr-debug-title">ОТЛАДКА (МОК)</div>';
   h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
-  h += '<div class="pr-debug-row">TaskReview строк: ' + _pr.rows.length + '</div>';
+  h += '<div class="pr-debug-row">Строк обзора: ' + _pr.rows.length + '</div>';
   h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
   h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
-  h += '<div class="pr-debug-row">Webhook: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
-  h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'MOCK' : 'LIVE') + '</div>';
+  h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
+  h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + '</div>';
   h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
+  h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
   if (_pr.data && _pr.data.elapsed && _pr.data.elapsed.length > 0) {
     var sample = _pr.data.elapsed[0];
-    h += '<div class="pr-debug-row">Пример elapsed: ID=' + sample.ID + ' TASK=' + sample.TASK_ID + ' SEC=' + sample.SECONDS + '</div>';
+    h += '<div class="pr-debug-row">Пример elapsed: ID=' + sample.ID + ' ЗАД=' + sample.TASK_ID + ' СЕК=' + sample.SECONDS + '</div>';
   }
   h += '</div>';
   return h;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   EVENT HANDLERS
-   ═══════════════════════════════════════════════════════════════ */
-function _prAttachEvents() {
-  /* Events are attached inline via onclick/onchange attributes */
+/* ─── Модалка «Админка» — редактирование данных разработчиков ─── */
+function _prRenderAdminModal() {
+  if (!_pr.modalOpen) return '';
+  var h = '<div class="pr-modal-overlay" onclick="_prCloseAdmin(event)">';
+  h += '<div class="pr-modal" onclick="event.stopPropagation()">';
+
+  h += '<div class="pr-modal-header">';
+  h += '<span class="pr-modal-title">&#9881; Админка — Данные разработчиков</span>';
+  h += '<button class="pr-modal-close" onclick="_prCloseAdmin()">&times;</button>';
+  h += '</div>';
+
+  h += '<div class="pr-modal-body">';
+  h += '<table class="pr-admin-table"><thead><tr>';
+  h += '<th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка (р/ч)</th><th>Базовая (р)</th>';
+  h += '</tr></thead><tbody>';
+
+  DEV_IDS.forEach(function(id) {
+    var sid = String(id);
+    var name = prGetDevName(sid);
+    var inn = prGetInn(sid);
+    var rate = prGetRate(sid);
+    var base = prGetBase(sid);
+
+    h += '<tr>';
+    h += '<td class="c-num">' + id + '</td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:80px"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:100px"></td>';
+    h += '</tr>';
+  });
+
+  h += '</tbody></table>';
+  h += '</div>';
+
+  h += '<div class="pr-modal-footer">';
+  h += '<button class="pr-btn pr-btn-ghost" onclick="_prCloseAdmin()">Отмена</button>';
+  h += '<button class="pr-btn pr-btn-primary" onclick="_prSaveAdmin()">Сохранить всё</button>';
+  h += '</div>';
+
+  h += '</div></div>';
+  return h;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ОБРАБОТЧИКИ СОБЫТИЙ
+   ═══════════════════════════════════════════════════════════════ */
 function _prOnPeriodChange() {
   var sel = document.getElementById('prPeriodSelect');
   if (!sel) return;
@@ -435,22 +469,39 @@ function _prOnEdit(input) {
     val = parseFloat(val);
     if (isNaN(val) || val < 0) val = 0;
     val = Math.round(val * 10) / 10;
+  } else if (field === 'rate' || field === 'base') {
+    val = parseFloat(val);
+    if (isNaN(val) || val < 0) val = 0;
+    val = Math.round(val);
   }
 
   _pr.rows[realIdx][field] = val;
 
-  /* Recalculate payrollAmount */
-  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate);
+  /* Сохранить ставку/базовую в настройки разработчика */
+  if (field === 'rate' || field === 'base') {
+    var devId = _pr.rows[realIdx].developerId;
+    var settings = prLoadDevSettings(devId) || {};
+    settings.rate = prGetRate(devId);
+    settings.base = prGetBase(devId);
+    /* Обновляем конкретное поле */
+    settings[field] = val;
+    prSaveDevSettings(devId, settings);
+    /* Обновляем все строки этого разработчика */
+    _pr.rows.forEach(function(r) {
+      if (r.developerId === devId) {
+        r[field] = val;
+        r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
+      }
+    });
+  }
+
+  /* Пересчитать сумму */
+  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate) + _pr.rows[realIdx].base;
   _pr.rows[realIdx].updatedAt = Date.now();
 
-  /* Mark dirty */
   _pr.dirty = true;
-
-  /* Recalculate projection & totals */
   _pr.projection = buildPayrollProjection(_pr.rows);
   _pr.totals = buildPeriodTotals(_pr.rows);
-
-  /* Re-render */
   _prRenderAll();
 }
 
@@ -489,7 +540,7 @@ function _prSort(field) {
   _prRenderAll();
 }
 
-function _prSortIndicator(field) {
+function _prSortInd(field) {
   if (_pr.sortField !== field) return '';
   return _pr.sortDir > 0 ? ' &#9650;' : ' &#9660;';
 }
@@ -501,6 +552,7 @@ function _prSaveAll() {
       billableHours: r.billableHours,
       payrollHours: r.payrollHours,
       rate: r.rate,
+      base: r.base,
       reviewStatus: r.reviewStatus,
       managerComment: r.managerComment,
       updatedAt: r.updatedAt
@@ -513,7 +565,7 @@ function _prSaveAll() {
 
 function _prApproveAll() {
   if (!_pr.rows.length) return;
-  if (!confirm('Подтвердить все pending задачи?')) return;
+  if (!confirm('Подтвердить все ожидающие задачи?')) return;
   _pr.rows.forEach(function(r) {
     if (r.reviewStatus === 'pending') {
       r.reviewStatus = 'approved';
@@ -528,13 +580,49 @@ function _prApproveAll() {
 
 function _prExport() {
   if (!_pr.rows.length) return;
-  /* Save before export */
   _prSaveAll();
   prExportCSV(_pr.rows, prCurrentPeriod.year, prCurrentPeriod.month);
 }
 
+/* ─── Админка ─── */
+function _prOpenAdmin() {
+  _pr.modalOpen = true;
+  _prRenderAll();
+}
+
+function _prCloseAdmin(e) {
+  if (e && e.target && !e.target.classList.contains('pr-modal-overlay')) return;
+  _pr.modalOpen = false;
+  _prRenderAll();
+}
+
+function _prSaveAdmin() {
+  var inputs = document.querySelectorAll('.pr-admin-input');
+  var devData = {};
+  inputs.forEach(function(inp) {
+    var devId = inp.getAttribute('data-devid');
+    var field = inp.getAttribute('data-field');
+    if (!devData[devId]) devData[devId] = {};
+    devData[devId][field] = inp.value;
+  });
+
+  Object.keys(devData).forEach(function(devId) {
+    var d = devData[devId];
+    var settings = prLoadDevSettings(devId) || {};
+    if (d.name) settings.name = d.name;
+    if (d.inn !== undefined) settings.inn = d.inn;
+    if (d.rate !== undefined) settings.rate = parseInt(d.rate) || СТАВКА_ПО_УМОЛЧ;
+    if (d.base !== undefined) settings.base = parseInt(d.base) || 0;
+    prSaveDevSettings(devId, settings);
+  });
+
+  _pr.modalOpen = false;
+  /* Перезагрузить данные с новыми настройками */
+  _prLoadData();
+}
+
 /* ═══════════════════════════════════════════════════════════════
-   HELPERS
+   ПОМОЩНИКИ
    ═══════════════════════════════════════════════════════════════ */
 function _prGetFilteredRows() {
   return _pr.rows.filter(function(r) {

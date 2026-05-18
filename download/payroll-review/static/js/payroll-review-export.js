@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   payroll-review-export.js — Export Layer
-   CSV generation for 1C import
+   payroll-review-export.js — Слой экспорта
+   Генерация CSV для импорта в 1С
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Build export rows from TaskReview[] ─── */
+/* ─── Построить строки экспорта из TaskReview[] ─── */
 function buildExportRows(rows, year, month) {
-  var periodStr = MONTHS_FULL[month - 1] + ' ' + year;
+  var periodStr = МЕСЯЦЫ_ПОЛН[month - 1] + ' ' + year;
   var exportRows = [];
 
-  /* Group by developer */
+  /* Группировка по разработчику */
   var byDev = {};
   rows.forEach(function(r) {
     if (r.reviewStatus === 'excluded') return;
@@ -16,9 +16,10 @@ function buildExportRows(rows, year, month) {
     if (!byDev[uid]) {
       byDev[uid] = {
         fullName: r.developerName,
-        inn: '',
+        inn: prGetInn(uid),
         totalPayrollHours: 0,
         rate: r.rate,
+        base: r.base,
         totalAmount: 0,
         taskComments: []
       };
@@ -38,6 +39,7 @@ function buildExportRows(rows, year, month) {
       period: periodStr,
       hours: Math.round(d.totalPayrollHours * 10) / 10,
       rate: d.rate,
+      base: d.base,
       amount: Math.round(d.totalAmount),
       comment: d.taskComments.join('; ')
     });
@@ -46,15 +48,13 @@ function buildExportRows(rows, year, month) {
   return exportRows;
 }
 
-/* ─── Generate CSV content ─── */
+/* ─── Генерация CSV ─── */
 function generateCSV(exportRows) {
   var sep = ';';
   var lines = [];
 
-  /* Header */
-  lines.push(['ФИО','ИНН','Период','Часы','Ставка','Сумма','Комментарий'].join(sep));
+  lines.push(['ФИО','ИНН','Период','Часы','Ставка','Базовая','Сумма','Комментарий'].join(sep));
 
-  /* Data rows */
   exportRows.forEach(function(r) {
     var row = [
       '"' + (r.fullName || '').replace(/"/g, '""') + '"',
@@ -62,6 +62,7 @@ function generateCSV(exportRows) {
       '"' + r.period + '"',
       String(r.hours).replace('.', ','),
       String(r.rate).replace('.', ','),
+      String(r.base).replace('.', ','),
       String(r.amount),
       '"' + (r.comment || '').replace(/"/g, '""') + '"'
     ];
@@ -71,9 +72,8 @@ function generateCSV(exportRows) {
   return lines.join('\n');
 }
 
-/* ─── Download CSV file ─── */
+/* ─── Скачать CSV ─── */
 function downloadCSV(csvContent, filename) {
-  /* Add BOM for Excel to recognize UTF-8 */
   var BOM = '\uFEFF';
   var blob = new Blob([BOM + csvContent], {type: 'text/csv;charset=utf-8;'});
   var url = URL.createObjectURL(blob);
@@ -86,7 +86,7 @@ function downloadCSV(csvContent, filename) {
   URL.revokeObjectURL(url);
 }
 
-/* ─── Main export function ─── */
+/* ─── Главная функция экспорта ─── */
 function prExportCSV(rows, year, month) {
   var exportRows = buildExportRows(rows, year, month);
   if (!exportRows.length) {
@@ -94,6 +94,6 @@ function prExportCSV(rows, year, month) {
     return;
   }
   var csv = generateCSV(exportRows);
-  var filename = 'payroll_' + year + '-' + String(month).padStart(2, '0') + '.csv';
+  var filename = 'зарплата_' + year + '-' + String(month).padStart(2, '0') + '.csv';
   downloadCSV(csv, filename);
 }
