@@ -1,6 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════
-   tab-payroll-review.js — Главный модуль
+   tab-payroll-review.js — Главный модуль UI
    Обзор задач + Корректировки менеджера + Прогноз выплат + Экспорт CSV
+
+   v2.0.0 — Рефакторинг: бизнес-логика вынесена в payroll/* модули
+   Этот файл отвечает ТОЛЬКО за:
+   - Состояние UI (_pr state)
+   - Рендеринг (innerHTML)
+   - Обработку событий (onclick handlers)
+   - Делегирование бизнес-операций в domain модули
    ═══════════════════════════════════════════════════════════════ */
 
 var _pr = {
@@ -16,7 +23,10 @@ var _pr = {
   sortField: 'developerName',
   sortDir: 1,
   filters: {developer: '', project: '', status: ''},
-  modalOpen: false
+  modalOpen: false,
+  periodStatus: 'draft',      /* NEW: статус периода из domain */
+  auditLog: [],                /* NEW: буфер аудиторских записей */
+  qualityReport: null          /* NEW: отчёт о качестве данных */
 };
 
 /* Уничтожение */
@@ -33,6 +43,8 @@ function _prDestroy() {
   _pr.totals = null;
   _pr.data = null;
   _pr.dirty = false;
+  _pr.auditLog = [];
+  _pr.qualityReport = null;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -48,7 +60,9 @@ window.TabPayrollReview = {
     _pr.styleEl.textContent = PR_CSS;
     document.head.appendChild(_pr.styleEl);
 
-    _pr.filters = prLoadFilters();
+    /* Загрузить фильтры через абстракцию storage */
+    _pr.filters = _prLoadFilters();
+
     _prRenderLoading();
     _prLoadData();
 
@@ -75,12 +89,27 @@ function _prLoadData() {
 
   var year = prCurrentPeriod.year;
   var month = prCurrentPeriod.month;
+  var periodKey = prGetPeriodKey(year, month);
+
+  /* Загрузить состояние периода */
+  _prLoadPeriodState(periodKey);
+
+  /* Загрузить аудиторский лог */
+  _pr.auditLog = _prLoadAuditLog(periodKey);
 
   prLoadPeriodData(year, month).then(function(data) {
     _pr.data = data;
-    var savedReviews = prLoadReviews(year, month);
-    _pr.rows = buildTaskReviewRows(data, savedReviews);
-    _pr.projection = buildPayrollProjection(_pr.rows);
+
+    /* Загрузить сохранённые ревью через абстракцию storage */
+    var savedReviews = _prLoadReviews(year, month);
+
+    /* Построить строки ревью через domain engine */
+    var result = buildReviewRows(data, savedReviews, _prRateProvider());
+    _pr.rows = result.rows;
+    _pr.qualityReport = result.qualityReport;
+
+    /* Построить projection и totals через domain функции */
+    _pr.projection = buildMonthlyProjection(_pr.rows);
     _pr.totals = buildPeriodTotals(_pr.rows);
     _pr.dirty = false;
     _pr.loading = false;
@@ -90,6 +119,91 @@ function _prLoadData() {
     _pr.loading = false;
     _prRenderError(e.message || 'Ошибка загрузки');
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STORAGE DELEGATION — доступ к storage через PayrollStorage
+   ═══════════════════════════════════════════════════════════════ */
+function _prStorage() {
+  /* Используем новый PayrollStorage если доступен, иначе legacy */
+  if (typeof PayrollStorage !== 'undefined') return PayrollStorage;
+  return null;
+}
+
+function _prLoadReviews(year, month) {
+  var store = _prStorage();
+  if (store) return store.loadReviews(year, month);
+  /* Fallback на legacy */
+  if (typeof prLoadReviews === 'function') return prLoadReviews(year, month);
+  return {};
+}
+
+function _prSaveReviews(year, month, reviews) {
+  var store = _prStorage();
+  if (store) return store.saveReviews(year, month, reviews);
+  if (typeof prSaveReviews === 'function') return prSaveReviews(year, month, reviews);
+  return false;
+}
+
+function _prLoadFilters() {
+  var store = _prStorage();
+  if (store) return store.loadFilters();
+  if (typeof prLoadFilters === 'function') return prLoadFilters();
+  return {developer: '', project: '', status: ''};
+}
+
+function _prSaveFilters(filters) {
+  var store = _prStorage();
+  if (store) return store.saveFilters(filters);
+  if (typeof prSaveFilters === 'function') return prSaveFilters(filters);
+}
+
+function _prLoadDevSettings(devId) {
+  var store = _prStorage();
+  if (store) return store.loadDevSettings(devId);
+  if (typeof prLoadDevSettings === 'function') return prLoadDevSettings(devId);
+  return null;
+}
+
+function _prSaveDevSettings(devId, settings) {
+  var store = _prStorage();
+  if (store) return store.saveDevSettings(devId, settings);
+  if (typeof prSaveDevSettings === 'function') return prSaveDevSettings(devId, settings);
+}
+
+function _prLoadPeriodState(periodKey) {
+  var store = _prStorage();
+  if (store) {
+    var state = store.loadPeriodState(periodKey);
+    _pr.periodStatus = state ? state.status : 'draft';
+    return;
+  }
+  _pr.periodStatus = 'draft';
+}
+
+function _prSavePeriodState(periodKey, state) {
+  var store = _prStorage();
+  if (store) return store.savePeriodState(periodKey, state);
+}
+
+function _prLoadAuditLog(periodKey) {
+  var store = _prStorage();
+  if (store) return store.loadAuditLog(periodKey);
+  return [];
+}
+
+function _prAppendAuditLog(periodKey, entries) {
+  var store = _prStorage();
+  if (store) return store.appendAuditLog(periodKey, entries);
+}
+
+/* Rate provider — адаптер для domain engine */
+function _prRateProvider() {
+  return {
+    getRate: function(devId) { return prGetRate(devId); },
+    getBase: function(devId) { return prGetBase(devId); },
+    getName: function(devId) { return prGetDevName(devId); }
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -128,11 +242,17 @@ function _prRenderHeader() {
   var devCount = Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
 
+  /* Бейдж статуса периода */
+  var psLabel = typeof PR_PERIOD_STATUS_LABELS !== 'undefined'
+    ? (PR_PERIOD_STATUS_LABELS[_pr.periodStatus] || _pr.periodStatus)
+    : _pr.periodStatus;
+
   var h = '<div class="pr-header">';
   h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
   h += '<div class="pr-header-info">';
   h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
   h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
+  h += '<span class="pr-header-stat" style="color:var(--cyan)">' + esc(psLabel) + '</span>';
   h += '</div>';
   h += '<div class="pr-controls">';
 
@@ -156,6 +276,9 @@ function _prRenderHeader() {
   /* Экспорт */
   h += '<button class="pr-btn pr-btn-green" onclick="_prExport()">&#11015; CSV</button>';
 
+  /* Детальный экспорт */
+  h += '<button class="pr-btn pr-btn-ghost" onclick="_prExportDetailed()" title="Детальный CSV по задачам">CSV+</button>';
+
   /* Подтвердить все */
   h += '<button class="pr-btn pr-btn-primary" onclick="_prApproveAll()">&#10003; Подтвердить все</button>';
 
@@ -167,7 +290,6 @@ function _prRenderHeader() {
 function _prRenderKPIs() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
-  var marginVal = Math.round((t.totalBillable - t.totalPayroll) * 1000) / 10;
   var h = '<div class="pr-kpi-grid">';
   h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
   h += _prKpiCard('Опл. клиенту', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
@@ -267,7 +389,7 @@ function _prRenderTable() {
     var payChanged = r.payrollHours !== r.factHours;
     h += '<td class="c-num"><input class="pr-editable' + (payChanged ? ' changed' : '') + '" type="number" step="0.5" min="0" value="' + r.payrollHours.toFixed(1) + '" data-idx="' + idx + '" data-field="payrollHours" onchange="_prOnEdit(this)"></td>';
 
-    /* Ставка — только отображение (редактируется в админке) */
+    /* Ставка — только отображение */
     h += '<td class="c-num"><span class="pr-readonly pr-rate-display">' + r.rate + '</span></td>';
 
     /* Сумма */
@@ -284,11 +406,11 @@ function _prRenderTable() {
 
   h += '</tbody><tfoot><tr>';
   h += '<td colspan="3">ИТОГО (' + filtered.length + ')</td>';
-  h += '<td class="c-num">' + _prSumField(filtered, 'factHours').toFixed(1) + '</td>';
-  h += '<td class="c-num">' + _prSumField(filtered, 'billableHours').toFixed(1) + '</td>';
-  h += '<td class="c-num">' + _prSumField(filtered, 'payrollHours').toFixed(1) + '</td>';
+  h += '<td class="c-num">' + sumReviewField(filtered, 'factHours').toFixed(1) + '</td>';
+  h += '<td class="c-num">' + sumReviewField(filtered, 'billableHours').toFixed(1) + '</td>';
+  h += '<td class="c-num">' + sumReviewField(filtered, 'payrollHours').toFixed(1) + '</td>';
   h += '<td></td>';
-  h += '<td class="c-num">' + _prFmtMoney(_prSumField(filtered, 'payrollAmount')) + '</td>';
+  h += '<td class="c-num">' + _prFmtMoney(sumReviewField(filtered, 'payrollAmount')) + '</td>';
   h += '<td colspan="2"></td>';
   h += '</tr></tfoot></table></div>';
 
@@ -362,11 +484,18 @@ function _prRenderDebug() {
   h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
   h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + '</div>';
   h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
+  h += '<div class="pr-debug-row">Статус периода: ' + esc(_pr.periodStatus) + '</div>';
   h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
+  if (_pr.qualityReport) {
+    h += '<div class="pr-debug-row">Качество данных: ' + esc(_pr.qualityReport.quality) + '</div>';
+    h += '<div class="pr-debug-row">Orphan задач: ' + _pr.qualityReport.orphanTasks + '</div>';
+  }
   if (_pr.data && _pr.data.elapsed && _pr.data.elapsed.length > 0) {
     var sample = _pr.data.elapsed[0];
     h += '<div class="pr-debug-row">Пример elapsed: ID=' + sample.ID + ' ЗАД=' + sample.TASK_ID + ' СЕК=' + sample.SECONDS + '</div>';
   }
+  h += '<div class="pr-debug-row">Доменная модель: v' + (typeof PR_DOMAIN_VERSION !== 'undefined' ? PR_DOMAIN_VERSION : '?') + '</div>';
+  h += '<div class="pr-debug-row">Аудит записей: ' + _pr.auditLog.length + '</div>';
   h += '</div>';
   return h;
 }
@@ -431,7 +560,7 @@ function _prOnFilterChange() {
   var projSel = document.getElementById('prFilterProj');
   if (devSel) _pr.filters.developer = devSel.value;
   if (projSel) _pr.filters.project = projSel.value;
-  prSaveFilters(_pr.filters);
+  _prSaveFilters(_pr.filters);
   _prRenderAll();
 }
 
@@ -441,7 +570,7 @@ function _prToggleStatusFilter(status) {
   } else {
     _pr.filters.status = status;
   }
-  prSaveFilters(_pr.filters);
+  _prSaveFilters(_pr.filters);
   _prRenderAll();
 }
 
@@ -455,25 +584,24 @@ function _prOnEdit(input) {
   var realIdx = _pr.rows.indexOf(row);
   if (realIdx < 0) return;
 
-  var val = input.value;
-  if (field === 'billableHours' || field === 'payrollHours') {
-    val = parseFloat(val);
-    if (isNaN(val) || val < 0) val = 0;
-    val = Math.round(val * 10) / 10;
-  } else if (field === 'rate' || field === 'base') {
-    val = parseFloat(val);
-    if (isNaN(val) || val < 0) val = 0;
-    val = Math.round(val);
+  /* Используем domain engine для обновления */
+  var result = updateReviewField(_pr.rows[realIdx], field, input.value, _pr.periodStatus);
+  if (result.error) {
+    console.warn('Update blocked:', result.error);
+    return;
   }
 
-  _pr.rows[realIdx][field] = val;
+  _pr.rows[realIdx] = result.review;
 
-  /* Пересчитать сумму */
-  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate) + _pr.rows[realIdx].base;
-  _pr.rows[realIdx].updatedAt = Date.now();
+  /* Сохранить audit entry */
+  if (result.audit) {
+    _pr.auditLog.push(result.audit);
+    var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    _prAppendAuditLog(periodKey, result.audit);
+  }
 
   _pr.dirty = true;
-  _pr.projection = buildPayrollProjection(_pr.rows);
+  _pr.projection = buildMonthlyProjection(_pr.rows);
   _pr.totals = buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
@@ -486,14 +614,29 @@ function _prCycleStatus(idx) {
   var realIdx = _pr.rows.indexOf(row);
   if (realIdx < 0) return;
 
+  var currentStatus = _pr.rows[realIdx].reviewStatus;
   var statusFlow = ['pending', 'approved', 'disputed', 'excluded'];
-  var currentIdx = statusFlow.indexOf(_pr.rows[realIdx].reviewStatus);
-  var nextIdx = (currentIdx + 1) % statusFlow.length;
-  _pr.rows[realIdx].reviewStatus = statusFlow[nextIdx];
-  _pr.rows[realIdx].updatedAt = Date.now();
+  var currentIdx = statusFlow.indexOf(currentStatus);
+  var nextStatus = statusFlow[(currentIdx + 1) % statusFlow.length];
+
+  /* Используем domain engine для перехода статуса */
+  var result = transitionReviewStatus(_pr.rows[realIdx], nextStatus, _pr.periodStatus);
+  if (result.error) {
+    console.warn('Status transition blocked:', result.error);
+    return;
+  }
+
+  _pr.rows[realIdx] = result.review;
+
+  /* Сохранить audit entry */
+  if (result.audit) {
+    _pr.auditLog.push(result.audit);
+    var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    _prAppendAuditLog(periodKey, result.audit);
+  }
 
   _pr.dirty = true;
-  _pr.projection = buildPayrollProjection(_pr.rows);
+  _pr.projection = buildMonthlyProjection(_pr.rows);
   _pr.totals = buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
@@ -505,11 +648,8 @@ function _prSort(field) {
     _pr.sortField = field;
     _pr.sortDir = 1;
   }
-  _pr.rows.sort(function(a, b) {
-    var va = a[field], vb = b[field];
-    if (typeof va === 'string') return va.localeCompare(vb) * _pr.sortDir;
-    return (va - vb) * _pr.sortDir;
-  });
+  /* Используем domain сортировку (возвращает новый массив) */
+  _pr.rows = sortReviews(_pr.rows, field, _pr.sortDir);
   _prRenderAll();
 }
 
@@ -519,19 +659,17 @@ function _prSortInd(field) {
 }
 
 function _prSaveAll() {
-  var reviews = {};
-  _pr.rows.forEach(function(r) {
-    reviews[r._reviewKey] = {
-      billableHours: r.billableHours,
-      payrollHours: r.payrollHours,
-      rate: r.rate,
-      base: r.base,
-      reviewStatus: r.reviewStatus,
-      managerComment: r.managerComment,
-      updatedAt: r.updatedAt
-    };
+  var reviews = serializeReviews(_pr.rows);
+  _prSaveReviews(prCurrentPeriod.year, prCurrentPeriod.month, reviews);
+
+  /* Сохранить состояние периода */
+  var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+  _prSavePeriodState(periodKey, {
+    status: _pr.periodStatus,
+    snapshotId: null,
+    updatedAt: Date.now()
   });
-  prSaveReviews(prCurrentPeriod.year, prCurrentPeriod.month, reviews);
+
   _pr.dirty = false;
   _prRenderAll();
 }
@@ -539,14 +677,18 @@ function _prSaveAll() {
 function _prApproveAll() {
   if (!_pr.rows.length) return;
   if (!confirm('Подтвердить все ожидающие задачи?')) return;
-  _pr.rows.forEach(function(r) {
-    if (r.reviewStatus === 'pending') {
-      r.reviewStatus = 'approved';
-      r.updatedAt = Date.now();
-    }
-  });
+
+  var result = approveAllPending(_pr.rows, _pr.periodStatus);
+  _pr.rows = result.reviews;
+
+  /* Сохранить все audit entries */
+  if (result.auditEntries.length > 0) {
+    var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    _prAppendAuditLog(periodKey, result.auditEntries);
+  }
+
   _pr.dirty = true;
-  _pr.projection = buildPayrollProjection(_pr.rows);
+  _pr.projection = buildMonthlyProjection(_pr.rows);
   _pr.totals = buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
@@ -554,7 +696,21 @@ function _prApproveAll() {
 function _prExport() {
   if (!_pr.rows.length) return;
   _prSaveAll();
-  prExportCSV(_pr.rows, prCurrentPeriod.year, prCurrentPeriod.month);
+
+  /* Используем domain export функцию */
+  if (typeof prExportCSV === 'function') {
+    prExportCSV(_pr.rows, prCurrentPeriod.year, prCurrentPeriod.month);
+  }
+}
+
+function _prExportDetailed() {
+  if (!_pr.rows.length) return;
+  _prSaveAll();
+
+  /* Используем domain export функцию */
+  if (typeof prExportDetailedCSV === 'function') {
+    prExportDetailedCSV(_pr.rows, prCurrentPeriod.year, prCurrentPeriod.month);
+  }
 }
 
 /* ─── Админка ─── */
@@ -579,15 +735,40 @@ function _prSaveAdmin() {
     devData[devId][field] = inp.value;
   });
 
+  var auditEntries = [];
   Object.keys(devData).forEach(function(devId) {
     var d = devData[devId];
-    var settings = prLoadDevSettings(devId) || {};
+    var settings = _prLoadDevSettings(devId) || {};
     if (d.name) settings.name = d.name;
     if (d.inn !== undefined) settings.inn = d.inn;
-    if (d.rate !== undefined) settings.rate = parseInt(d.rate) || СТАВКА_ПО_УМОЛЧ;
-    if (d.base !== undefined) settings.base = parseInt(d.base) || 0;
-    prSaveDevSettings(devId, settings);
+    if (d.rate !== undefined) {
+      var newRate = parseInt(d.rate) || СТАВКА_ПО_УМОЛЧ;
+      if (newRate !== settings.rate) {
+        auditEntries.push(createAuditEntry('change_rate', 'developer', devId, {
+          oldRate: settings.rate || СТАВКА_ПО_УМОЛЧ,
+          newRate: newRate
+        }));
+      }
+      settings.rate = newRate;
+    }
+    if (d.base !== undefined) {
+      var newBase = parseInt(d.base) || 0;
+      if (newBase !== settings.base) {
+        auditEntries.push(createAuditEntry('change_base', 'developer', devId, {
+          oldBase: settings.base || 0,
+          newBase: newBase
+        }));
+      }
+      settings.base = newBase;
+    }
+    _prSaveDevSettings(devId, settings);
   });
+
+  /* Сохранить audit entries */
+  if (auditEntries.length > 0) {
+    var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    _prAppendAuditLog(periodKey, auditEntries);
+  }
 
   _pr.modalOpen = false;
   /* Перезагрузить данные с новыми настройками */
@@ -598,15 +779,13 @@ function _prSaveAdmin() {
    ПОМОЩНИКИ
    ═══════════════════════════════════════════════════════════════ */
 function _prGetFilteredRows() {
-  return _pr.rows.filter(function(r) {
-    if (_pr.filters.developer && r.developerId !== _pr.filters.developer) return false;
-    if (_pr.filters.project && r.projectId !== _pr.filters.project) return false;
-    if (_pr.filters.status && r.reviewStatus !== _pr.filters.status) return false;
-    return true;
-  });
+  return filterReviews(_pr.rows, _pr.filters);
 }
 
 function _prStatusLabel(status) {
+  if (typeof PR_REVIEW_STATUS_LABELS !== 'undefined' && PR_REVIEW_STATUS_LABELS[status]) {
+    return PR_REVIEW_STATUS_LABELS[status];
+  }
   switch(status) {
     case 'pending': return 'Ожидает';
     case 'approved': return 'Подтв.';
@@ -619,14 +798,4 @@ function _prStatusLabel(status) {
 function _prFmtMoney(val) {
   if (typeof val !== 'number') val = 0;
   return val.toLocaleString('ru-RU') + ' р';
-}
-
-function _prSumField(rows, field) {
-  var sum = 0;
-  rows.forEach(function(r) {
-    if (r.reviewStatus !== 'excluded') {
-      sum += r[field] || 0;
-    }
-  });
-  return sum;
 }
