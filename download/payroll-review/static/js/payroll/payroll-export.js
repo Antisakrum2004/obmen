@@ -2,7 +2,196 @@
    payroll-export.js — Слой экспорта
    Генерация CSV и других форматов для 1С.
    НЕ зависит от DOM (кроме downloadCSV — триггер скачивания).
+
+   v1.1.0 — Export DTO Layer: PayrollExportDTO
+   Экспорт получает данные ТОЛЬКО через DTO,
+   НЕ из DOM, НЕ из rendered table, НЕ из UI rows.
    ═══════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════
+   PAYROLL EXPORT DTO — Объект передачи данных для экспорта
+
+   DTO строится из review snapshot или TaskReview[],
+   НЕ из DOM. Сериализуется в CSV / JSON / 1С XML.
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Создать PayrollExportDTO из массива TaskReview
+ * Единая точка входа для экспорта.
+ * DTO независим от UI — не содержит DOM-зависимостей.
+ *
+ * @param {Array} reviews — TaskReview[] или ReviewSnapshot[]
+ * @param {Number} year
+ * @param {Number} month
+ * @param {Object} options — { innProvider }
+ * @returns {Object} PayrollExportDTO
+ */
+function createPayrollExportDTO(reviews, year, month, options) {
+  var opts = options || {};
+  var periodStr = '';
+  if (typeof МЕСЯЦЫ_ПОЛН !== 'undefined') {
+    periodStr = МЕСЯЦЫ_ПОЛН[month - 1] + ' ' + year;
+  } else {
+    periodStr = year + '-' + String(month).padStart(2, '0');
+  }
+
+  var byDev = {};
+  var detailed = [];
+
+  (reviews || []).forEach(function(r) {
+    if (r.reviewStatus === PR_REVIEW_STATUS.EXCLUDED) return;
+
+    var uid = String(r.developerId);
+    var inn = '';
+    if (opts.innProvider && typeof opts.innProvider.getInn === 'function') {
+      inn = opts.innProvider.getInn(uid);
+    } else if (typeof prGetInn === 'function') {
+      inn = prGetInn(uid);
+    }
+
+    /* Детальный DTO — одна строка на задачу */
+    var detailRow = {
+      fullName: r.developerName,
+      inn: inn,
+      period: periodStr,
+      taskId: r.taskId,
+      taskTitle: r.taskTitle,
+      projectName: r.projectName || '',
+      factHours: r.factHours || 0,
+      billableHours: r.billableHours || 0,
+      payrollHours: r.payrollHours || 0,
+      rate: r.rate || 0,
+      base: r.base || 0,
+      payrollAmount: r.payrollAmount || 0,
+      reviewStatus: r.reviewStatus || PR_REVIEW_STATUS.PENDING,
+      managerComment: r.managerComment || ''
+    };
+    detailed.push(detailRow);
+
+    /* Агрегированный DTO — группировка по разработчику */
+    if (!byDev[uid]) {
+      byDev[uid] = {
+        fullName: r.developerName,
+        inn: inn,
+        period: periodStr,
+        totalPayrollHours: 0,
+        rate: r.rate || 0,
+        base: r.base || 0,
+        totalAmount: 0,
+        taskComments: [],
+        taskCount: 0,
+        tasks: []
+      };
+    }
+    byDev[uid].totalPayrollHours += r.payrollHours || 0;
+    byDev[uid].totalAmount += r.payrollAmount || 0;
+    byDev[uid].taskCount++;
+    if (r.managerComment) {
+      byDev[uid].taskComments.push(r.taskTitle + ': ' + r.managerComment);
+    }
+    byDev[uid].tasks.push(detailRow);
+  });
+
+  /* Агрегированные строки */
+  var aggregated = [];
+  Object.keys(byDev).forEach(function(uid) {
+    var d = byDev[uid];
+    aggregated.push({
+      fullName: d.fullName,
+      inn: d.inn,
+      period: d.period,
+      hours: safeRound(d.totalPayrollHours, 1),
+      rate: d.rate,
+      base: d.base,
+      amount: Math.round(d.totalAmount),
+      comment: d.taskComments.join('; '),
+      taskCount: d.taskCount
+    });
+  });
+
+  return {
+    year: year,
+    month: month,
+    periodKey: year + '-' + String(month).padStart(2, '0'),
+    periodStr: periodStr,
+    createdAt: Date.now(),
+    aggregated: aggregated,
+    detailed: detailed
+  };
+}
+
+/**
+ * Сериализовать PayrollExportDTO в агрегированный CSV
+ * @param {Object} dto — из createPayrollExportDTO()
+ * @returns {String} CSV content
+ */
+function serializeDTOToAggregatedCSV(dto) {
+  var sep = ';';
+  var lines = [];
+
+  lines.push(['ФИО','ИНН','Период','Часы','Ставка','Базовая','Сумма','Комментарий'].join(sep));
+
+  (dto.aggregated || []).forEach(function(r) {
+    var row = [
+      '"' + (r.fullName || '').replace(/"/g, '""') + '"',
+      r.inn || '',
+      '"' + r.period + '"',
+      String(r.hours).replace('.', ','),
+      String(r.rate).replace('.', ','),
+      String(r.base).replace('.', ','),
+      String(r.amount),
+      '"' + (r.comment || '').replace(/"/g, '""') + '"'
+    ];
+    lines.push(row.join(sep));
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * Сериализовать PayrollExportDTO в детальный CSV
+ * @param {Object} dto — из createPayrollExportDTO()
+ * @returns {String} CSV content
+ */
+function serializeDTOToDetailedCSV(dto) {
+  var sep = ';';
+  var lines = [];
+
+  lines.push([
+    'ФИО','ИНН','Период','ID задачи','Задача','Проект',
+    'Факт(ч)','Опл.клиенту(ч)','К выплате(ч)',
+    'Ставка','Базовая','Сумма','Статус','Комментарий'
+  ].join(sep));
+
+  var statusLabels = {
+    pending: 'Ожидает',
+    approved: 'Подтверждено',
+    disputed: 'Спор',
+    excluded: 'Исключено'
+  };
+
+  (dto.detailed || []).forEach(function(r) {
+    var row = [
+      '"' + (r.fullName || '').replace(/"/g, '""') + '"',
+      r.inn || '',
+      '"' + r.period + '"',
+      r.taskId || '',
+      '"' + (r.taskTitle || '').replace(/"/g, '""') + '"',
+      '"' + (r.projectName || '').replace(/"/g, '""') + '"',
+      String(r.factHours).replace('.', ','),
+      String(r.billableHours).replace('.', ','),
+      String(r.payrollHours).replace('.', ','),
+      String(r.rate).replace('.', ','),
+      String(r.base).replace('.', ','),
+      String(r.payrollAmount),
+      statusLabels[r.reviewStatus] || r.reviewStatus,
+      '"' + (r.managerComment || '').replace(/"/g, '""') + '"'
+    ];
+    lines.push(row.join(sep));
+  });
+
+  return lines.join('\n');
+}
 
 /* ═══════════════════════════════════════════════════════════════
    Построение строк экспорта
