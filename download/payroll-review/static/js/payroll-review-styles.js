@@ -8,6 +8,8 @@ var PR_CSS = '\
 .pr-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:0 0 8px}\
 .pr-title{font-family:var(--mono);font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);display:flex;align-items:center;gap:10px}\
 .pr-title::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}\
+.pr-header-info{display:flex;align-items:center;gap:12px}\
+.pr-header-stat{font-family:var(--mono);font-size:10px;color:var(--text3);padding:3px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:4px}\
 .pr-badge{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;display:inline-flex;align-items:center;gap:4px}\
 .pr-badge-mock{background:rgba(245,166,35,.1);color:var(--yellow);border:1px solid rgba(245,166,35,.25)}\
 .pr-badge-live{background:rgba(34,212,126,.1);color:var(--green);border:1px solid rgba(34,212,126,.25)}\
@@ -66,16 +68,23 @@ var PR_CSS = '\
 .pr-editable:focus{border-color:var(--accent)}\
 .pr-editable.changed{border-color:var(--yellow);background:rgba(245,166,35,.04)}\
 .pr-readonly{font-family:var(--mono);font-size:11px;color:var(--text2)}\
+.pr-amount{font-weight:600;color:var(--text)}\
 .pr-proj-tag{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;background:rgba(79,139,255,.08);color:var(--accent);border:1px solid rgba(79,139,255,.15);white-space:nowrap}\
-.pr-projection{display:grid;grid-template-columns:1fr;gap:12px}\
+.pr-section-title{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px}\
+.pr-section-title::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}\
+.pr-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}\
 .pr-proj-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-card),var(--highlight)}\
 .pr-proj-dev{display:flex;align-items:center;gap:12px;margin-bottom:10px}\
-.pr-proj-dev-name{font-weight:600;font-size:13px;flex:1}\
-.pr-proj-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}\
-@media(max-width:600px){.pr-proj-stats{grid-template-columns:repeat(3,1fr)}}\
-.pr-proj-stat{text-align:center}\
-.pr-proj-stat-val{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)}\
+.pr-proj-dev-info{flex:1;display:flex;flex-direction:column;gap:2px}\
+.pr-proj-dev-name{font-weight:600;font-size:13px}\
+.pr-proj-dev-meta{font-family:var(--mono);font-size:9px;color:var(--text3)}\
+.pr-proj-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}\
+@media(max-width:600px){.pr-proj-stats{grid-template-columns:repeat(2,1fr)}}\
+.pr-proj-stat{text-align:center;padding:4px}\
+.pr-proj-stat-val{font-family:var(--mono);font-size:16px;font-weight:700}\
 .pr-proj-stat-lbl{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}\
+.pr-proj-bar{height:4px;background:var(--bg);border-radius:2px;margin-top:10px;overflow:hidden}\
+.pr-proj-bar-fill{height:100%;border-radius:2px;transition:width .3s}\
 .pr-comment-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:4px 8px;outline:none;width:140px;transition:border-color .15s}\
 .pr-comment-input:focus{border-color:var(--accent)}\
 .pr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}\
@@ -88,4 +97,7 @@ var PR_CSS = '\
 .pr-save-indicator.saved{background:var(--green);box-shadow:0 0 6px var(--green)}\
 .pr-save-indicator.dirty{background:var(--yellow);box-shadow:0 0 6px var(--yellow);animation:prpulse 1s infinite}\
 @keyframes prpulse{0%,100%{opacity:1}50%{opacity:.5}}\
+.pr-debug{margin-top:16px;padding:12px 16px;background:rgba(0,0,0,.3);border:1px solid rgba(245,166,35,.15);border-radius:8px;font-family:var(--mono);font-size:10px;color:var(--text3)}\
+.pr-debug-title{color:var(--yellow);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}\
+.pr-debug-row{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}\
 ';

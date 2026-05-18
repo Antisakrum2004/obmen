@@ -15,8 +15,25 @@ var _pr = {
   loading: false,
   sortField: 'developerName',
   sortDir: 1,
-  filters: {developer: '', project: '', status: ''}
+  filters: {developer: '', project: '', status: ''},
+  activeSection: 'review' /* review | projection */
 };
+
+/* Destroy helper */
+function _prDestroy() {
+  _pr.intervals.forEach(function(id) { clearInterval(id); });
+  _pr.intervals = [];
+  if (_pr.styleEl && _pr.styleEl.parentNode) {
+    _pr.styleEl.parentNode.removeChild(_pr.styleEl);
+    _pr.styleEl = null;
+  }
+  _pr.container = null;
+  _pr.rows = [];
+  _pr.projection = [];
+  _pr.totals = null;
+  _pr.data = null;
+  _pr.dirty = false;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    MODULE REGISTRATION
@@ -24,7 +41,7 @@ var _pr = {
 window.TabPayrollReview = {
   render: function(container) {
     if (!container) return;
-    _pr.destroy();
+    _prDestroy();
     _pr.container = container;
 
     /* Inject CSS */
@@ -48,18 +65,7 @@ window.TabPayrollReview = {
   },
 
   destroy: function() {
-    _pr.intervals.forEach(function(id) { clearInterval(id); });
-    _pr.intervals = [];
-    if (_pr.styleEl && _pr.styleEl.parentNode) {
-      _pr.styleEl.parentNode.removeChild(_pr.styleEl);
-      _pr.styleEl = null;
-    }
-    _pr.container = null;
-    _pr.rows = [];
-    _pr.projection = [];
-    _pr.totals = null;
-    _pr.data = null;
-    _pr.dirty = false;
+    _prDestroy();
   },
 
   refresh: function() {
@@ -98,12 +104,12 @@ function _prLoadData() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderLoading() {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div>Загрузка данных...</div>';
+  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div>Загрузка данных за ' + esc(MONTHS_FULL[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
 }
 
 function _prRenderError(msg) {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-empty" style="color:var(--red)">' + esc(msg) + '</div>';
+  _pr.container.innerHTML = '<div class="pr-empty" style="color:var(--red)"><div style="font-size:24px">&#9888;</div><div>' + esc(msg) + '</div></div>';
 }
 
 function _prRenderAll() {
@@ -115,6 +121,7 @@ function _prRenderAll() {
   h += _prRenderTable();
   h += _prRenderProjection();
   h += _prRenderSaveBar();
+  h += _prRenderDebug();
   _pr.container.innerHTML = h;
   _prAttachEvents();
 }
@@ -126,8 +133,15 @@ function _prRenderHeader() {
     ? '<span class="pr-badge pr-badge-mock">MOCK</span>'
     : '<span class="pr-badge pr-badge-live">LIVE</span>';
 
+  var devCount = Object.keys(DEVELOPERS).length;
+  var taskCount = _pr.rows.length;
+
   var h = '<div class="pr-header">';
   h += '<div class="pr-title">Payroll Review ' + modeBadge + '</div>';
+  h += '<div class="pr-header-info">';
+  h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
+  h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
+  h += '</div>';
   h += '<div class="pr-controls">';
 
   /* Period selector */
@@ -158,12 +172,13 @@ function _prRenderHeader() {
 function _prRenderKPIs() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
+  var marginVal = Math.round((t.totalBillable - t.totalPayroll) * 1000) / 10;
   var h = '<div class="pr-kpi-grid">';
-  h += _prKpiCard('Факт часы', t.totalFactHours, 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Billable', t.totalBillable, 'var(--green)', t.approvedTasks + ' подтверждено');
-  h += _prKpiCard('Payroll часы', t.totalPayroll, 'var(--yellow)', t.pendingTasks + ' ожидает');
-  h += _prKpiCard('Сумма выплаты', _prFmtMoney(t.totalPayrollAmount), 'var(--cyan)', '');
-  h += _prKpiCard('Маржа', _prFmtMoney(Math.round((t.totalBillable - t.totalPayroll) * 1000)), 'var(--orange)', 'Billable - Payroll');
+  h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
+  h += _prKpiCard('Billable', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
+  h += _prKpiCard('Payroll часы', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
+  h += _prKpiCard('Сумма выплаты', _prFmtMoney(t.totalPayrollAmount), 'var(--cyan)', t.disputedTasks + ' споров');
+  h += _prKpiCard('Маржа (B-P)', _prFmtMoney(Math.round(marginVal * 100)), 'var(--orange)', 'Billable - Payroll');
   h += '</div>';
   return h;
 }
@@ -224,17 +239,17 @@ function _prRenderFilters() {
 /* ─── Main Table ─── */
 function _prRenderTable() {
   var filtered = _prGetFilteredRows();
-  if (!filtered.length) return '<div class="pr-empty">Нет задач за выбранный период</div>';
+  if (!filtered.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет задач за выбранный период</div></div>';
 
   var h = '<div class="pr-table-wrap"><table class="pr-table"><thead><tr>';
-  h += '<th onclick="_prSort(\'taskTitle\')">Задача</th>';
-  h += '<th onclick="_prSort(\'projectName\')">Проект</th>';
-  h += '<th onclick="_prSort(\'developerName\')">Разработчик</th>';
-  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт</th>';
+  h += '<th onclick="_prSort(\'taskTitle\')">Задача ' + _prSortIndicator('taskTitle') + '</th>';
+  h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortIndicator('projectName') + '</th>';
+  h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortIndicator('developerName') + '</th>';
+  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт ' + _prSortIndicator('factHours') + '</th>';
   h += '<th class="c-num">Billable</th>';
   h += '<th class="c-num">Payroll</th>';
-  h += '<th class="c-num" onclick="_prSort(\'rate\')">Ставка</th>';
-  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма</th>';
+  h += '<th class="c-num" onclick="_prSort(\'rate\')">Ставка ' + _prSortIndicator('rate') + '</th>';
+  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма ' + _prSortIndicator('payrollAmount') + '</th>';
   h += '<th>Статус</th>';
   h += '<th>Коммент</th>';
   h += '</tr></thead><tbody>';
@@ -270,7 +285,7 @@ function _prRenderTable() {
     h += '<td class="c-num"><span class="pr-readonly">' + _prFmtMoney(r.rate) + '</span></td>';
 
     /* Amount */
-    h += '<td class="c-num"><span class="pr-readonly">' + _prFmtMoney(r.payrollAmount) + '</span></td>';
+    h += '<td class="c-num"><span class="pr-readonly pr-amount">' + _prFmtMoney(r.payrollAmount) + '</span></td>';
 
     /* Status */
     h += '<td><span class="pr-status pr-status-' + r.reviewStatus + '" data-idx="' + idx + '" onclick="_prCycleStatus(' + idx + ')">' + _prStatusLabel(r.reviewStatus) + '</span></td>';
@@ -298,30 +313,43 @@ function _prRenderTable() {
 function _prRenderProjection() {
   if (!_pr.projection.length) return '';
   var h = '<div class="pr-projection">';
-  h += '<div class="pr-title" style="font-size:12px;margin-bottom:8px">Прогноз выплат по разработчикам</div>';
+  h += '<div class="pr-section-title">Прогноз выплат по разработчикам</div>';
 
+  h += '<div class="pr-proj-grid">';
   _pr.projection.forEach(function(d) {
+    var pctPayroll = d.totalFactHours > 0 ? Math.round(d.totalPayroll / d.totalFactHours * 100) : 0;
+    var barColor = pctPayroll > 100 ? 'var(--red)' : pctPayroll > 80 ? 'var(--yellow)' : 'var(--green)';
     h += '<div class="pr-proj-card">';
     h += '<div class="pr-proj-dev">';
     h += '<span class="pr-dev-av">' + esc(getFirstName(d.developerName).charAt(0)) + '</span>';
+    h += '<div class="pr-proj-dev-info">';
     h += '<span class="pr-proj-dev-name">' + esc(d.developerName) + '</span>';
-    h += '<span class="pr-badge pr-badge-mock" style="font-size:9px">' + d.approvalRate + '% подтв.</span>';
+    h += '<span class="pr-proj-dev-meta">' + d.taskCount + ' задач | ' + d.approvedCount + ' подтв. | ' + d.pendingCount + ' ожидает</span>';
     h += '</div>';
+    h += '<span class="pr-badge ' + (d.approvalRate >= 80 ? 'pr-badge-live' : 'pr-badge-mock') + '" style="font-size:9px">' + d.approvalRate + '%</span>';
+    h += '</div>';
+
     h += '<div class="pr-proj-stats">';
-    h += _prProjStat(d.totalFactHours.toFixed(1), 'Факт');
-    h += _prProjStat(d.totalBillable.toFixed(1), 'Billable');
-    h += _prProjStat(d.totalPayroll.toFixed(1), 'Payroll');
-    h += _prProjStat(_prFmtMoney(d.totalAmount), 'Сумма');
-    h += _prProjStat(d.taskCount + ' / ' + d.approvedCount, 'Всего/Подтв');
-    h += '</div></div>';
+    h += _prProjStat(d.totalFactHours.toFixed(1), 'Факт', 'var(--accent)');
+    h += _prProjStat(d.totalBillable.toFixed(1), 'Billable', 'var(--green)');
+    h += _prProjStat(d.totalPayroll.toFixed(1), 'Payroll', 'var(--yellow)');
+    h += _prProjStat(_prFmtMoney(d.totalAmount), 'Сумма', 'var(--cyan)');
+    h += '</div>';
+
+    /* Mini bar: Payroll / Fact ratio */
+    h += '<div class="pr-proj-bar">';
+    h += '<div class="pr-proj-bar-fill" style="width:' + Math.min(pctPayroll, 100) + '%;background:' + barColor + '"></div>';
+    h += '</div>';
+    h += '</div>';
   });
+  h += '</div>';
 
   h += '</div>';
   return h;
 }
 
-function _prProjStat(val, lbl) {
-  return '<div class="pr-proj-stat"><div class="pr-proj-stat-val">' + val + '</div><div class="pr-proj-stat-lbl">' + lbl + '</div></div>';
+function _prProjStat(val, lbl, color) {
+  return '<div class="pr-proj-stat"><div class="pr-proj-stat-val" style="color:' + (color || 'var(--text)') + '">' + val + '</div><div class="pr-proj-stat-lbl">' + lbl + '</div></div>';
 }
 
 /* ─── Save Bar ─── */
@@ -333,6 +361,26 @@ function _prRenderSaveBar() {
   h += '<span style="font-family:var(--mono);font-size:10px;color:var(--text3)">' + indTxt + '</span>';
   if (_pr.dirty) {
     h += '<button class="pr-btn pr-btn-primary" onclick="_prSaveAll()" style="margin-left:auto">Сохранить</button>';
+  }
+  h += '</div>';
+  return h;
+}
+
+/* ─── Debug info (only in MOCK mode) ─── */
+function _prRenderDebug() {
+  if (!PR_MOCK_MODE) return '';
+  var h = '<div class="pr-debug">';
+  h += '<div class="pr-debug-title">DEBUG (MOCK)</div>';
+  h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
+  h += '<div class="pr-debug-row">TaskReview строк: ' + _pr.rows.length + '</div>';
+  h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
+  h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
+  h += '<div class="pr-debug-row">Webhook: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
+  h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'MOCK' : 'LIVE') + '</div>';
+  h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
+  if (_pr.data && _pr.data.elapsed && _pr.data.elapsed.length > 0) {
+    var sample = _pr.data.elapsed[0];
+    h += '<div class="pr-debug-row">Пример elapsed: ID=' + sample.ID + ' TASK=' + sample.TASK_ID + ' SEC=' + sample.SECONDS + '</div>';
   }
   h += '</div>';
   return h;
@@ -439,6 +487,11 @@ function _prSort(field) {
     return (va - vb) * _pr.sortDir;
   });
   _prRenderAll();
+}
+
+function _prSortIndicator(field) {
+  if (_pr.sortField !== field) return '';
+  return _pr.sortDir > 0 ? ' &#9650;' : ' &#9660;';
 }
 
 function _prSaveAll() {

@@ -26,3 +26,36 @@ Stage Summary:
 - Architecture: task-centric, ES5, innerHTML rendering, bxPost API, localStorage persistence
 - Mock mode works out of the box, real API mode activates when webhook is configured
 - MVP covers: Task Review table, Manager Adjustment (billable/payroll hours), Status cycling, Monthly Projection, CSV Export
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Update prototype with real data — hardcoded webhook, real developers/projects, proper elapsed structure
+
+Work Log:
+- Hardcoded webhook URL https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/ into core.js and api/index.py
+- Updated DEVELOPERS mapping with all 11 real developers (IDs: 1,18,38,54,80,82,92,94,96,98,116)
+- Added missing developers: 80=Сергей Приходько, 94=Denius Coder, 96=Марина Савчук
+- Updated DEV_RATES with temporary rates for all 11 developers
+- Added PROJECTS mapping with all 40 real GROUP_ID from Bitrix24
+- Updated EXCLUDE_GROUPS: 2,22,24,26,42,48,78,80 (service groups)
+- Rewrote mock-data.js with realistic tasks matching 1С-АйтиЛаб business domain
+- Updated elapsed structure to match real Bitrix24 API: SECONDS as string, MINUTES as string, SOURCE field, timezone in dates
+- Created 41 tasks across all developers and projects
+- Generated 69 elapsed entries with realistic hours
+- Fixed _pr.destroy() bug — extracted to standalone _prDestroy() function
+- Added Debug panel in UI showing mock data stats
+- Added header stats (developer count, task count)
+- Added projection cards with mini progress bars (Payroll/Fact ratio)
+- Added sort indicators in table headers
+- Full Playwright browser test: all elements render correctly
+  - 41 table rows, 11 projection cards, 5 KPI cards
+  - Total: 259.0 fact hours, 251,650 rub payroll amount
+
+Stage Summary:
+- Webhook hardcoded: https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/
+- All 11 real developers with rates
+- All 30+ real project groups from Bitrix24
+- Mock data matches real elapsed structure (SECONDS as string)
+- Page fully renders in browser: KPIs, table, projection, debug panel
+- Ready for testing in MOCK mode

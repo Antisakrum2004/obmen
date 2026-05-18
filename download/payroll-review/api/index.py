@@ -9,6 +9,7 @@ _STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sta
 app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='')
 CORS(app)
 
+# Webhook hardcoded for prototype
 DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/'
 
 @app.route('/')
@@ -23,17 +24,21 @@ def js_files(filename):
 def proxy_api(method):
     if request.method == 'OPTIONS':
         return '', 204
+
     hook = request.args.get('hook', DEFAULT_HOOK)
-    url = f"{hook.rstrip('/')}/{method}.json"
+    url = hook.rstrip('/') + '/' + method + '.json'
 
-    if request.method == 'POST':
-        json_data = request.get_json(silent=True) or {}
-        resp = http_requests.post(url, json=json_data, timeout=30)
-    else:
-        params = {k: v for k, v in request.args.items() if k != 'hook'}
-        resp = http_requests.get(url, params=params, timeout=30)
+    try:
+        if request.method == 'POST':
+            json_data = request.get_json(silent=True) or {}
+            resp = http_requests.post(url, json=json_data, timeout=30)
+        else:
+            params = {k: v for k, v in request.args.items() if k != 'hook'}
+            resp = http_requests.get(url, params=params, timeout=30)
 
-    return jsonify(resp.json())
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({'error': str(e), 'method': method}), 502
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

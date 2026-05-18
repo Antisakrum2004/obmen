@@ -1,12 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
    payroll-review-calc.js — Normalization & Aggregation Layer
    Чистые функции, НЕ зависят от DOM
+   SECONDS и MINUTES — строки из Bitrix24 API
    ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Normalize single elapsed entry ─── */
 function normalizeElapsed(entry) {
   if (!entry) return null;
-  var seconds = parseInt(entry.SECONDS || 0);
+
+  /* SECONDS — строка из Bitrix24 ("11400"), parseInt корректно обработает */
+  var seconds = parseInt(entry.SECONDS || 0, 10);
   if (isNaN(seconds) || seconds < 0) return null;
 
   var taskId = String(entry.TASK_ID || '');
@@ -16,13 +19,16 @@ function normalizeElapsed(entry) {
   /* Filter unknown developers */
   if (DEV_IDS.indexOf(Number(userId)) < 0) return null;
 
+  /* MINUTES — тоже строка из Bitrix24 ("190"), но пересчитываем из SECONDS для точности */
+  var minutes = Math.round(seconds / 60);
+
   return {
     id: String(entry.ID || ''),
     taskId: taskId,
     userId: userId,
     seconds: seconds,
-    minutes: Math.round(seconds / 60),
-    hours: Math.round(seconds / 360) / 10, /* one decimal */
+    minutes: minutes,
+    hours: Math.round(minutes / 6) / 10, /* one decimal */
     comment: entry.COMMENT_TEXT || '',
     createdDate: (entry.CREATED_DATE || '').substring(0, 10),
     rawEntry: entry
@@ -104,7 +110,7 @@ function buildTaskReviewRows(data, savedReviews) {
 
     var meta = tasksMeta[agg.taskId] || {};
     var gid = meta.groupId || '0';
-    var projectName = (projects[gid] && projects[gid].name) || meta.groupName || 'Без проекта';
+    var projectName = (projects[gid] && projects[gid].name) || meta.groupName || PROJECTS[gid] || 'Без проекта';
     var developerName = DEVELOPERS[agg.userId] || ('ID ' + agg.userId);
     var rate = prGetRate(agg.userId);
 

@@ -1,106 +1,278 @@
 /* ═══════════════════════════════════════════════════════════════
    mock-data.js — Test data layer for Payroll Review Prototype
-   Данные генерируются динамически для ТЕКУЩЕГО месяца
+   Реальные данные из 1С-АйтиЛаб Bitrix24 (мок)
+   Структура elapsed точно как в продакшене:
+     {ID, TASK_ID, USER_ID, COMMENT_TEXT, SECONDS(str), MINUTES(str),
+      SOURCE, CREATED_DATE, DATE_START, DATE_STOP}
    ═══════════════════════════════════════════════════════════════ */
 
 var PR_MOCK = {};
 
-/* ─── Генерация моковых данных для текущего месяца ─── */
+/* ─── Генерация моковых данных ─── */
 function PR_MOCK_generate() {
   var now = new Date();
   var year = now.getFullYear();
   var month = now.getMonth(); /* 0-based */
   var today = now.getDate();
 
-  /* Проекты */
-  PR_MOCK.projects = {
-    '10': {id:'10', name:'Дакар'},
-    '20': {id:'20', name:'Медицина КЗ'},
-    '30': {id:'30', name:'ВДЛ'},
-    '40': {id:'40', name:'Бигап'},
-    '50': {id:'50', name:'ИП Белолапотко'}
-  };
+  /* ─── Проекты — реальные GROUP_ID из Bitrix24 ─── */
+  PR_MOCK.projects = {};
+  Object.keys(PROJECTS).forEach(function(gid) {
+    if (!EXCLUDE_GROUPS[gid]) {
+      PR_MOCK.projects[gid] = {id: gid, name: PROJECTS[gid]};
+    }
+  });
 
-  /* Задачи — реалистичные для 1С-АйтиЛаб */
+  /* ─── Задачи — реалистичные для 1С-АйтиЛаб ─── */
   PR_MOCK.tasks = [
-    {id:'2001',title:'Настройка выгрузки в 1С',groupId:'10',status:'5',responsibleId:'18'},
-    {id:'2002',title:'Интеграция REST API Битрикс',groupId:'10',status:'5',responsibleId:'18'},
-    {id:'2003',title:'Фикс ошибки фильтрации',groupId:'10',status:'3',responsibleId:'18'},
-    {id:'2004',title:'Миграция БД на новый сервер',groupId:'20',status:'5',responsibleId:'38'},
-    {id:'2005',title:'Рефакторинг модуля расчёта',groupId:'20',status:'3',responsibleId:'38'},
-    {id:'2006',title:'Code review — спринт 22',groupId:'30',status:'5',responsibleId:'38'},
-    {id:'2007',title:'Аудит безопасности',groupId:'20',status:'1',responsibleId:'38'},
-    {id:'2008',title:'Новый аналитический отчёт',groupId:'30',status:'5',responsibleId:'54'},
-    {id:'2009',title:'Фильтры по дате и проекту',groupId:'30',status:'5',responsibleId:'54'},
-    {id:'2010',title:'Мобильная адаптация ЛК',groupId:'10',status:'3',responsibleId:'54'},
-    {id:'2011',title:'Экспорт данных CSV/XLSX',groupId:'20',status:'5',responsibleId:'82'},
-    {id:'2012',title:'Деплой релиза на прод',groupId:'20',status:'5',responsibleId:'82'},
-    {id:'2013',title:'CI/CD pipeline настройка',groupId:'10',status:'3',responsibleId:'82'},
-    {id:'2014',title:'Оптимизация SQL запросов',groupId:'40',status:'5',responsibleId:'82'},
-    {id:'2015',title:'Регрессионное тестирование',groupId:'30',status:'5',responsibleId:'92'},
-    {id:'2016',title:'Написание тест-кейсов Q2',groupId:'20',status:'5',responsibleId:'92'},
-    {id:'2017',title:'Автотесты API',groupId:'40',status:'1',responsibleId:'92'},
-    {id:'2018',title:'Техническая документация',groupId:'30',status:'5',responsibleId:'98'},
-    {id:'2019',title:'Ревью требований заказчика',groupId:'10',status:'1',responsibleId:'98'},
-    {id:'2020',title:'Аналитика метрик Q2',groupId:'20',status:'5',responsibleId:'1'},
-    {id:'2021',title:'Планирование спринта 23',groupId:'10',status:'5',responsibleId:'1'},
-    {id:'2022',title:'Консультация по архитектуре',groupId:'30',status:'5',responsibleId:'1'},
-    {id:'2023',title:'Верстка email-шаблонов',groupId:'50',status:'5',responsibleId:'116'},
-    {id:'2024',title:'Фикс email рассылки',groupId:'50',status:'5',responsibleId:'116'},
-    {id:'2025',title:'Лендинг промо-акции',groupId:'40',status:'3',responsibleId:'116'}
+    /* ── Константин Приходько (18) — Бигап, Дакар ── */
+    {id:'6801',title:'Настройка обмена 1С-Битрикс для Бигап',groupId:'6',status:'5',responsibleId:'18'},
+    {id:'6802',title:'Интеграция REST API Битрикс — заказы',groupId:'6',status:'5',responsibleId:'18'},
+    {id:'6803',title:'Фикс ошибки выгрузки каталога',groupId:'6',status:'3',responsibleId:'18'},
+    {id:'6804',title:'Настройка синхронизации остатков Дакар',groupId:'32',status:'5',responsibleId:'18'},
+    {id:'6805',title:'Доработка документа Реализация',groupId:'32',status:'5',responsibleId:'18'},
+
+    /* ── Александр Соколовский (38) — Медицина КЗ, Керамика ── */
+    {id:'6806',title:'Миграция БД Медицина КЗ на новый сервер',groupId:'36',status:'5',responsibleId:'38'},
+    {id:'6807',title:'Рефакторинг модуля расчёта листов нетрудоспособности',groupId:'36',status:'5',responsibleId:'38'},
+    {id:'6808',title:'Code review — спринт 18 Керамика',groupId:'74',status:'5',responsibleId:'38'},
+    {id:'6809',title:'Аудит безопасности Керамика Фабрика',groupId:'72',status:'1',responsibleId:'38'},
+    {id:'6810',title:'Настройка обмена с 1С Керамика',groupId:'74',status:'5',responsibleId:'38'},
+
+    /* ── Александр Попов (54) — ВДЛ, МАРКДЖЕТ ── */
+    {id:'6811',title:'Новый аналитический отчёт ВДЛ',groupId:'20',status:'5',responsibleId:'54'},
+    {id:'6812',title:'Фильтры по дате и проекту МАРКДЖЕТ',groupId:'70',status:'5',responsibleId:'54'},
+    {id:'6813',title:'Мобильная адаптация ЛК ВДЛ',groupId:'20',status:'3',responsibleId:'54'},
+    {id:'6814',title:'Доработка печатной формы МАРКДЖЕТ',groupId:'70',status:'5',responsibleId:'54'},
+
+    /* ── Сергей Приходько (80) — Нейс-Юг, Кондитеры ── */
+    {id:'6815',title:'Экспорт данных CSV/XLSX Нейс-Юг',groupId:'62',status:'5',responsibleId:'80'},
+    {id:'6816',title:'Деплой релиза Кондитеры на прод',groupId:'60',status:'5',responsibleId:'80'},
+    {id:'6817',title:'CI/CD pipeline настройка Нейс-Юг',groupId:'62',status:'3',responsibleId:'80'},
+    {id:'6818',title:'Оптимизация SQL запросов Кондитеры',groupId:'60',status:'5',responsibleId:'80'},
+
+    /* ── Тимур Забиров (82) — Бигап, Кровля ── */
+    {id:'6819',title:'Регрессионное тестирование Бигап',groupId:'6',status:'5',responsibleId:'82'},
+    {id:'6820',title:'Написание тест-кейсов Q2 Бигап',groupId:'6',status:'5',responsibleId:'82'},
+    {id:'6821',title:'Автотесты API Кровля',groupId:'8',status:'1',responsibleId:'82'},
+    {id:'6822',title:'Нагрузочное тестирование Кровля',groupId:'8',status:'5',responsibleId:'82'},
+
+    /* ── Елена Кашина (92) — ООО ОПТИМАПЛАСТ, ИП Белолапотко ── */
+    {id:'6823',title:'Техническая документация ОПТИМАПЛАСТ',groupId:'52',status:'5',responsibleId:'92'},
+    {id:'6824',title:'Ревью требований заказчика Белолапотко',groupId:'50',status:'1',responsibleId:'92'},
+    {id:'6825',title:'Аналитика метрик Q2 ОПТИМАПЛАСТ',groupId:'52',status:'5',responsibleId:'92'},
+
+    /* ── Denius Coder (94) — Завод Милл ФАУЗ, Приправы Дона ── */
+    {id:'6826',title:'Разработка модуля интеграции Милл ФАУЗ',groupId:'64',status:'5',responsibleId:'94'},
+    {id:'6827',title:'Фикс ошибки отчёта Приправы Дона',groupId:'44',status:'5',responsibleId:'94'},
+    {id:'6828',title:'Настройка обмена с 1С Приправы Дона',groupId:'44',status:'3',responsibleId:'94'},
+
+    /* ── Марина Савчук (96) — ИП Иванов, АМР ── */
+    {id:'6829',title:'Верстка email-шаблонов Иванов',groupId:'66',status:'5',responsibleId:'96'},
+    {id:'6830',title:'Фикс email рассылки Иванов',groupId:'66',status:'5',responsibleId:'96'},
+    {id:'6831',title:'Лендинг промо-акции АМР',groupId:'40',status:'3',responsibleId:'96'},
+
+    /* ── Ольга Замшина (98) — Самокаты центр, АгроСервис ── */
+    {id:'6832',title:'Настройка документа Заказ-наряд Самокаты',groupId:'18',status:'5',responsibleId:'98'},
+    {id:'6833',title:'Доработка отчёта АгроСервис',groupId:'12',status:'5',responsibleId:'98'},
+    {id:'6834',title:'Фикс ошибки в расчёте АгроСервис',groupId:'12',status:'5',responsibleId:'98'},
+    {id:'6835',title:'Настройка обмена 1С Самокаты',groupId:'18',status:'5',responsibleId:'98'},
+
+    /* ── Владимир Макаров (1) — ЮРИСТЫ БИГАП, Живое пиво ── */
+    {id:'6836',title:'Планирование архитектуры ЮРИСТЫ БИГАП',groupId:'82',status:'5',responsibleId:'1'},
+    {id:'6837',title:'Консультация по интеграции Живое пиво',groupId:'4',status:'5',responsibleId:'1'},
+    {id:'6838',title:'Ревью кода ЮРИСТЫ БИГАП спринт 19',groupId:'82',status:'5',responsibleId:'1'},
+
+    /* ── Андрей Предеин (116) — МС Лизинг, АвтоБриф ── */
+    {id:'6839',title:'Разработка модуля лизинга МС Лизинг',groupId:'16',status:'5',responsibleId:'116'},
+    {id:'6840',title:'Доработка калькулятора АвтоБриф',groupId:'14',status:'5',responsibleId:'116'},
+    {id:'6841',title:'Фикс ошибки валидации МС Лизинг',groupId:'16',status:'3',responsibleId:'116'}
   ];
 
-  /* Elapsed entries — динамически по рабочим дням текущего месяца */
+  /* ─── Elapsed entries — реальная структура из Bitrix24 ───
+     SECONDS: строка, MINUTES: строка, DATE_START/STOP с таймзоной
+  */
   var elapsed = [];
-  var eid = 30001;
+  var eid = 7700;
 
-  /* Маппинг: какие задачи делает каждый разработчик */
+  /* Маппинг: какие задачи делает каждый разработчик, сколько часов */
   var devTasks = {
     '18': [
-      {tid:'2001', hours:[4,3,2], comments:['Вёрстка формы выгрузки','Подключение API 1С','Тестирование']},
-      {tid:'2002', hours:[8,2], comments:['Интеграция REST','Фикс ошибок']},
-      {tid:'2003', hours:[3], comments:['Исправление фильтра']}
+      {tid:'6801', entries:[
+        {hours:4, comment:'Вёрстка формы выгрузки', dayOff:0},
+        {hours:3, comment:'Подключение API 1С', dayOff:1},
+        {hours:2, comment:'Тестирование обмена', dayOff:2}
+      ]},
+      {tid:'6802', entries:[
+        {hours:8, comment:'Интеграция REST заказов', dayOff:3},
+        {hours:2, comment:'Фикс ошибок ответа API', dayOff:4}
+      ]},
+      {tid:'6803', entries:[
+        {hours:3, comment:'Исправление фильтра каталога', dayOff:5}
+      ]},
+      {tid:'6804', entries:[
+        {hours:6, comment:'Настройка синхронизации остатков', dayOff:6},
+        {hours:4, comment:'Проверка целостности данных', dayOff:7}
+      ]},
+      {tid:'6805', entries:[
+        {hours:3, comment:'Доработка документа реализация', dayOff:8}
+      ]}
     ],
     '38': [
-      {tid:'2004', hours:[10,8], comments:['Миграция БД','Проверка целостности']},
-      {tid:'2005', hours:[4,4,2], comments:['Рефакторинг','Покрытие тестами','Ревью']},
-      {tid:'2006', hours:[2], comments:['Code review']},
-      {tid:'2007', hours:[3], comments:['Анализ уязвимостей']}
+      {tid:'6806', entries:[
+        {hours:10, comment:'Миграция БД на новый сервер', dayOff:0},
+        {hours:8, comment:'Проверка целостности после миграции', dayOff:1}
+      ]},
+      {tid:'6807', entries:[
+        {hours:4, comment:'Рефакторинг модуля расчёта', dayOff:2},
+        {hours:4, comment:'Покрытие тестами', dayOff:3},
+        {hours:2, comment:'Ревью кода', dayOff:4}
+      ]},
+      {tid:'6808', entries:[
+        {hours:2, comment:'Code review спринт 18', dayOff:5}
+      ]},
+      {tid:'6809', entries:[
+        {hours:3, comment:'Анализ уязвимостей', dayOff:6}
+      ]},
+      {tid:'6810', entries:[
+        {hours:5, comment:'Настройка обмена с 1С', dayOff:7},
+        {hours:3, comment:'Тестирование обмена', dayOff:8}
+      ]}
     ],
     '54': [
-      {tid:'2008', hours:[6,4], comments:['Разработка отчёта','Настройка графиков']},
-      {tid:'2009', hours:[3,2], comments:['Фильтры по дате','Фильтры по проекту']},
-      {tid:'2010', hours:[5,4,3], comments:['Адаптация layout','Тест на мобильных','Правки']}
+      {tid:'6811', entries:[
+        {hours:6, comment:'Разработка отчёта', dayOff:0},
+        {hours:4, comment:'Настройка графиков и фильтров', dayOff:1}
+      ]},
+      {tid:'6812', entries:[
+        {hours:3, comment:'Фильтры по дате', dayOff:2},
+        {hours:2, comment:'Фильтры по проекту', dayOff:3}
+      ]},
+      {tid:'6813', entries:[
+        {hours:5, comment:'Адаптация layout мобильный', dayOff:4},
+        {hours:4, comment:'Тест на мобильных', dayOff:5},
+        {hours:3, comment:'Правки по результатам теста', dayOff:6}
+      ]},
+      {tid:'6814', entries:[
+        {hours:3, comment:'Доработка печатной формы', dayOff:7}
+      ]}
+    ],
+    '80': [
+      {tid:'6815', entries:[
+        {hours:5, comment:'Экспорт CSV модуль', dayOff:0},
+        {hours:2, comment:'Экспорт XLSX модуль', dayOff:1}
+      ]},
+      {tid:'6816', entries:[
+        {hours:8, comment:'Деплой + проверка на проде', dayOff:2}
+      ]},
+      {tid:'6817', entries:[
+        {hours:4, comment:'GitHub Actions pipeline', dayOff:3},
+        {hours:3, comment:'Docker настройка', dayOff:4}
+      ]},
+      {tid:'6818', entries:[
+        {hours:6, comment:'Оптимизация запросов БД', dayOff:5}
+      ]}
     ],
     '82': [
-      {tid:'2011', hours:[5,2], comments:['Экспорт CSV','Экспорт XLSX']},
-      {tid:'2012', hours:[8], comments:['Деплой + проверка']},
-      {tid:'2013', hours:[4,3], comments:['GitHub Actions','Docker настройка']},
-      {tid:'2014', hours:[6], comments:['Оптимизация запросов']}
+      {tid:'6819', entries:[
+        {hours:7, comment:'Регрессионное тестирование', dayOff:0}
+      ]},
+      {tid:'6820', entries:[
+        {hours:3, comment:'Тест-кейсы модуль А', dayOff:1},
+        {hours:3, comment:'Тест-кейсы модуль Б', dayOff:2}
+      ]},
+      {tid:'6821', entries:[
+        {hours:2, comment:'Настройка тестового фреймворка', dayOff:3}
+      ]},
+      {tid:'6822', entries:[
+        {hours:4, comment:'Нагрузочное тестирование API', dayOff:4},
+        {hours:3, comment:'Анализ результатов нагрузки', dayOff:5}
+      ]}
     ],
     '92': [
-      {tid:'2015', hours:[7], comments:['Регрессионное тестирование']},
-      {tid:'2016', hours:[3,3], comments:['Тест-кейсы модуль А','Тест-кейсы модуль Б']},
-      {tid:'2017', hours:[2], comments:['Настройка тестового фреймворка']}
+      {tid:'6823', entries:[
+        {hours:8, comment:'Документация API модуль', dayOff:0}
+      ]},
+      {tid:'6824', entries:[
+        {hours:4, comment:'Ревью требований заказчика', dayOff:1}
+      ]},
+      {tid:'6825', entries:[
+        {hours:2, comment:'Аналитика метрик', dayOff:2},
+        {hours:3, comment:'Подготовка отчёта Q2', dayOff:3}
+      ]}
+    ],
+    '94': [
+      {tid:'6826', entries:[
+        {hours:6, comment:'Разработка модуля интеграции', dayOff:0},
+        {hours:4, comment:'Подключение API Милл ФАУЗ', dayOff:1},
+        {hours:3, comment:'Тестирование обмена', dayOff:2}
+      ]},
+      {tid:'6827', entries:[
+        {hours:2, comment:'Фикс ошибки отчёта', dayOff:3}
+      ]},
+      {tid:'6828', entries:[
+        {hours:4, comment:'Настройка обмена 1С', dayOff:4},
+        {hours:3, comment:'Тестирование обмена Приправы', dayOff:5}
+      ]}
+    ],
+    '96': [
+      {tid:'6829', entries:[
+        {hours:5, comment:'Верстка шаблона письма', dayOff:0},
+        {hours:2, comment:'Тестирование рендеринга', dayOff:1}
+      ]},
+      {tid:'6830', entries:[
+        {hours:2, comment:'Фикс вёрстки email', dayOff:2}
+      ]},
+      {tid:'6831', entries:[
+        {hours:4, comment:'Дизайн лендинга промо', dayOff:3},
+        {hours:3, comment:'Вёрстка лендинга', dayOff:4}
+      ]}
     ],
     '98': [
-      {tid:'2018', hours:[8], comments:['Документация API']},
-      {tid:'2019', hours:[4], comments:['Ревью требований']}
+      {tid:'6832', entries:[
+        {hours:5, comment:'Настройка документа Заказ-наряд', dayOff:0},
+        {hours:3, comment:'Тестирование документа', dayOff:1}
+      ]},
+      {tid:'6833', entries:[
+        {hours:4, comment:'Доработка отчёта', dayOff:2}
+      ]},
+      {tid:'6834', entries:[
+        {hours:3, comment:'Фикс ошибки расчёта', dayOff:3},
+        {hours:2, comment:'Проверка расчётов', dayOff:4}
+      ]},
+      {tid:'6835', entries:[
+        {hours:4, comment:'Настройка обмена 1С', dayOff:5},
+        {hours:3, comment:'Тест обмена', dayOff:6}
+      ]}
     ],
     '1': [
-      {tid:'2020', hours:[2], comments:['Аналитика метрик']},
-      {tid:'2021', hours:[3], comments:['Планирование']},
-      {tid:'2022', hours:[1], comments:['Консультация']}
+      {tid:'6836', entries:[
+        {hours:3, comment:'Планирование архитектуры', dayOff:0},
+        {hours:2, comment:'Ревью архитектурного решения', dayOff:1}
+      ]},
+      {tid:'6837', entries:[
+        {hours:1, comment:'Консультация по интеграции', dayOff:2}
+      ]},
+      {tid:'6838', entries:[
+        {hours:2, comment:'Ревью кода спринт 19', dayOff:3}
+      ]}
     ],
     '116': [
-      {tid:'2023', hours:[5,2], comments:['Верстка шаблона','Тестирование']},
-      {tid:'2024', hours:[2], comments:['Фикс вёрстки']},
-      {tid:'2025', hours:[4,3], comments:['Дизайн лендинга','Вёрстка']}
+      {tid:'6839', entries:[
+        {hours:5, comment:'Разработка модуля лизинга', dayOff:0},
+        {hours:4, comment:'Логика расчёта платежей', dayOff:1}
+      ]},
+      {tid:'6840', entries:[
+        {hours:3, comment:'Доработка калькулятора', dayOff:2},
+        {hours:2, comment:'Тестирование калькулятора', dayOff:3}
+      ]},
+      {tid:'6841', entries:[
+        {hours:2, comment:'Фикс ошибки валидации', dayOff:4}
+      ]}
     ]
   };
 
-  /* Генерация elapsed записей по рабочим дням */
-  var dayIndex = 0;
+  /* Генерация рабочих дней текущего месяца */
   var workDays = [];
   for (var d = 1; d <= today && d <= 28; d++) {
     var dt = new Date(year, month, d);
@@ -108,27 +280,33 @@ function PR_MOCK_generate() {
     if (dow !== 0 && dow !== 6) workDays.push(d);
   }
 
+  /* Генерация elapsed записей (реальная структура Bitrix24) */
   Object.keys(devTasks).forEach(function(uid) {
     devTasks[uid].forEach(function(taskDef) {
-      var totalHours = 0;
-      taskDef.hours.forEach(function(h, i) {
-        totalHours += h;
-        var dayOffset = (dayIndex + i) % workDays.length;
-        var day = workDays[dayOffset];
-        var dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      taskDef.entries.forEach(function(entry, i) {
+        var seconds = entry.hours * 3600;
+        var minutes = Math.round(seconds / 60);
+        var dayIdx = entry.dayOff % workDays.length;
+        var day = workDays[dayIdx];
+        var monthStr = String(month + 1).padStart(2, '0');
+        var dayStr = String(day).padStart(2, '0');
+        var dateStr = year + '-' + monthStr + '-' + dayStr;
+        var startH = 9;
+        var stopH = 9 + entry.hours;
 
         elapsed.push({
           ID: String(eid++),
           TASK_ID: taskDef.tid,
           USER_ID: uid,
-          SECONDS: h * 3600,
-          COMMENT_TEXT: taskDef.comments[i] || '',
-          CREATED_DATE: dateStr + 'T09:00:00',
-          DATE_START: dateStr + 'T09:00:00',
-          DATE_STOP: dateStr + 'T' + String(9 + h) + ':00:00'
+          COMMENT_TEXT: entry.comment || '',
+          SECONDS: String(seconds),
+          MINUTES: String(minutes),
+          SOURCE: '2',
+          CREATED_DATE: dateStr + 'T' + String(startH).padStart(2, '0') + ':04:16+03:00',
+          DATE_START: dateStr + 'T' + String(startH).padStart(2, '0') + ':04:22+03:00',
+          DATE_STOP: dateStr + 'T' + String(stopH).padStart(2, '0') + ':04:22+03:00'
         });
       });
-      dayIndex = (dayIndex + 1) % workDays.length;
     });
   });
 
@@ -142,7 +320,6 @@ PR_MOCK_generate();
 function prLoadPeriodData(year, month) {
   if (PR_MOCK_MODE) {
     return new Promise(function(resolve) {
-      /* Небольшая задержка для реалистичности */
       setTimeout(function() {
         resolve(PR_MOCK_buildMockData(year, month));
       }, 300);
@@ -173,9 +350,10 @@ function PR_MOCK_buildMockData(year, month) {
   periodTasks.forEach(function(t) {
     var id = String(t.id);
     var gid = String(t.groupId || '0');
+    var pname = (PR_MOCK.projects[gid] && PR_MOCK.projects[gid].name) || PROJECTS[gid] || '';
     tasksMeta[id] = {
       groupId: gid,
-      groupName: (PR_MOCK.projects[gid] && PR_MOCK.projects[gid].name) || '',
+      groupName: pname,
       title: t.title || '',
       status: t.status || '0',
       responsibleId: String(t.responsibleId || '0')
@@ -210,10 +388,10 @@ function PR_loadRealData(year, month) {
 
   var elapsedProms = dates.map(function(ds) {
     var u = '/api/task.elapseditem.getlist?hook=' + encodeURIComponent(hook);
-    var b = JSON.stringify([0, {}, {
+    var b = JSON.stringify({
       '>=CREATED_DATE': ds,
       '<=CREATED_DATE': ds + ' 23:59:59'
-    }, ['ID','TASK_ID','USER_ID','SECONDS','CREATED_DATE','COMMENT_TEXT']]);
+    });
     return fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body:b})
       .then(function(r) { return r.json(); });
   });
@@ -263,9 +441,10 @@ function PR_loadRealData(year, month) {
       tasks.forEach(function(t) {
         var id = String(t.id || t.ID);
         var gid = String(t.groupId || t.GROUP_ID || '0');
+        var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
         tasksMeta[id] = {
           groupId: gid,
-          groupName: (t.group && t.group.name) || '',
+          groupName: pname,
           title: t.title || t.TITLE || '',
           status: t.status || t.STATUS || '0',
           responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
