@@ -135,9 +135,11 @@ function _prLoadData() {
       _pr.modelSource = 'live_fallback';
     }
 
-    /* Построить projection и totals через domain функции */
-    _pr.projection = buildMonthlyProjection(_pr.rows);
-    _pr.totals = buildPeriodTotals(_pr.rows);
+    /* Построить projection и totals через domain функции (с кэшированием) */
+    _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+      ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+    _pr.totals = typeof buildPeriodTotalsCached === 'function'
+      ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
     _pr.dirty = false;
     _pr.loading = false;
     _prRenderAll();
@@ -658,8 +660,8 @@ function _prOnEdit(input) {
   }
 
   _pr.dirty = true;
-  _pr.projection = buildMonthlyProjection(_pr.rows);
-  _pr.totals = buildPeriodTotals(_pr.rows);
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
 
@@ -699,8 +701,8 @@ function _prCycleStatus(idx) {
   }
 
   _pr.dirty = true;
-  _pr.projection = buildMonthlyProjection(_pr.rows);
-  _pr.totals = buildPeriodTotals(_pr.rows);
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
 
@@ -774,8 +776,8 @@ function _prApproveAll() {
   }
 
   _pr.dirty = true;
-  _pr.projection = buildMonthlyProjection(_pr.rows);
-  _pr.totals = buildPeriodTotals(_pr.rows);
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
   _prRenderAll();
 }
 

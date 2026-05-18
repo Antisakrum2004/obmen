@@ -2,7 +2,83 @@
    payroll-projection.js — Слой прогнозов и агрегации
    Вычисляет прогнозы выплат, маржу, итоги периода.
    НЕ зависит от DOM. НЕ читает DOM.
+
+   v1.1.0 — Performance: memoization для projection/totals
    ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Кэш projections/totals для производительности ─── */
+var _projectionCache = {
+  key: null,
+  projection: null,
+  totals: null,
+  rowsHash: null
+};
+
+/**
+ * Вычислить простой хеш массива rows для инвалидации кэша
+ * @param {Array} rows
+ * @returns {String}
+ */
+function _computeRowsHash(rows) {
+  if (!rows || !rows.length) return 'empty';
+  var hash = 5381;
+  var sampleSize = Math.min(rows.length, 50); /* Sample first 50 rows for speed */
+  for (var i = 0; i < sampleSize; i++) {
+    var r = rows[i];
+    var str = (r._reviewKey || '') + ':' +
+      (r.payrollHours || 0) + ':' +
+      (r.billableHours || 0) + ':' +
+      (r.reviewStatus || '') + ':' +
+      (r.payrollAmount || 0);
+    for (var j = 0; j < str.length; j++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(j);
+      hash = hash & hash;
+    }
+  }
+  return 'h_' + Math.abs(hash).toString(36) + '_' + rows.length;
+}
+
+/**
+ * Получить MonthlyProjection с кэшированием
+ * Кэш инвалидируется при изменении rows
+ * @param {Array} reviews — TaskReview[]
+ * @returns {Array} DeveloperProjection[]
+ */
+function buildMonthlyProjectionCached(reviews) {
+  var hash = _computeRowsHash(reviews);
+  if (_projectionCache.rowsHash === hash && _projectionCache.projection) {
+    return _projectionCache.projection;
+  }
+  var projection = buildMonthlyProjection(reviews);
+  _projectionCache.rowsHash = hash;
+  _projectionCache.projection = projection;
+  return projection;
+}
+
+/**
+ * Получить PeriodTotals с кэшированием
+ * @param {Array} reviews — TaskReview[]
+ * @returns {Object} PeriodTotals
+ */
+function buildPeriodTotalsCached(reviews) {
+  var hash = _computeRowsHash(reviews);
+  if (_projectionCache.rowsHash === hash && _projectionCache.totals) {
+    return _projectionCache.totals;
+  }
+  var totals = buildPeriodTotals(reviews);
+  _projectionCache.rowsHash = hash;
+  _projectionCache.totals = totals;
+  return totals;
+}
+
+/**
+ * Сбросить кэш projections/totals
+ */
+function invalidateProjectionCache() {
+  _projectionCache.rowsHash = null;
+  _projectionCache.projection = null;
+  _projectionCache.totals = null;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    Месячный прогноз по разработчикам

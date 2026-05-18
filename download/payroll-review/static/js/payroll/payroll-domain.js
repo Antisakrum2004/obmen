@@ -752,6 +752,59 @@ function canTransitionPeriodStatus(current, target) {
   return allowed.indexOf(target) >= 0;
 }
 
+/**
+ * Проверить и выполнить переход статуса периода с валидацией
+ * Запрещает: paid→draft, locked mutation, exported rewrite, invalid rollback
+ *
+ * @param {String} current — текущий статус
+ * @param {String} target — целевой статус
+ * @returns {Object} { allowed: Boolean, error: String|null, auditAction: String|null }
+ */
+function validatePeriodTransition(current, target) {
+  /* Запретить paid → что-либо */
+  if (current === PR_PERIOD_STATUS.PAID) {
+    return {
+      allowed: false,
+      error: 'paid_no_rollback',
+      message: 'Оплаченный период не может быть изменён'
+    };
+  }
+
+  /* Запретить locked → что-либо кроме exported */
+  if (current === PR_PERIOD_STATUS.LOCKED && target !== PR_PERIOD_STATUS.EXPORTED) {
+    return {
+      allowed: false,
+      error: 'locked_mutation',
+      message: 'Заблокированный период можно только экспортировать'
+    };
+  }
+
+  /* Запретить exported → rollback */
+  if (current === PR_PERIOD_STATUS.EXPORTED && target !== PR_PERIOD_STATUS.PAID) {
+    return {
+      allowed: false,
+      error: 'exported_no_rollback',
+      message: 'Экспортированный период можно только отметить как оплаченный'
+    };
+  }
+
+  /* Проверить допустимость перехода по state machine */
+  if (!canTransitionPeriodStatus(current, target)) {
+    return {
+      allowed: false,
+      error: 'invalid_transition',
+      message: 'Переход ' + current + ' → ' + target + ' не допустим'
+    };
+  }
+
+  return {
+    allowed: true,
+    error: null,
+    message: null,
+    auditAction: 'period_transition_' + current + '_to_' + target
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════════
    DEVELOPER CABINET VIEW — Представление для разработчика
    Разработчик видит ТОЛЬКО свои payroll данные
@@ -788,11 +841,11 @@ function createDevCabinetView(developerId, reviews) {
       taskTitle: r.taskTitle,
       projectName: r.projectName,
       payrollHours: r.payrollHours,
-      rate: r.rate,
-      payrollAmount: r.payrollAmount,
+      /* КРИТИЧЕСКИ: НЕТ billableHours, НЕТ factHours, НЕТ clientAmount,
+         НЕТ clientRate, НЕТ grossMargin, НЕТ marginPercent, НЕТ rate,
+         НЕТ base, НЕТ payrollAmount, НЕТ overburnHours */
       reviewStatus: r.reviewStatus,
-      managerComment: r.managerComment,
-      /* КРИТИЧЕСКИ: НЕТ billableHours, НЕТ factHours, НЕТ clientAmount */
+      managerComment: r.managerComment
     };
   });
 
@@ -802,7 +855,7 @@ function createDevCabinetView(developerId, reviews) {
     summary: {
       taskCount: taskCount,
       totalPayrollHours: Math.round(totalPayrollHours * 10) / 10,
-      totalPayrollAmount: Math.round(totalPayrollAmount),
+      /* КРИТИЧЕСКИ: НЕТ totalPayrollAmount, НЕТ rate — финансовая инфа */
       approvedCount: approvedCount,
       pendingCount: pendingCount
     }
