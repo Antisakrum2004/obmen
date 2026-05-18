@@ -223,7 +223,13 @@ function buildReviewRows(data, savedReviews, rateProvider) {
       managerComment: saved ? saved.managerComment : '',
       entryCount: agg.entryCount,
       createdAt: saved ? saved.createdAt : Date.now(),
-      updatedAt: saved ? saved.updatedAt : Date.now()
+      updatedAt: saved ? saved.updatedAt : Date.now(),
+      /* Profitability — из сохранённых или defaults */
+      clientRate: saved ? (saved.clientRate || 0) : 0,
+      clientAmount: saved ? (saved.clientAmount || 0) : 0,
+      grossMargin: saved ? (saved.grossMargin || 0) : 0,
+      marginPercent: saved ? (saved.marginPercent || 0) : 0,
+      overburnHours: saved ? (saved.overburnHours || 0) : 0
     });
 
     /* Вычислить сумму */
@@ -406,7 +412,13 @@ function serializeReviews(reviews) {
       reviewStatus: r.reviewStatus,
       managerComment: r.managerComment,
       updatedAt: r.updatedAt,
-      createdAt: r.createdAt
+      createdAt: r.createdAt,
+      /* Profitability fields */
+      clientRate: r.clientRate || 0,
+      clientAmount: r.clientAmount || 0,
+      grossMargin: r.grossMargin || 0,
+      marginPercent: r.marginPercent || 0,
+      overburnHours: r.overburnHours || 0
     };
   });
   return map;

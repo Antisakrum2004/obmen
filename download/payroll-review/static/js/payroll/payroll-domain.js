@@ -101,10 +101,17 @@ function createTaskReview(params) {
     billableHours:  Number(p.billableHours) || 0,    /* editable менеджером */
     payrollHours:   Number(p.payrollHours) || 0,     /* editable менеджером */
 
-    /* Money */
-    rate:           Number(p.rate) || 0,
-    base:           Number(p.base) || 0,
-    payrollAmount:  Number(p.payrollAmount) || 0,
+    /* Money: Payroll side */
+    rate:           Number(p.rate) || 0,             /* payroll rate (р/час) */
+    base:           Number(p.base) || 0,             /* базовая часть (оклад) */
+    payrollAmount:  Number(p.payrollAmount) || 0,     /* payrollHours * rate + base */
+
+    /* Money: Client / Profitability side (MVP: значения по умолчанию) */
+    clientRate:     Number(p.clientRate) || 0,        /* ставка для клиента (р/час) */
+    clientAmount:   Number(p.clientAmount) || 0,      /* billableHours * clientRate */
+    grossMargin:    Number(p.grossMargin) || 0,       /* clientAmount - payrollAmount */
+    marginPercent:  Number(p.marginPercent) || 0,     /* grossMargin / clientAmount * 100 */
+    overburnHours:  Number(p.overburnHours) || 0,     /* billableHours - payrollHours (если > 0) */
 
     /* Review state */
     reviewStatus:   p.reviewStatus || PR_REVIEW_STATUS.PENDING,
@@ -128,6 +135,46 @@ function calculateReviewAmount(review) {
   if (!review) return review;
   var r = shallowClone(review);
   r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
+
+  /* Profitability calculations */
+  r = calculateProfitability(r);
+
+  return r;
+}
+
+/**
+ * Вычислить profitability поля для TaskReview
+ * clientAmount = billableHours * clientRate
+ * grossMargin = clientAmount - payrollAmount
+ * marginPercent = grossMargin / clientAmount * 100 (если clientAmount > 0)
+ * overburnHours = billableHours - payrollHours (если billable > payroll)
+ * @param {Object} review
+ * @returns {Object} review с profitability fields
+ */
+function calculateProfitability(review) {
+  if (!review) return review;
+  var r = review;
+
+  /* clientAmount: если clientRate не задан, используем payroll rate как fallback */
+  var effectiveClientRate = r.clientRate || r.rate || 0;
+  r.clientRate = effectiveClientRate;
+  r.clientAmount = Math.round(r.billableHours * effectiveClientRate);
+
+  /* grossMargin: client revenue - payroll cost */
+  r.grossMargin = r.clientAmount - r.payrollAmount;
+
+  /* marginPercent */
+  if (r.clientAmount > 0) {
+    r.marginPercent = safeRound(r.grossMargin / r.clientAmount * 100, 1);
+  } else {
+    r.marginPercent = 0;
+  }
+
+  /* overburnHours: если billable > payroll, это переработка */
+  r.overburnHours = r.billableHours > r.payrollHours
+    ? safeRound(r.billableHours - r.payrollHours, 1)
+    : 0;
+
   return r;
 }
 
