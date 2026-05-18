@@ -170,10 +170,9 @@ function _prRenderKPIs() {
   var marginVal = Math.round((t.totalBillable - t.totalPayroll) * 1000) / 10;
   var h = '<div class="pr-kpi-grid">';
   h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Оплачиваемые', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
+  h += _prKpiCard('Опл. клиенту', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
   h += _prKpiCard('К выплате часы', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
-  h += _prKpiCard('Базовая часть', _prFmtMoney(t.totalBase), 'var(--cyan)', 'оклад/премия');
-  h += _prKpiCard('Сумма выплаты', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.disputedTasks + ' споров');
+  h += _prKpiCard('Сумма выплат', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.disputedTasks + ' споров');
   h += '</div>';
   return h;
 }
@@ -237,14 +236,13 @@ function _prRenderTable() {
   h += '<th onclick="_prSort(\'taskTitle\')">Задача ' + _prSortInd('taskTitle') + '</th>';
   h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortInd('projectName') + '</th>';
   h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortInd('developerName') + '</th>';
-  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт ' + _prSortInd('factHours') + '</th>';
-  h += '<th class="c-num">Оплачиваемые</th>';
-  h += '<th class="c-num">К выплате</th>';
-  h += '<th class="c-num">Ставка</th>';
-  h += '<th class="c-num">Базовая</th>';
-  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма ' + _prSortInd('payrollAmount') + '</th>';
+  h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт\u00A0(ч) ' + _prSortInd('factHours') + '</th>';
+  h += '<th class="c-num">Опл.\u00A0клиенту\u00A0(ч)</th>';
+  h += '<th class="c-num">К\u00A0выплате\u00A0(ч)</th>';
+  h += '<th class="c-num">Ставка\u00A0(р/ч)</th>';
+  h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма\u00A0(р) ' + _prSortInd('payrollAmount') + '</th>';
   h += '<th>Статус</th>';
-  h += '<th>Коммент</th>';
+  h += '<th>Комментарий</th>';
   h += '</tr></thead><tbody>';
 
   filtered.forEach(function(r, idx) {
@@ -269,13 +267,8 @@ function _prRenderTable() {
     var payChanged = r.payrollHours !== r.factHours;
     h += '<td class="c-num"><input class="pr-editable' + (payChanged ? ' changed' : '') + '" type="number" step="0.5" min="0" value="' + r.payrollHours.toFixed(1) + '" data-idx="' + idx + '" data-field="payrollHours" onchange="_prOnEdit(this)"></td>';
 
-    /* Ставка — редактируемая прямо в таблице */
-    var rateChanged = r.rate !== СТАВКА_ПО_УМОЛЧ;
-    h += '<td class="c-num"><input class="pr-editable' + (rateChanged ? ' changed' : '') + '" type="number" step="100" min="0" value="' + r.rate + '" data-idx="' + idx + '" data-field="rate" onchange="_prOnEdit(this)" style="width:70px"></td>';
-
-    /* Базовая (оклад/премия) — редактируемая */
-    var baseChanged = r.base !== 0;
-    h += '<td class="c-num"><input class="pr-editable' + (baseChanged ? ' changed' : '') + '" type="number" step="1000" min="0" value="' + r.base + '" data-idx="' + idx + '" data-field="base" onchange="_prOnEdit(this)" style="width:80px" placeholder="0"></td>';
+    /* Ставка — только отображение (редактируется в админке) */
+    h += '<td class="c-num"><span class="pr-readonly pr-rate-display">' + r.rate + '</span></td>';
 
     /* Сумма */
     h += '<td class="c-num"><span class="pr-readonly pr-amount">' + _prFmtMoney(r.payrollAmount) + '</span></td>';
@@ -295,7 +288,6 @@ function _prRenderTable() {
   h += '<td class="c-num">' + _prSumField(filtered, 'billableHours').toFixed(1) + '</td>';
   h += '<td class="c-num">' + _prSumField(filtered, 'payrollHours').toFixed(1) + '</td>';
   h += '<td></td>';
-  h += '<td class="c-num">' + _prFmtMoney(_prSumField(filtered, 'base')) + '</td>';
   h += '<td class="c-num">' + _prFmtMoney(_prSumField(filtered, 'payrollAmount')) + '</td>';
   h += '<td colspan="2"></td>';
   h += '</tr></tfoot></table></div>';
@@ -325,9 +317,8 @@ function _prRenderProjection() {
 
     h += '<div class="pr-proj-stats">';
     h += _prProjStat(d.totalFactHours.toFixed(1), 'Факт', 'var(--accent)');
-    h += _prProjStat(d.totalBillable.toFixed(1), 'Опл.', 'var(--green)');
-    h += _prProjStat(d.totalPayroll.toFixed(1), 'Выпл.', 'var(--yellow)');
-    h += _prProjStat(_prFmtMoney(d.totalBase), 'Базовая', 'var(--cyan)');
+    h += _prProjStat(d.totalBillable.toFixed(1), 'Опл. клиенту', 'var(--green)');
+    h += _prProjStat(d.totalPayroll.toFixed(1), 'К выплате', 'var(--yellow)');
     h += _prProjStat(_prFmtMoney(d.totalAmount), 'Сумма', 'var(--orange)');
     h += '</div>';
 
@@ -476,24 +467,6 @@ function _prOnEdit(input) {
   }
 
   _pr.rows[realIdx][field] = val;
-
-  /* Сохранить ставку/базовую в настройки разработчика */
-  if (field === 'rate' || field === 'base') {
-    var devId = _pr.rows[realIdx].developerId;
-    var settings = prLoadDevSettings(devId) || {};
-    settings.rate = prGetRate(devId);
-    settings.base = prGetBase(devId);
-    /* Обновляем конкретное поле */
-    settings[field] = val;
-    prSaveDevSettings(devId, settings);
-    /* Обновляем все строки этого разработчика */
-    _pr.rows.forEach(function(r) {
-      if (r.developerId === devId) {
-        r[field] = val;
-        r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
-      }
-    });
-  }
 
   /* Пересчитать сумму */
   _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate) + _pr.rows[realIdx].base;
