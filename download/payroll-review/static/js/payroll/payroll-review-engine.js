@@ -3,7 +3,146 @@
    Строит TaskReview[] из нормализованных данных.
    Управляет состоянием ревью, статусами, сохранением.
    НЕ зависит от DOM.
+
+   v1.1.0 — Single Source of Truth: NormalizedReviewModel
    ═══════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════
+   NORMALIZED REVIEW MODEL — Единый источник истины
+
+   Все чтения данных проходят через NormalizedReviewModel.
+   Для immutable периодов (approved/locked/exported/paid):
+     источник = snapshot из storage
+   Для draft/review периодов:
+     источник = live elapsed + сохранённые ревью из storage
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Построить NormalizedReviewModel для периода
+ * Единая точка входа для всех потребителей данных.
+ *
+ * Если период immutable — читает из snapshot (замороженные данные).
+ * Если период draft/review — строит из live elapsed + saved reviews.
+ *
+ * @param {Object} options
+ *   - periodKey: String ("2026-05")
+ *   - periodStatus: String (draft/review/approved/locked/exported/paid)
+ *   - rawData: Object|null (elapsed, tasks, tasksMeta, projects) — только для draft/review
+ *   - savedReviews: Object|null (map[reviewKey]) — только для draft/review
+ *   - rateProvider: Object|null — { getRate, getBase, getName }
+ * @returns {Object} NormalizedReviewModel
+ */
+function buildNormalizedModel(options) {
+  var opts = options || {};
+  var periodKey = opts.periodKey || '';
+  var periodStatus = opts.periodStatus || PR_PERIOD_STATUS.DRAFT;
+  var isImmutable = typeof isPeriodSnapshotImmutable === 'function' &&
+    isPeriodSnapshotImmutable(periodStatus);
+
+  var model = {
+    periodKey: periodKey,
+    periodStatus: periodStatus,
+    source: isImmutable ? 'snapshot' : 'live',
+    rows: [],
+    qualityReport: null,
+    snapshotId: null,
+    snapshotChecksum: null,
+    snapshotIntegrity: null,
+    builtAt: Date.now()
+  };
+
+  if (isImmutable) {
+    /* ── IMMUTABLE: источник = snapshot ── */
+    var snapshot = null;
+    if (typeof PayrollStorage !== 'undefined') {
+      snapshot = PayrollStorage.loadSnapshot(periodKey);
+    }
+
+    if (snapshot) {
+      /* Проверить целостность */
+      if (typeof verifySnapshotIntegrity === 'function') {
+        model.snapshotIntegrity = verifySnapshotIntegrity(snapshot);
+      }
+
+      /* Восстановить TaskReview[] из snapshot */
+      model.rows = _restoreRowsFromSnapshot(snapshot);
+      model.snapshotId = snapshot.snapshotId || null;
+      model.snapshotChecksum = snapshot.checksum || null;
+      model.qualityReport = null; /* Для snapshot не нужен */
+    } else {
+      /* Snapshot не найден — fallback на live data */
+      console.warn('buildNormalizedModel: Период ' + periodKey +
+        ' в статусе ' + periodStatus + ', но snapshot не найден. Fallback на live.');
+      model.source = 'live_fallback';
+      model.rows = _buildRowsFromLive(opts.rawData, opts.savedReviews, opts.rateProvider);
+    }
+  } else {
+    /* ── DRAFT/REVIEW: источник = live elapsed + saved reviews ── */
+    model.rows = _buildRowsFromLive(opts.rawData, opts.savedReviews, opts.rateProvider);
+  }
+
+  return model;
+}
+
+/**
+ * Восстановить TaskReview[] из PeriodSnapshot
+ * @param {Object} snapshot — PeriodSnapshot
+ * @returns {Array} TaskReview[]
+ */
+function _restoreRowsFromSnapshot(snapshot) {
+  if (!snapshot || !snapshot.reviews) return [];
+
+  var rows = [];
+  snapshot.reviews.forEach(function(snap) {
+    if (!snap) return;
+    var review = createTaskReview({
+      taskId: snap.taskId,
+      taskTitle: snap.taskTitle,
+      projectId: snap.projectId,
+      projectName: snap.developerName ? '' : '', /* projectName не в snapshot, возьмём из review */
+      developerId: snap.developerId,
+      developerName: snap.developerName,
+      factHours: snap.factHours,
+      billableHours: snap.billableHours,
+      payrollHours: snap.payrollHours,
+      rate: snap.rate,
+      base: snap.base,
+      reviewStatus: snap.reviewStatus,
+      managerComment: snap.managerComment,
+      entryCount: 0, /* В snapshot нет entryCount — не важно для immutable */
+      createdAt: snap.snapshotAt || Date.now(),
+      updatedAt: snap.snapshotAt || Date.now()
+    });
+
+    /* Восстановить payrollAmount */
+    review = calculateReviewAmount(review);
+    rows.push(review);
+  });
+
+  /* Сортировка как в live */
+  rows.sort(function(a, b) {
+    if (a.reviewStatus === PR_REVIEW_STATUS.PENDING && b.reviewStatus !== PR_REVIEW_STATUS.PENDING) return -1;
+    if (a.reviewStatus !== PR_REVIEW_STATUS.PENDING && b.reviewStatus === PR_REVIEW_STATUS.PENDING) return 1;
+    var dComp = a.developerName.localeCompare(b.developerName);
+    if (dComp !== 0) return dComp;
+    return a.taskTitle.localeCompare(b.taskTitle);
+  });
+
+  return rows;
+}
+
+/**
+ * Построить TaskReview[] из live данных
+ * @param {Object} rawData
+ * @param {Object} savedReviews
+ * @param {Object} rateProvider
+ * @returns {Array} TaskReview[]
+ */
+function _buildRowsFromLive(rawData, savedReviews, rateProvider) {
+  var result = buildReviewRows(rawData, savedReviews, rateProvider);
+  /* Note: qualityReport нужно получать отдельно из buildReviewRows */
+  return result.rows;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    Построение строк ревью из данных

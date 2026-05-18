@@ -26,7 +26,10 @@ var _pr = {
   modalOpen: false,
   periodStatus: 'draft',      /* NEW: статус периода из domain */
   auditLog: [],                /* NEW: буфер аудиторских записей */
-  qualityReport: null          /* NEW: отчёт о качестве данных */
+  qualityReport: null,         /* NEW: отчёт о качестве данных */
+  modelSource: 'live',         /* NEW: 'live' | 'snapshot' | 'live_fallback' */
+  snapshotId: null,            /* NEW: ID текущего snapshot */
+  snapshotChecksum: null       /* NEW: checksum текущего snapshot */
 };
 
 /* Уничтожение */
@@ -103,10 +106,34 @@ function _prLoadData() {
     /* Загрузить сохранённые ревью через абстракцию storage */
     var savedReviews = _prLoadReviews(year, month);
 
-    /* Построить строки ревью через domain engine */
-    var result = buildReviewRows(data, savedReviews, _prRateProvider());
-    _pr.rows = result.rows;
-    _pr.qualityReport = result.qualityReport;
+    /* Построить NormalizedReviewModel — Единый источник истины */
+    if (typeof buildNormalizedModel === 'function') {
+      var model = buildNormalizedModel({
+        periodKey: periodKey,
+        periodStatus: _pr.periodStatus,
+        rawData: data,
+        savedReviews: savedReviews,
+        rateProvider: _prRateProvider()
+      });
+      _pr.rows = model.rows;
+      _pr.modelSource = model.source;
+      _pr.snapshotId = model.snapshotId;
+      _pr.snapshotChecksum = model.snapshotChecksum;
+
+      /* Для live-режима — получаем qualityReport из buildReviewRows */
+      if (model.source !== 'snapshot') {
+        var result = buildReviewRows(data, savedReviews, _prRateProvider());
+        _pr.qualityReport = result.qualityReport;
+      } else {
+        _pr.qualityReport = null;
+      }
+    } else {
+      /* Fallback на прямое построение (не должно происходить) */
+      var result = buildReviewRows(data, savedReviews, _prRateProvider());
+      _pr.rows = result.rows;
+      _pr.qualityReport = result.qualityReport;
+      _pr.modelSource = 'live_fallback';
+    }
 
     /* Построить projection и totals через domain функции */
     _pr.projection = buildMonthlyProjection(_pr.rows);
@@ -485,6 +512,7 @@ function _prRenderDebug() {
   h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + '</div>';
   h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
   h += '<div class="pr-debug-row">Статус периода: ' + esc(_pr.periodStatus) + '</div>';
+  h += '<div class="pr-debug-row">Источник данных: ' + esc(_pr.modelSource || 'live') + '</div>';
   h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
   if (_pr.qualityReport) {
     h += '<div class="pr-debug-row">Качество данных: ' + esc(_pr.qualityReport.quality) + '</div>';
