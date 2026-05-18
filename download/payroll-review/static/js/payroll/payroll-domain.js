@@ -691,6 +691,15 @@ function validateReviewBatch(reviews, options) {
  * @returns {Object} AuditLogEntry
  */
 function createAuditEntry(action, entityType, entityId, details) {
+  /* Fire event через PayrollEvents */
+  if (typeof PayrollEvents !== 'undefined') {
+    PayrollEvents.emit('audit:created', {
+      action: action,
+      entityType: entityType,
+      entityId: entityId
+    });
+  }
+
   return {
     id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
     timestamp: Date.now(),
@@ -861,3 +870,100 @@ function safeRound(val, decimals) {
   var factor = Math.pow(10, d);
   return Math.round(val * factor) / factor;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PAYROLL EVENTS — Lightweight event bus
+
+   Позволяет analytics, notifications, integrations, sync
+   подписываться на события НЕ вторгаясь в core logic.
+
+   События:
+   - review:updated   — изменено поле ревью
+   - review:approved  — ревью подтверждено
+   - snapshot:created — создан snapshot
+   - period:locked    — период заблокирован
+   - export:generated — экспорт выполнен
+   - validation:failed — валидация не прошла
+   - audit:created    — создана запись аудита
+   ═══════════════════════════════════════════════════════════════ */
+
+var PayrollEvents = (function() {
+  var _listeners = {};
+
+  return {
+    /**
+     * Подписаться на событие
+     * @param {String} event
+     * @param {Function} callback
+     * @returns {Function} unsubscribe function
+     */
+    on: function(event, callback) {
+      if (typeof callback !== 'function') return function() {};
+      if (!_listeners[event]) _listeners[event] = [];
+      _listeners[event].push(callback);
+
+      /* Return unsubscribe function */
+      return function() {
+        if (!_listeners[event]) return;
+        var idx = _listeners[event].indexOf(callback);
+        if (idx >= 0) _listeners[event].splice(idx, 1);
+      };
+    },
+
+    /**
+     * Одноразовая подписка
+     * @param {String} event
+     * @param {Function} callback
+     */
+    once: function(event, callback) {
+      var unsubscribe = this.on(event, function() {
+        unsubscribe();
+        callback.apply(null, arguments);
+      });
+      return unsubscribe;
+    },
+
+    /**
+     * Отправить событие
+     * @param {String} event
+     * @param {Object} data
+     */
+    emit: function(event, data) {
+      if (!_listeners[event]) return;
+      var args = Array.prototype.slice.call(arguments, 1);
+      _listeners[event].forEach(function(cb) {
+        try {
+          cb.apply(null, args);
+        } catch(e) {
+          console.error('PayrollEvents: error in listener for ' + event, e);
+        }
+      });
+    },
+
+    /**
+     * Удалить все подписки для события
+     * @param {String} event
+     */
+    off: function(event) {
+      if (event) {
+        delete _listeners[event];
+      } else {
+        _listeners = {};
+      }
+    },
+
+    /**
+     * Получить список событий с подписчиками (debug)
+     * @returns {Array}
+     */
+    getActiveEvents: function() {
+      var events = [];
+      Object.keys(_listeners).forEach(function(k) {
+        if (_listeners[k] && _listeners[k].length > 0) {
+          events.push({ event: k, listenerCount: _listeners[k].length });
+        }
+      });
+      return events;
+    }
+  };
+})();

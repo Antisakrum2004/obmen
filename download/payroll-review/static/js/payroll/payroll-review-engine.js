@@ -333,6 +333,17 @@ function updateReviewField(review, field, value, periodStatus) {
     { field: field, oldValue: oldValue, newValue: updated[field], version: updated.version }
   );
 
+  /* Fire event */
+  if (typeof PayrollEvents !== 'undefined') {
+    PayrollEvents.emit('review:updated', {
+      reviewKey: review._reviewKey,
+      field: field,
+      oldValue: oldValue,
+      newValue: updated[field],
+      version: updated.version
+    });
+  }
+
   return { review: updated, audit: audit, error: null };
 }
 

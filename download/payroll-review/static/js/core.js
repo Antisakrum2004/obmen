@@ -163,7 +163,14 @@ var EXCLUDE_GROUPS = {
 /* ─── Вебхук (зашит прямо в код) ─── */
 var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
-try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
+/* Чтение хука через абстракцию storage, если доступна */
+try {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadHook) {
+    HOOK = PayrollStorage.loadHook() || PR_DEFAULT_HOOK;
+  } else {
+    HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK;
+  }
+} catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
 /* ─── Режим мок ───
    PR_FORCE_MOCK = true  → всегда мок (тест без API)

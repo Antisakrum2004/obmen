@@ -143,7 +143,12 @@ function saveH() {
     return;
   }
   HOOK = v.endsWith('/') ? v : v + '/';
-  try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
+  /* Сохраняем через абстракцию storage */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveHook) {
+    PayrollStorage.saveHook(HOOK);
+  } else {
+    try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
+  }
   PR_MOCK_MODE = false;
   PR_FORCE_MOCK = false;
   updateModeUI();
