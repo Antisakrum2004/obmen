@@ -496,6 +496,26 @@ function _prRenderDebug() {
   }
   h += '<div class="pr-debug-row">Доменная модель: v' + (typeof PR_DOMAIN_VERSION !== 'undefined' ? PR_DOMAIN_VERSION : '?') + '</div>';
   h += '<div class="pr-debug-row">Аудит записей: ' + _pr.auditLog.length + '</div>';
+
+  /* Snapshot info */
+  var snapPeriodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+  var store = _prStorage();
+  if (store) {
+    var snap = store.loadSnapshot(snapPeriodKey);
+    if (snap) {
+      h += '<div class="pr-debug-row">Snapshot: ' + (snap.snapshotId || 'N/A') + '</div>';
+      h += '<div class="pr-debug-row">Snapshot версия: ' + (snap.snapshotVersion || 'N/A') + '</div>';
+      h += '<div class="pr-debug-row">Snapshot checksum: ' + (snap.checksum || 'N/A') + '</div>';
+      h += '<div class="pr-debug-row">Snapshot immutable: ' + (snap._immutable ? 'YES' : 'NO') + '</div>';
+      if (typeof verifySnapshotIntegrity === 'function') {
+        var integrity = verifySnapshotIntegrity(snap);
+        h += '<div class="pr-debug-row">Snapshot целостность: ' + (integrity.valid ? 'OK' : 'НАРУШЕНА') + '</div>';
+      }
+    } else {
+      h += '<div class="pr-debug-row">Snapshot: не создан</div>';
+    }
+  }
+
   h += '</div>';
   return h;
 }
@@ -580,6 +600,15 @@ function _prOnEdit(input) {
   var filtered = _prGetFilteredRows();
   if (idx < 0 || idx >= filtered.length) return;
 
+  /* Проверить immutable-статус периода */
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) {
+    /* Вернуть input в предыдущее значение */
+    var row = filtered[idx];
+    if (row) input.value = row[field] ? row[field].toFixed(1) : '0.0';
+    return;
+  }
+
   var row = filtered[idx];
   var realIdx = _pr.rows.indexOf(row);
   if (realIdx < 0) return;
@@ -609,6 +638,12 @@ function _prOnEdit(input) {
 function _prCycleStatus(idx) {
   var filtered = _prGetFilteredRows();
   if (idx < 0 || idx >= filtered.length) return;
+
+  /* Проверить immutable-статус периода */
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) {
+    return;
+  }
 
   var row = filtered[idx];
   var realIdx = _pr.rows.indexOf(row);
@@ -676,6 +711,16 @@ function _prSaveAll() {
 
 function _prApproveAll() {
   if (!_pr.rows.length) return;
+
+  /* Проверить immutable-статус периода */
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) {
+    alert('Невозможно изменить: период находится в статусе "' +
+      (typeof PR_PERIOD_STATUS_LABELS !== 'undefined' ? PR_PERIOD_STATUS_LABELS[_pr.periodStatus] : _pr.periodStatus) +
+      '". Сначала верните период в редактируемое состояние.');
+    return;
+  }
+
   if (!confirm('Подтвердить все ожидающие задачи?')) return;
 
   var result = approveAllPending(_pr.rows, _pr.periodStatus);
@@ -685,6 +730,19 @@ function _prApproveAll() {
   if (result.auditEntries.length > 0) {
     var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
     _prAppendAuditLog(periodKey, result.auditEntries);
+  }
+
+  /* Создать snapshot при подтверждении */
+  if (typeof createPeriodSnapshot === 'function') {
+    var snapPeriodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    var snapshot = createPeriodSnapshot(snapPeriodKey, _pr.rows);
+    var store = _prStorage();
+    if (store) {
+      var saveResult = store.saveSnapshot(snapPeriodKey, snapshot);
+      if (saveResult && !saveResult.success) {
+        console.warn('Snapshot save blocked:', saveResult.error);
+      }
+    }
   }
 
   _pr.dirty = true;

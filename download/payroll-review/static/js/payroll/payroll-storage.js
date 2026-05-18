@@ -126,34 +126,98 @@ var PayrollStorage = (function() {
 
     /**
      * Сохранить snapshot периода
+     * WRITE GUARD: нельзя перезаписать snapshot если период в immutable состоянии
      * @param {String} periodKey — "2026-05"
      * @param {Object} snapshot — PeriodSnapshot
-     * @returns {Boolean}
+     * @returns {Object} { success: Boolean, error: String|null }
      */
     saveSnapshot: function(periodKey, snapshot) {
-      return _set(_snapshotKey(periodKey), {
+      /* Проверить, не находится ли существующий snapshot в immutable состоянии */
+      var existing = _get(_snapshotKey(periodKey));
+      if (existing && existing.snapshot && existing.snapshot._immutable) {
+        /* Проверить статус периода */
+        var pState = _get(_periodStateKey(periodKey));
+        var status = pState && pState.state ? pState.state.status : null;
+        if (status && typeof isPeriodSnapshotImmutable === 'function' &&
+            isPeriodSnapshotImmutable(status)) {
+          console.warn('PayrollStorage: ПЕРЕЗАПИСЬ ЗАПРЕЩЕНА. Snapshot периода ' +
+            periodKey + ' находится в immutable состоянии: ' + status);
+          return { success: false, error: 'snapshot_immutable', status: status };
+        }
+      }
+
+      /* Проверить целостность snapshot перед сохранением */
+      if (snapshot && typeof verifySnapshotIntegrity === 'function') {
+        var integrity = verifySnapshotIntegrity(snapshot);
+        if (integrity.error === 'checksum_mismatch') {
+          console.error('PayrollStorage: CHECKSUM MISMATCH для snapshot ' + periodKey +
+            '. Ожидался: ' + integrity.expectedChecksum + ', получен: ' + integrity.actualChecksum);
+          return { success: false, error: 'checksum_mismatch' };
+        }
+      }
+
+      var result = _set(_snapshotKey(periodKey), {
         _v: VERSION,
         _ts: Date.now(),
         snapshot: snapshot
       });
+
+      return { success: result, error: null };
     },
 
     /**
      * Загрузить snapshot периода
+     * С проверкой целостности: если checksum не совпадает, возвращает null
+     * Возвращает DEEP COPY (чтобы нельзя было мутировать через ссылку)
      * @param {String} periodKey
-     * @returns {Object|null} PeriodSnapshot
+     * @returns {Object|null} PeriodSnapshot (deep copy, mutable)
      */
     loadSnapshot: function(periodKey) {
       var data = _get(_snapshotKey(periodKey));
       if (!data || data._v !== VERSION) return null;
-      return data.snapshot || null;
+      var snapshot = data.snapshot || null;
+
+      /* Проверить целостность при загрузке */
+      if (snapshot && typeof verifySnapshotIntegrity === 'function') {
+        var integrity = verifySnapshotIntegrity(snapshot);
+        if (!integrity.valid) {
+          console.error('PayrollStorage: SNAPSHOT CORRUPTION DETECTED для периода ' +
+            periodKey + '. Ожидался: ' + integrity.expectedChecksum +
+            ', получен: ' + integrity.actualChecksum);
+          /* Не возвращаем повреждённые данные */
+          return null;
+        }
+      }
+
+      /* Возвращаем deep copy чтобы предотвратить мутацию через ссылку */
+      if (snapshot && typeof deepClone === 'function') {
+        return deepClone(snapshot);
+      }
+      return snapshot;
     },
 
     /**
      * Удалить snapshot периода
+     * WRITE GUARD: нельзя удалить immutable snapshot
+     * @param {String} periodKey
+     * @returns {Object} { success: Boolean, error: String|null }
      */
     deleteSnapshot: function(periodKey) {
+      /* Проверить, не immutable ли snapshot */
+      var existing = _get(_snapshotKey(periodKey));
+      if (existing && existing.snapshot && existing.snapshot._immutable) {
+        var pState = _get(_periodStateKey(periodKey));
+        var status = pState && pState.state ? pState.state.status : null;
+        if (status && typeof isPeriodSnapshotImmutable === 'function' &&
+            isPeriodSnapshotImmutable(status)) {
+          console.warn('PayrollStorage: УДАЛЕНИЕ ЗАПРЕЩЕНО. Snapshot периода ' +
+            periodKey + ' immutable: ' + status);
+          return { success: false, error: 'snapshot_immutable', status: status };
+        }
+      }
+
       _remove(_snapshotKey(periodKey));
+      return { success: true, error: null };
     },
 
     /* ═══════ PERIOD STATE ═══════ */

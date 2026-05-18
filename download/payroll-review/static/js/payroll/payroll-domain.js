@@ -5,7 +5,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Версия доменной модели ─── */
-var PR_DOMAIN_VERSION = '1.0.0';
+var PR_DOMAIN_VERSION = '1.1.0';
 
 /* ═══════════════════════════════════════════════════════════════
    REVIEW STATUS — Статусы ревью задачи
@@ -159,18 +159,61 @@ function canTransitionReviewStatus(current, target) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   REVIEW SNAPSHOT — Согласованный срез данных
+   REVIEW SNAPSHOT — Иммутабельный согласованный срез данных
+
+   После создания snapshot НЕ может быть изменён.
+   Deep clone protection: все вложенные объекты копируются.
+   Snapshot versioning: snapshotVersion инкрементируется при пересоздании.
+   Checksum: хеш данных для обнаружения порчи.
+   Freeze: Object.freeze() предотвращает мутацию ссылок.
    ═══════════════════════════════════════════════════════════════ */
+
+/* Счётчик версий snapshots */
+var _prSnapshotVersionCounter = 0;
+
+/**
+ * Вычислить простой хеш строки для checksum
+ * DJB2 алгоритм — быстрый, достаточный для целостности данных
+ * @param {String} str
+ * @returns {String} hex hash
+ */
+function _computeChecksum(str) {
+  var hash = 5381;
+  var s = String(str || '');
+  for (var i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash) + s.charCodeAt(i);
+    hash = hash & hash; /* Convert to 32bit integer */
+  }
+  return 'cs_' + Math.abs(hash).toString(36);
+}
+
+/**
+ * Проверить, находится ли период в immutable состоянии
+ * Snapshots в approved/locked/exported/paid — immutable
+ * @param {String} periodStatus
+ * @returns {Boolean}
+ */
+function isPeriodSnapshotImmutable(periodStatus) {
+  return periodStatus === PR_PERIOD_STATUS.APPROVED ||
+         periodStatus === PR_PERIOD_STATUS.LOCKED ||
+         periodStatus === PR_PERIOD_STATUS.EXPORTED ||
+         periodStatus === PR_PERIOD_STATUS.PAID;
+}
 
 /**
  * Создать ReviewSnapshot из TaskReview
+ * Иммутабельный: deep clone + Object.freeze
  * @param {Object} review
  * @param {String} periodKey
- * @returns {Object} ReviewSnapshot
+ * @returns {Object} ReviewSnapshot (frozen)
  */
 function createReviewSnapshot(review, periodKey) {
   if (!review) return null;
-  return {
+
+  /* Deep clone managerAdjustments чтобы разорвать все ссылки */
+  var adjustments = deepClone(detectManagerAdjustments(review));
+
+  var snapshot = {
     reviewId:       review.reviewId,
     _reviewKey:     review._reviewKey,
     periodKey:      periodKey || '',
@@ -196,10 +239,24 @@ function createReviewSnapshot(review, periodKey) {
     reviewStatus:   review.reviewStatus,
     managerComment: review.managerComment,
 
-    /* Метаданные snapshot */
+    /* Метаданные snapshot — immutability info */
     snapshotAt:     Date.now(),
-    managerAdjustments: detectManagerAdjustments(review)
+    snapshotVersion: ++_prSnapshotVersionCounter,
+    managerAdjustments: adjustments,
+    _immutable:     true
   };
+
+  /* Freeze: предотвращает мутацию через ссылку */
+  try {
+    Object.freeze(snapshot);
+    if (adjustments && typeof adjustments === 'object') {
+      Object.freeze(adjustments);
+    }
+  } catch(e) {
+    /* Object.freeze не поддерживается в старых браузерах — не критично */
+  }
+
+  return snapshot;
 }
 
 /**
@@ -273,14 +330,81 @@ function createPeriodSnapshot(periodKey, reviews) {
   totals.totalPayroll = Math.round(totals.totalPayroll * 10) / 10;
   totals.totalPayrollAmount = Math.round(totals.totalPayrollAmount);
 
-  return {
-    periodKey: periodKey,
-    snapshotAt: Date.now(),
-    periodStatus: PR_PERIOD_STATUS.APPROVED,
-    reviewCount: reviewSnapshots.length,
-    reviews: reviewSnapshots,
-    totals: totals
+  /* Deep freeze totals */
+  try { Object.freeze(totals); } catch(e) {}
+
+  /* Вычислить checksum данных snapshot */
+  var checksumData = periodKey + '|' + reviewSnapshots.length + '|' +
+    totals.totalFactHours + '|' + totals.totalBillable + '|' +
+    totals.totalPayroll + '|' + totals.totalPayrollAmount;
+  var checksum = _computeChecksum(checksumData);
+
+  var snapshot = {
+    snapshotId:     'snap_' + periodKey + '_' + Date.now(),
+    periodKey:      periodKey,
+    snapshotAt:     Date.now(),
+    snapshotVersion: ++_prSnapshotVersionCounter,
+    periodStatus:   PR_PERIOD_STATUS.APPROVED,
+    reviewCount:    reviewSnapshots.length,
+    reviews:        reviewSnapshots,
+    totals:         totals,
+    checksum:       checksum,
+    _immutable:     true
   };
+
+  /* Freeze всего snapshot и вложенных массивов */
+  try {
+    Object.freeze(snapshot);
+    Object.freeze(reviewSnapshots);
+  } catch(e) {}
+
+  return snapshot;
+}
+
+/**
+ * Проверить целостность PeriodSnapshot
+ * Сравнивает сохранённый checksum с пересчитанным
+ * @param {Object} snapshot — PeriodSnapshot (из storage)
+ * @returns {Object} { valid: Boolean, expectedChecksum: String, actualChecksum: String }
+ */
+function verifySnapshotIntegrity(snapshot) {
+  if (!snapshot || !snapshot.checksum) {
+    return { valid: false, expectedChecksum: '', actualChecksum: '', error: 'no_checksum' };
+  }
+
+  var totals = snapshot.totals || {};
+  var checksumData = snapshot.periodKey + '|' + (snapshot.reviewCount || 0) + '|' +
+    (totals.totalFactHours || 0) + '|' + (totals.totalBillable || 0) + '|' +
+    (totals.totalPayroll || 0) + '|' + (totals.totalPayrollAmount || 0);
+  var actualChecksum = _computeChecksum(checksumData);
+
+  return {
+    valid: actualChecksum === snapshot.checksum,
+    expectedChecksum: snapshot.checksum,
+    actualChecksum: actualChecksum,
+    error: actualChecksum !== snapshot.checksum ? 'checksum_mismatch' : null
+  };
+}
+
+/**
+ * Проверить, является ли объект замороженным snapshot'ом
+ * @param {Object} snapshot
+ * @returns {Boolean}
+ */
+function isSnapshotFrozen(snapshot) {
+  if (!snapshot || !snapshot._immutable) return false;
+  try {
+    /* Если Object.freeze сработал, запись в свойство молча проигнорируется
+       в non-strict mode или выбросит TypeError в strict mode */
+    var testKey = '__immutability_test__';
+    snapshot[testKey] = true;
+    var isFrozen = !snapshot[testKey];
+    delete snapshot[testKey];
+    return isFrozen;
+  } catch(e) {
+    /* Strict mode: присвоение выбрасывает TypeError = заморожен */
+    return true;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -419,6 +543,16 @@ function shallowClone(obj) {
   var clone = {};
   Object.keys(obj).forEach(function(k) { clone[k] = obj[k]; });
   return clone;
+}
+
+/**
+ * Создать изменяемую копию замороженного snapshot
+ * Снимает Object.freeze, позволяет редактировать данные
+ * @param {Object} frozenSnapshot
+ * @returns {Object} mutable deep copy
+ */
+function unfreezeSnapshot(frozenSnapshot) {
+  return deepClone(frozenSnapshot);
 }
 
 /**
