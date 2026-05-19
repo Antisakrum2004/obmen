@@ -98,3 +98,26 @@ Stage Summary:
 - Key fix: Removed ORDER[ID]=ASC from batch commands that caused ERROR_CORE
 - Key fix: Replaced non-existent tasks.elapsed.time.list with working task.elapseditem.getlist direct calls
 - Version: ПР-3.1.0 deployed to production
+
+---
+Task ID: 1
+Agent: main
+Task: Fix "ниче не грузит" — batch elapsed loading hangs in browser
+
+Work Log:
+- Read core.js, mock-data.js, api/index.py — identified the root cause: bxPost() had no fetch timeout, so if a batch request hung, the entire Promise chain would hang forever
+- Tested Bitrix24 API directly — confirmed batch approach works (15 chunks × 50 tasks, ~25s total, 1328 elapsed entries, 269 for May+developers)
+- Tested via Vercel proxy — confirmed proxy works (1.5-1.8s per 50-task batch)
+- Added AbortController timeout (30s default) to bxPost() — prevents infinite hanging
+- Rewrote bxBatchCall() with: delay between chunks (500ms), timeout per chunk (60s), progress logging, better error handling
+- Added bxLoadElapsedThrottled() as safe fallback — groups of 5 parallel requests with 300ms delay
+- Updated PR_loadRealData() with progress messages (_prLoadingMsg) and better fallback chain
+- Updated loading UI to show progress text
+- Version bumped to ПР-3.2.0
+- Deployed to Vercel — https://obmen-atilab.vercel.app
+
+Stage Summary:
+- Root cause: bxPost() fetch had no timeout → Promise chain hangs forever if server slow/unresponsive
+- Fix: AbortController + timeout, throttled batch with delays, progress logging
+- Verified: Kashina Elena shows 14 tasks with 68.7h in May 2026 (was showing only 1 before)
+- All 7 developers with May data now visible: Makarov 37h, Prikhodko 134.1h, Sokolovsky 97.5h, Popov 84.2h, Zabirov 113.1h, Kashina 68.7h, Zamshina 90.6h

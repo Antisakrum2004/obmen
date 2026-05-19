@@ -372,9 +372,9 @@ function PR_MOCK_buildMockData(year, month) {
 }
 
 /* ─── Real data loader ───
-   v3.1 — Исправлен фильтр задач: ищем задачи за 3 месяца + недавно закрытые,
-   а не только созданные в текущем месяце. Это исправляет баг, когда у
-   разработчиков (напр. Елена Кашина) показывалась только 1 задача. */
+   v3.2 — Улучшена загрузка elapsed: таймауты, throttling, прогресс-логирование.
+   Исправлен баг «ниче не грузит» — batch-запросы теперь с AbortController
+   и задержками между чанками. Fallback на throttled прямые запросы. */
 function PR_loadRealData(year, month) {
   var range = prGetMonthRange(year, month);
   var fromStr = fmt(range.from);
@@ -386,6 +386,7 @@ function PR_loadRealData(year, month) {
   var lookbackStr = fmt(lookbackDate);
 
   console.log('PR_loadRealData: загрузка ЖИВЫХ данных за ' + fromStr + ' — ' + toStr + ' (lookback: ' + lookbackStr + ')');
+  _prLoadingMsg('Загрузка разработчиков...');
 
   /* Шаг 0: Загрузить разработчиков из Bitrix24 */
   var devPromise = (typeof bxLoadDevelopers === 'function')
@@ -393,12 +394,12 @@ function PR_loadRealData(year, month) {
     : Promise.resolve(DEVELOPERS);
 
   return devPromise.then(function() {
+    _prLoadingMsg('Загрузка задач для ' + DEV_IDS.length + ' разработчиков...');
 
     /* Шаг 1: Загрузить задачи по каждому разработчику
-       Стратегия: 3 запроса на разработчика:
+       Стратегия: 2 запроса на разработчика:
        A) Задачи за 3 месяца (lookback) — основные
        B) Задачи закрытые в текущем периоде (могли быть созданы давно)
-       C) Задачи в статусе «в работе» созданные за 6 месяцев
     */
     var taskProms = DEV_IDS.map(function(devId) {
       /* Запрос A: задачи за 3 месяца */
@@ -462,35 +463,34 @@ function PR_loadRealData(year, month) {
     }
 
     /* Шаг 2: Загрузить elapsed через batch API, fallback на прямые запросы */
+    _prLoadingMsg('Загрузка затраченного времени для ' + taskIds.length + ' задач...');
     var elapsedPromise;
     if (typeof bxLoadElapsedBatch === 'function') {
       elapsedPromise = bxLoadElapsedBatch(taskIds, fromStr, toStr);
+    } else if (typeof bxLoadElapsedThrottled === 'function') {
+      elapsedPromise = bxLoadElapsedThrottled(taskIds);
     } else if (typeof bxLoadElapsedDirect === 'function') {
       elapsedPromise = bxLoadElapsedDirect(taskIds);
     } else {
-      /* Последний fallback: по одной задаче напрямую */
+      /* Последний fallback */
       var elapsedProms = taskIds.map(function(tid) {
         return bxPost('task.elapseditem.getlist', {
           TASK_ID: parseInt(tid)
-        }).then(function(r) {
-          if (r && r.result && Array.isArray(r.result)) {
-            return r.result;
-          }
+        }, 15000).then(function(r) {
+          if (r && r.result && Array.isArray(r.result)) return r.result;
           return [];
-        }).catch(function() {
-          return [];
-        });
+        }).catch(function() { return []; });
       });
       elapsedPromise = Promise.all(elapsedProms).then(function(elapsedBatches) {
         var allElapsed = [];
-        elapsedBatches.forEach(function(batch) {
-          allElapsed = allElapsed.concat(batch);
-        });
+        elapsedBatches.forEach(function(batch) { allElapsed = allElapsed.concat(batch); });
         return allElapsed;
       });
     }
 
     return elapsedPromise.then(function(allElapsed) {
+      _prLoadingMsg('Фильтрация данных...');
+
       /* Фильтр по периоду и разработчикам */
       allElapsed = allElapsed.filter(function(e) {
         var d = (e.CREATED_DATE || '').substring(0, 10);
@@ -550,7 +550,8 @@ function PR_loadRealData(year, month) {
         });
 
         /* Шаг 3: Загрузить список проектов */
-        return bxPost('sonet_group.get', {select: ['ID','NAME']}).then(function(r) {
+        _prLoadingMsg('Загрузка проектов...');
+        return bxPost('sonet_group.get', {select: ['ID','NAME']}, 15000).then(function(r) {
           var projects = {};
           if (r && r.result) {
             var groups = r.result;
@@ -579,4 +580,14 @@ function PR_loadRealData(year, month) {
       });
     });
   });
+}
+
+/* ─── Вспомогательная функция для показа прогресса загрузки ─── */
+function _prLoadingMsg(msg) {
+  try {
+    var el = document.getElementById('pr-loading-msg');
+    if (el) el.textContent = msg;
+    var loader = document.querySelector('.pr-loading div:last-child');
+    if (loader && !el) loader.textContent = msg;
+  } catch(e) {}
 }

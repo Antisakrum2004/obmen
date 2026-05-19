@@ -261,7 +261,7 @@ function _prRateProvider() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderLoading() {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div>Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
+  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div id="pr-loading-msg">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
 }
 
 function _prRenderError(msg) {
