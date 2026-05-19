@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    tab-payroll-review.js — Главный модуль UI
-   v4.0.0 — UX/UI Refactor: Dev Performance Cards + Dashboard
+   v5.0.0 — FAST-FIRST: Inverted pipeline + cache + partial render
 
    Этот файл отвечает ТОЛЬКО за:
    - Состояние UI (_pr state)
@@ -33,7 +33,10 @@ var _pr = {
   densityMode: 'comfortable',    /* 'comfortable' | 'compact' */
   viewMode: 'cards',             /* 'cards' | 'table' */
   expandedCards: {},              /* devId -> true if expanded */
-  _renderScheduled: false
+  _renderScheduled: false,
+  /* v5.0: performance tracking */
+  _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0 },
+  _taskDateCache: {}              /* taskId -> dateStr cache for timeline */
 };
 
 /* ─── Density mode persistence ─── */
@@ -126,6 +129,7 @@ window.TabPayrollReview = {
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadData() {
   _pr.loading = true;
+  _pr._perf.loadStart = Date.now();
   _prRenderLoading();
 
   var year = prCurrentPeriod.year;
@@ -136,7 +140,12 @@ function _prLoadData() {
   _pr.auditLog = _prLoadAuditLog(periodKey);
 
   prLoadPeriodData(year, month).then(function(data) {
+    _pr._perf.loadEnd = Date.now();
     _pr.data = data;
+    _pr._taskDateCache = {}; /* Clear date cache on new data */
+
+    _prLoadingMsg('Нормализация...');
+    _pr._perf.normStart = Date.now();
 
     var savedReviews = _prLoadReviews(year, month);
 
@@ -158,6 +167,13 @@ function _prLoadData() {
       _pr.rows = result.rows;
       _pr.qualityReport = result.qualityReport;
       _pr.modelSource = 'live_fallback';
+    }
+
+    _pr._perf.normEnd = Date.now();
+
+    /* Safety warning for large datasets */
+    if (_pr.rows.length > 300) {
+      console.warn('SAFETY: ' + _pr.rows.length + ' rows exceeds 300 limit');
     }
 
     _pr.projection = typeof buildMonthlyProjectionCached === 'function'
@@ -291,7 +307,11 @@ function _prRateProvider() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderLoading() {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-loading"><div class="pr-ring"></div><div id="pr-loading-msg">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div></div>';
+  _pr.container.innerHTML = '<div class="pr-loading">' +
+    '<div class="pr-ring"></div>' +
+    '<div id="pr-loading-msg">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div>' +
+    '<div id="pr-loading-step" style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px"></div>' +
+    '</div>';
 }
 
 function _prRenderError(msg) {
@@ -301,6 +321,7 @@ function _prRenderError(msg) {
 
 function _prRenderAll() {
   if (!_pr.container) return;
+  _pr._perf.renderStart = Date.now();
   var h = '';
   h += _prRenderHeader();
   h += _prRenderKPIs();
@@ -316,6 +337,7 @@ function _prRenderAll() {
   h += _prRenderDebug();
   h += _prRenderAdminModal();
   _pr.container.innerHTML = h;
+  _pr._perf.renderEnd = Date.now();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -783,16 +805,21 @@ function _prRenderTimelineItem(r, realIdx) {
 }
 
 function _prGetTaskDate(taskId) {
-  if (!_pr.data || !_pr.data.elapsed) return null;
+  /* Use cache to avoid repeated linear scans */
+  if (_pr._taskDateCache[taskId] !== undefined) return _pr._taskDateCache[taskId];
+  if (!_pr.data || !_pr.data.elapsed) { _pr._taskDateCache[taskId] = null; return null; }
   for (var i = 0; i < _pr.data.elapsed.length; i++) {
     var e = _pr.data.elapsed[i];
     if (String(e.TASK_ID) === String(taskId)) {
       var d = _normParseDate(e.CREATED_DATE || e.DATE_START);
       if (d) {
-        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        var result = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        _pr._taskDateCache[taskId] = result;
+        return result;
       }
     }
   }
+  _pr._taskDateCache[taskId] = null;
   return null;
 }
 
@@ -910,8 +937,24 @@ function _prRenderDebug() {
   var h = '<div class="pr-debug">';
   h += '<div class="pr-debug-title">ОТЛАДКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
+  h += '<div class="pr-debug-row">Pipeline: elapsed-first v5.0</div>';
+
+  /* ── Performance metrics ── */
+  var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
+  var normMs = _pr._perf.normEnd > 0 ? (_pr._perf.normEnd - _pr._perf.normStart) : 0;
+  var renderMs = _pr._perf.renderEnd > 0 ? (_pr._perf.renderEnd - _pr._perf.renderStart) : 0;
+  var totalMs = loadMs + normMs + renderMs;
+  h += '<div class="pr-debug-row" style="color:var(--cyan)">Load: ' + loadMs + 'ms | Norm: ' + normMs + 'ms | Render: ' + renderMs + 'ms | Total: ' + totalMs + 'ms</div>';
+
+  /* Cache stats */
+  if (typeof PayrollCache !== 'undefined') {
+    var cs = PayrollCache.stats();
+    h += '<div class="pr-debug-row">Cache: hits=' + cs.hits + ' misses=' + cs.misses + ' stale=' + cs.staleHits + ' rate=' + cs.hitRate + '</div>';
+  }
+
   h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
   h += '<div class="pr-debug-row">Строк обзора: ' + _pr.rows.length + '</div>';
+  h += '<div class="pr-debug-row">Task date cache: ' + Object.keys(_pr._taskDateCache).length + ' entries</div>';
   h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
   h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
   h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
@@ -921,6 +964,16 @@ function _prRenderDebug() {
   h += '<div class="pr-debug-row">Источник данных: ' + esc(_pr.modelSource || 'live') + '</div>';
   h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
   h += '<div class="pr-debug-row">Вид: ' + _pr.viewMode + ' | Плотность: ' + _pr.densityMode + '</div>';
+
+  /* Safety warnings */
+  if (_pr.rows.length > 300) {
+    h += '<div class="pr-debug-row" style="color:var(--red)">SAFETY WARNING: ' + _pr.rows.length + ' rows (max 300)</div>';
+  }
+  var elapsedCount = (_pr.data && _pr.data.elapsed) ? _pr.data.elapsed.length : 0;
+  if (elapsedCount > 5000) {
+    h += '<div class="pr-debug-row" style="color:var(--red)">SAFETY WARNING: ' + elapsedCount + ' elapsed (max 5000)</div>';
+  }
+
   if (_pr.qualityReport) {
     h += '<div class="pr-debug-row">Качество данных: ' + esc(_pr.qualityReport.quality) + '</div>';
     h += '<div class="pr-debug-row">Orphan задач: ' + _pr.qualityReport.orphanTasks + '</div>';
@@ -1018,6 +1071,11 @@ function _prOnPeriodChange() {
   if (!sel) return;
   var parts = sel.value.split('-');
   prCurrentPeriod = {year: parseInt(parts[0]), month: parseInt(parts[1])};
+  /* Invalidate data cache for new period */
+  if (typeof PayrollCache !== 'undefined') {
+    PayrollCache.invalidate('data:*');
+  }
+  invalidateProjectionCache();
   _prLoadData();
 }
 
@@ -1331,3 +1389,87 @@ function _prFmtMoney(n) {
 function _prProjStat(val, lbl, color) {
   return '<div class="pr-proj-stat"><div class="pr-proj-stat-val" style="color:' + (color || 'var(--text)') + '">' + val + '</div><div class="pr-proj-stat-lbl">' + lbl + '</div></div>';
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v5.0: SOFT REFRESH (for stale-while-revalidate)
+   ═══════════════════════════════════════════════════════════════ */
+function _prSoftRefresh(freshData) {
+  if (!freshData || _pr.loading) return;
+  _pr.data = freshData;
+  _pr._taskDateCache = {};
+  var year = prCurrentPeriod.year;
+  var month = prCurrentPeriod.month;
+  var periodKey = prGetPeriodKey(year, month);
+  var savedReviews = _prLoadReviews(year, month);
+  if (typeof buildNormalizedModel === 'function') {
+    var model = buildNormalizedModel({
+      periodKey: periodKey,
+      periodStatus: _pr.periodStatus,
+      rawData: freshData,
+      savedReviews: savedReviews,
+      rateProvider: _prRateProvider()
+    });
+    _pr.rows = model.rows;
+  }
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+    ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function'
+    ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prScheduleRender();
+  console.log('PR: soft refresh applied from background revalidation');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   v5.0: PERFORMANCE DIAGNOSTICS
+   window.__PAYROLL_PERF()
+   ═══════════════════════════════════════════════════════════════ */
+window.__PAYROLL_PERF = function() {
+  var p = _pr._perf;
+  var loadMs = p.loadEnd > 0 ? (p.loadEnd - p.loadStart) : 0;
+  var normMs = p.normEnd > 0 ? (p.normEnd - p.normStart) : 0;
+  var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
+  var result = {
+    version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'unknown',
+    pipeline: 'elapsed-first v5.0',
+    timing: {
+      loadData: loadMs + 'ms',
+      normalization: normMs + 'ms',
+      render: renderMs + 'ms',
+      total: (loadMs + normMs + renderMs) + 'ms'
+    },
+    data: {
+      elapsedRecords: (_pr.data && _pr.data.elapsed) ? _pr.data.elapsed.length : 0,
+      reviewRows: _pr.rows.length,
+      developers: typeof DEVELOPERS !== 'undefined' ? Object.keys(DEVELOPERS).length : 0,
+      projects: typeof PROJECTS !== 'undefined' ? Object.keys(PROJECTS).length : 0,
+      taskDateCacheSize: Object.keys(_pr._taskDateCache).length
+    },
+    cache: typeof PayrollCache !== 'undefined' ? PayrollCache.stats() : 'PayrollCache not loaded',
+    safety: {
+      maxTasks: 300,
+      maxElapsed: 5000,
+      maxConcurrent: 3,
+      rowsExceeded: _pr.rows.length > 300,
+      elapsedExceeded: ((_pr.data && _pr.data.elapsed) ? _pr.data.elapsed.length : 0) > 5000
+    },
+    ui: {
+      viewMode: _pr.viewMode,
+      densityMode: _pr.densityMode,
+      expandedCards: Object.keys(_pr.expandedCards).length,
+      dirty: _pr.dirty,
+      loading: _pr.loading,
+      period: prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0'),
+      periodStatus: _pr.periodStatus,
+      modelSource: _pr.modelSource
+    }
+  };
+  console.log('=== PAYROLL PERFORMANCE REPORT ===');
+  console.log('Version:', result.version);
+  console.log('Pipeline:', result.pipeline);
+  console.log('Timing:', result.timing);
+  console.log('Data:', result.data);
+  console.log('Cache:', result.cache);
+  console.log('Safety:', result.safety);
+  console.log('UI:', result.ui);
+  return result;
+};

@@ -1,9 +1,21 @@
 /* ═══════════════════════════════════════════════════════════════
-   mock-data.js — Test data layer for Payroll Review Prototype
-   Реальные данные из 1С-АйтиЛаб Bitrix24 (мок)
-   Структура elapsed точно как в продакшене:
-     {ID, TASK_ID, USER_ID, COMMENT_TEXT, SECONDS(str), MINUTES(str),
-      SOURCE, CREATED_DATE, DATE_START, DATE_STOP}
+   mock-data.js — Data Loading Layer for Payroll Review
+   v5.0.0 — INVERTED PIPELINE: elapsed-first, period-bounded
+
+   Pipeline:
+   1. LOAD ELAPSED ONLY (period-bounded: current + prev month)
+   2. EXTRACT UNIQUE TASK IDS from elapsed
+   3. LOAD ONLY REFERENCED TASKS by ID
+   4. NORMALIZE + BUILD MODEL
+   5. CACHE
+
+   Source of truth for payroll = elapsed entries, NOT tasks.task.list
+
+   Critical constraints:
+   - Period-bounded: ONLY current month + previous month
+   - Max 3 concurrent API calls (throttled queue)
+   - Max tasks loaded = 300
+   - Max elapsed entries = 5000
    ═══════════════════════════════════════════════════════════════ */
 
 var PR_MOCK = {};
@@ -25,250 +37,116 @@ function PR_MOCK_generate() {
 
   /* ─── Задачи — реалистичные для 1С-АйтиЛаб ─── */
   PR_MOCK.tasks = [
-    /* ── Константин Приходько (18) — Бигап, Дакар ── */
     {id:'6801',title:'Настройка обмена 1С-Битрикс для Бигап',groupId:'6',status:'5',responsibleId:'18'},
     {id:'6802',title:'Интеграция REST API Битрикс — заказы',groupId:'6',status:'5',responsibleId:'18'},
     {id:'6803',title:'Фикс ошибки выгрузки каталога',groupId:'6',status:'3',responsibleId:'18'},
     {id:'6804',title:'Настройка синхронизации остатков Дакар',groupId:'32',status:'5',responsibleId:'18'},
     {id:'6805',title:'Доработка документа Реализация',groupId:'32',status:'5',responsibleId:'18'},
-
-    /* ── Александр Соколовский (38) — Медицина КЗ, Керамика ── */
     {id:'6806',title:'Миграция БД Медицина КЗ на новый сервер',groupId:'36',status:'5',responsibleId:'38'},
     {id:'6807',title:'Рефакторинг модуля расчёта листов нетрудоспособности',groupId:'36',status:'5',responsibleId:'38'},
     {id:'6808',title:'Code review — спринт 18 Керамика',groupId:'74',status:'5',responsibleId:'38'},
     {id:'6809',title:'Аудит безопасности Керамика Фабрика',groupId:'72',status:'1',responsibleId:'38'},
     {id:'6810',title:'Настройка обмена с 1С Керамика',groupId:'74',status:'5',responsibleId:'38'},
-
-    /* ── Александр Попов (54) — ВДЛ, МАРКДЖЕТ ── */
     {id:'6811',title:'Новый аналитический отчёт ВДЛ',groupId:'20',status:'5',responsibleId:'54'},
     {id:'6812',title:'Фильтры по дате и проекту МАРКДЖЕТ',groupId:'70',status:'5',responsibleId:'54'},
     {id:'6813',title:'Мобильная адаптация ЛК ВДЛ',groupId:'20',status:'3',responsibleId:'54'},
     {id:'6814',title:'Доработка печатной формы МАРКДЖЕТ',groupId:'70',status:'5',responsibleId:'54'},
-
-    /* ── Сергей Приходько (80) — Нейс-Юг, Кондитеры ── */
     {id:'6815',title:'Экспорт данных CSV/XLSX Нейс-Юг',groupId:'62',status:'5',responsibleId:'80'},
     {id:'6816',title:'Деплой релиза Кондитеры на прод',groupId:'60',status:'5',responsibleId:'80'},
     {id:'6817',title:'CI/CD pipeline настройка Нейс-Юг',groupId:'62',status:'3',responsibleId:'80'},
     {id:'6818',title:'Оптимизация SQL запросов Кондитеры',groupId:'60',status:'5',responsibleId:'80'},
-
-    /* ── Тимур Забиров (82) — Бигап, Кровля ── */
     {id:'6819',title:'Регрессионное тестирование Бигап',groupId:'6',status:'5',responsibleId:'82'},
     {id:'6820',title:'Написание тест-кейсов Q2 Бигап',groupId:'6',status:'5',responsibleId:'82'},
     {id:'6821',title:'Автотесты API Кровля',groupId:'8',status:'1',responsibleId:'82'},
     {id:'6822',title:'Нагрузочное тестирование Кровля',groupId:'8',status:'5',responsibleId:'82'},
-
-    /* ── Елена Кашина (92) — ООО ОПТИМАПЛАСТ, ИП Белолапотко ── */
     {id:'6823',title:'Техническая документация ОПТИМАПЛАСТ',groupId:'52',status:'5',responsibleId:'92'},
     {id:'6824',title:'Ревью требований заказчика Белолапотко',groupId:'50',status:'1',responsibleId:'92'},
     {id:'6825',title:'Аналитика метрик Q2 ОПТИМАПЛАСТ',groupId:'52',status:'5',responsibleId:'92'},
-
-    /* ── Denius Coder (94) — Завод Милл ФАУЗ, Приправы Дона ── */
     {id:'6826',title:'Разработка модуля интеграции Милл ФАУЗ',groupId:'64',status:'5',responsibleId:'94'},
     {id:'6827',title:'Фикс ошибки отчёта Приправы Дона',groupId:'44',status:'5',responsibleId:'94'},
     {id:'6828',title:'Настройка обмена с 1С Приправы Дона',groupId:'44',status:'3',responsibleId:'94'},
-
-    /* ── Марина Савчук (96) — ИП Иванов, АМР ── */
     {id:'6829',title:'Верстка email-шаблонов Иванов',groupId:'66',status:'5',responsibleId:'96'},
     {id:'6830',title:'Фикс email рассылки Иванов',groupId:'66',status:'5',responsibleId:'96'},
     {id:'6831',title:'Лендинг промо-акции АМР',groupId:'40',status:'3',responsibleId:'96'},
-
-    /* ── Ольга Замшина (98) — Самокаты центр, АгроСервис ── */
     {id:'6832',title:'Настройка документа Заказ-наряд Самокаты',groupId:'18',status:'5',responsibleId:'98'},
     {id:'6833',title:'Доработка отчёта АгроСервис',groupId:'12',status:'5',responsibleId:'98'},
     {id:'6834',title:'Фикс ошибки в расчёте АгроСервис',groupId:'12',status:'5',responsibleId:'98'},
     {id:'6835',title:'Настройка обмена 1С Самокаты',groupId:'18',status:'5',responsibleId:'98'},
-
-    /* ── Владимир Макаров (1) — ЮРИСТЫ БИГАП, Живое пиво ── */
     {id:'6836',title:'Планирование архитектуры ЮРИСТЫ БИГАП',groupId:'82',status:'5',responsibleId:'1'},
     {id:'6837',title:'Консультация по интеграции Живое пиво',groupId:'4',status:'5',responsibleId:'1'},
     {id:'6838',title:'Ревью кода ЮРИСТЫ БИГАП спринт 19',groupId:'82',status:'5',responsibleId:'1'},
-
-    /* ── Андрей Предеин (116) — МС Лизинг, АвтоБриф ── */
     {id:'6839',title:'Разработка модуля лизинга МС Лизинг',groupId:'16',status:'5',responsibleId:'116'},
     {id:'6840',title:'Доработка калькулятора АвтоБриф',groupId:'14',status:'5',responsibleId:'116'},
     {id:'6841',title:'Фикс ошибки валидации МС Лизинг',groupId:'16',status:'3',responsibleId:'116'}
   ];
 
-  /* ─── Elapsed entries — реальная структура из Bitrix24 ───
-     SECONDS: строка, MINUTES: строка, DATE_START/STOP с таймзоной
-  */
+  /* ─── Elapsed entries ─── */
   var elapsed = [];
   var eid = 7700;
 
-  /* Маппинг: какие задачи делает каждый разработчик, сколько часов */
   var devTasks = {
     '18': [
-      {tid:'6801', entries:[
-        {hours:4, comment:'Вёрстка формы выгрузки', dayOff:0},
-        {hours:3, comment:'Подключение API 1С', dayOff:1},
-        {hours:2, comment:'Тестирование обмена', dayOff:2}
-      ]},
-      {tid:'6802', entries:[
-        {hours:8, comment:'Интеграция REST заказов', dayOff:3},
-        {hours:2, comment:'Фикс ошибок ответа API', dayOff:4}
-      ]},
-      {tid:'6803', entries:[
-        {hours:3, comment:'Исправление фильтра каталога', dayOff:5}
-      ]},
-      {tid:'6804', entries:[
-        {hours:6, comment:'Настройка синхронизации остатков', dayOff:6},
-        {hours:4, comment:'Проверка целостности данных', dayOff:7}
-      ]},
-      {tid:'6805', entries:[
-        {hours:3, comment:'Доработка документа реализация', dayOff:8}
-      ]}
+      {tid:'6801', entries:[{hours:4,comment:'Вёрстка формы выгрузки',dayOff:0},{hours:3,comment:'Подключение API 1С',dayOff:1},{hours:2,comment:'Тестирование обмена',dayOff:2}]},
+      {tid:'6802', entries:[{hours:8,comment:'Интеграция REST заказов',dayOff:3},{hours:2,comment:'Фикс ошибок ответа API',dayOff:4}]},
+      {tid:'6803', entries:[{hours:3,comment:'Исправление фильтра каталога',dayOff:5}]},
+      {tid:'6804', entries:[{hours:6,comment:'Настройка синхронизации остатков',dayOff:6},{hours:4,comment:'Проверка целостности данных',dayOff:7}]},
+      {tid:'6805', entries:[{hours:3,comment:'Доработка документа реализация',dayOff:8}]}
     ],
     '38': [
-      {tid:'6806', entries:[
-        {hours:10, comment:'Миграция БД на новый сервер', dayOff:0},
-        {hours:8, comment:'Проверка целостности после миграции', dayOff:1}
-      ]},
-      {tid:'6807', entries:[
-        {hours:4, comment:'Рефакторинг модуля расчёта', dayOff:2},
-        {hours:4, comment:'Покрытие тестами', dayOff:3},
-        {hours:2, comment:'Ревью кода', dayOff:4}
-      ]},
-      {tid:'6808', entries:[
-        {hours:2, comment:'Code review спринт 18', dayOff:5}
-      ]},
-      {tid:'6809', entries:[
-        {hours:3, comment:'Анализ уязвимостей', dayOff:6}
-      ]},
-      {tid:'6810', entries:[
-        {hours:5, comment:'Настройка обмена с 1С', dayOff:7},
-        {hours:3, comment:'Тестирование обмена', dayOff:8}
-      ]}
+      {tid:'6806', entries:[{hours:10,comment:'Миграция БД на новый сервер',dayOff:0},{hours:8,comment:'Проверка целостности после миграции',dayOff:1}]},
+      {tid:'6807', entries:[{hours:4,comment:'Рефакторинг модуля расчёта',dayOff:2},{hours:4,comment:'Покрытие тестами',dayOff:3},{hours:2,comment:'Ревью кода',dayOff:4}]},
+      {tid:'6808', entries:[{hours:2,comment:'Code review спринт 18',dayOff:5}]},
+      {tid:'6809', entries:[{hours:3,comment:'Анализ уязвимостей',dayOff:6}]},
+      {tid:'6810', entries:[{hours:5,comment:'Настройка обмена с 1С',dayOff:7},{hours:3,comment:'Тестирование обмена',dayOff:8}]}
     ],
     '54': [
-      {tid:'6811', entries:[
-        {hours:6, comment:'Разработка отчёта', dayOff:0},
-        {hours:4, comment:'Настройка графиков и фильтров', dayOff:1}
-      ]},
-      {tid:'6812', entries:[
-        {hours:3, comment:'Фильтры по дате', dayOff:2},
-        {hours:2, comment:'Фильтры по проекту', dayOff:3}
-      ]},
-      {tid:'6813', entries:[
-        {hours:5, comment:'Адаптация layout мобильный', dayOff:4},
-        {hours:4, comment:'Тест на мобильных', dayOff:5},
-        {hours:3, comment:'Правки по результатам теста', dayOff:6}
-      ]},
-      {tid:'6814', entries:[
-        {hours:3, comment:'Доработка печатной формы', dayOff:7}
-      ]}
+      {tid:'6811', entries:[{hours:6,comment:'Разработка отчёта',dayOff:0},{hours:4,comment:'Настройка графиков и фильтров',dayOff:1}]},
+      {tid:'6812', entries:[{hours:3,comment:'Фильтры по дате',dayOff:2},{hours:2,comment:'Фильтры по проекту',dayOff:3}]},
+      {tid:'6813', entries:[{hours:5,comment:'Адаптация layout мобильный',dayOff:4},{hours:4,comment:'Тест на мобильных',dayOff:5},{hours:3,comment:'Правки по результатам теста',dayOff:6}]},
+      {tid:'6814', entries:[{hours:3,comment:'Доработка печатной формы',dayOff:7}]}
     ],
     '80': [
-      {tid:'6815', entries:[
-        {hours:5, comment:'Экспорт CSV модуль', dayOff:0},
-        {hours:2, comment:'Экспорт XLSX модуль', dayOff:1}
-      ]},
-      {tid:'6816', entries:[
-        {hours:8, comment:'Деплой + проверка на проде', dayOff:2}
-      ]},
-      {tid:'6817', entries:[
-        {hours:4, comment:'GitHub Actions pipeline', dayOff:3},
-        {hours:3, comment:'Docker настройка', dayOff:4}
-      ]},
-      {tid:'6818', entries:[
-        {hours:6, comment:'Оптимизация запросов БД', dayOff:5}
-      ]}
+      {tid:'6815', entries:[{hours:5,comment:'Экспорт CSV модуль',dayOff:0},{hours:2,comment:'Экспорт XLSX модуль',dayOff:1}]},
+      {tid:'6816', entries:[{hours:8,comment:'Деплой + проверка на проде',dayOff:2}]},
+      {tid:'6817', entries:[{hours:4,comment:'GitHub Actions pipeline',dayOff:3},{hours:3,comment:'Docker настройка',dayOff:4}]},
+      {tid:'6818', entries:[{hours:6,comment:'Оптимизация запросов БД',dayOff:5}]}
     ],
     '82': [
-      {tid:'6819', entries:[
-        {hours:7, comment:'Регрессионное тестирование', dayOff:0}
-      ]},
-      {tid:'6820', entries:[
-        {hours:3, comment:'Тест-кейсы модуль А', dayOff:1},
-        {hours:3, comment:'Тест-кейсы модуль Б', dayOff:2}
-      ]},
-      {tid:'6821', entries:[
-        {hours:2, comment:'Настройка тестового фреймворка', dayOff:3}
-      ]},
-      {tid:'6822', entries:[
-        {hours:4, comment:'Нагрузочное тестирование API', dayOff:4},
-        {hours:3, comment:'Анализ результатов нагрузки', dayOff:5}
-      ]}
+      {tid:'6819', entries:[{hours:7,comment:'Регрессионное тестирование',dayOff:0}]},
+      {tid:'6820', entries:[{hours:3,comment:'Тест-кейсы модуль А',dayOff:1},{hours:3,comment:'Тест-кейсы модуль Б',dayOff:2}]},
+      {tid:'6821', entries:[{hours:2,comment:'Настройка тестового фреймворка',dayOff:3}]},
+      {tid:'6822', entries:[{hours:4,comment:'Нагрузочное тестирование API',dayOff:4},{hours:3,comment:'Анализ результатов нагрузки',dayOff:5}]}
     ],
     '92': [
-      {tid:'6823', entries:[
-        {hours:8, comment:'Документация API модуль', dayOff:0}
-      ]},
-      {tid:'6824', entries:[
-        {hours:4, comment:'Ревью требований заказчика', dayOff:1}
-      ]},
-      {tid:'6825', entries:[
-        {hours:2, comment:'Аналитика метрик', dayOff:2},
-        {hours:3, comment:'Подготовка отчёта Q2', dayOff:3}
-      ]}
+      {tid:'6823', entries:[{hours:8,comment:'Документация API модуль',dayOff:0}]},
+      {tid:'6824', entries:[{hours:4,comment:'Ревью требований заказчика',dayOff:1}]},
+      {tid:'6825', entries:[{hours:2,comment:'Аналитика метрик',dayOff:2},{hours:3,comment:'Подготовка отчёта Q2',dayOff:3}]}
     ],
     '94': [
-      {tid:'6826', entries:[
-        {hours:6, comment:'Разработка модуля интеграции', dayOff:0},
-        {hours:4, comment:'Подключение API Милл ФАУЗ', dayOff:1},
-        {hours:3, comment:'Тестирование обмена', dayOff:2}
-      ]},
-      {tid:'6827', entries:[
-        {hours:2, comment:'Фикс ошибки отчёта', dayOff:3}
-      ]},
-      {tid:'6828', entries:[
-        {hours:4, comment:'Настройка обмена 1С', dayOff:4},
-        {hours:3, comment:'Тестирование обмена Приправы', dayOff:5}
-      ]}
+      {tid:'6826', entries:[{hours:6,comment:'Разработка модуля интеграции',dayOff:0},{hours:4,comment:'Подключение API Милл ФАУЗ',dayOff:1},{hours:3,comment:'Тестирование обмена',dayOff:2}]},
+      {tid:'6827', entries:[{hours:2,comment:'Фикс ошибки отчёта',dayOff:3}]},
+      {tid:'6828', entries:[{hours:4,comment:'Настройка обмена 1С',dayOff:4},{hours:3,comment:'Тестирование обмена Приправы',dayOff:5}]}
     ],
     '96': [
-      {tid:'6829', entries:[
-        {hours:5, comment:'Верстка шаблона письма', dayOff:0},
-        {hours:2, comment:'Тестирование рендеринга', dayOff:1}
-      ]},
-      {tid:'6830', entries:[
-        {hours:2, comment:'Фикс вёрстки email', dayOff:2}
-      ]},
-      {tid:'6831', entries:[
-        {hours:4, comment:'Дизайн лендинга промо', dayOff:3},
-        {hours:3, comment:'Вёрстка лендинга', dayOff:4}
-      ]}
+      {tid:'6829', entries:[{hours:5,comment:'Верстка шаблона письма',dayOff:0},{hours:2,comment:'Тестирование рендеринга',dayOff:1}]},
+      {tid:'6830', entries:[{hours:2,comment:'Фикс вёрстки email',dayOff:2}]},
+      {tid:'6831', entries:[{hours:4,comment:'Дизайн лендинга промо',dayOff:3},{hours:3,comment:'Вёрстка лендинга',dayOff:4}]}
     ],
     '98': [
-      {tid:'6832', entries:[
-        {hours:5, comment:'Настройка документа Заказ-наряд', dayOff:0},
-        {hours:3, comment:'Тестирование документа', dayOff:1}
-      ]},
-      {tid:'6833', entries:[
-        {hours:4, comment:'Доработка отчёта', dayOff:2}
-      ]},
-      {tid:'6834', entries:[
-        {hours:3, comment:'Фикс ошибки расчёта', dayOff:3},
-        {hours:2, comment:'Проверка расчётов', dayOff:4}
-      ]},
-      {tid:'6835', entries:[
-        {hours:4, comment:'Настройка обмена 1С', dayOff:5},
-        {hours:3, comment:'Тест обмена', dayOff:6}
-      ]}
+      {tid:'6832', entries:[{hours:5,comment:'Настройка документа Заказ-наряд',dayOff:0},{hours:3,comment:'Тестирование документа',dayOff:1}]},
+      {tid:'6833', entries:[{hours:4,comment:'Доработка отчёта',dayOff:2}]},
+      {tid:'6834', entries:[{hours:3,comment:'Фикс ошибки расчёта',dayOff:3},{hours:2,comment:'Проверка расчётов',dayOff:4}]},
+      {tid:'6835', entries:[{hours:4,comment:'Настройка обмена 1С',dayOff:5},{hours:3,comment:'Тест обмена',dayOff:6}]}
     ],
     '1': [
-      {tid:'6836', entries:[
-        {hours:3, comment:'Планирование архитектуры', dayOff:0},
-        {hours:2, comment:'Ревью архитектурного решения', dayOff:1}
-      ]},
-      {tid:'6837', entries:[
-        {hours:1, comment:'Консультация по интеграции', dayOff:2}
-      ]},
-      {tid:'6838', entries:[
-        {hours:2, comment:'Ревью кода спринт 19', dayOff:3}
-      ]}
+      {tid:'6836', entries:[{hours:3,comment:'Планирование архитектуры',dayOff:0},{hours:2,comment:'Ревью архитектурного решения',dayOff:1}]},
+      {tid:'6837', entries:[{hours:1,comment:'Консультация по интеграции',dayOff:2}]},
+      {tid:'6838', entries:[{hours:2,comment:'Ревью кода спринт 19',dayOff:3}]}
     ],
     '116': [
-      {tid:'6839', entries:[
-        {hours:5, comment:'Разработка модуля лизинга', dayOff:0},
-        {hours:4, comment:'Логика расчёта платежей', dayOff:1}
-      ]},
-      {tid:'6840', entries:[
-        {hours:3, comment:'Доработка калькулятора', dayOff:2},
-        {hours:2, comment:'Тестирование калькулятора', dayOff:3}
-      ]},
-      {tid:'6841', entries:[
-        {hours:2, comment:'Фикс ошибки валидации', dayOff:4}
-      ]}
+      {tid:'6839', entries:[{hours:5,comment:'Разработка модуля лизинга',dayOff:0},{hours:4,comment:'Логика расчёта платежей',dayOff:1}]},
+      {tid:'6840', entries:[{hours:3,comment:'Доработка калькулятора',dayOff:2},{hours:2,comment:'Тестирование калькулятора',dayOff:3}]},
+      {tid:'6841', entries:[{hours:2,comment:'Фикс ошибки валидации',dayOff:4}]}
     ]
   };
 
@@ -316,13 +194,32 @@ function PR_MOCK_generate() {
 /* ─── Инициализация при загрузке ─── */
 PR_MOCK_generate();
 
-/* ─── Data loader (mock → real switch) ─── */
+/* ═══════════════════════════════════════════════════════════════
+   DATA LOADER — Mock/Real switch with cache + SWR
+   ═══════════════════════════════════════════════════════════════ */
+
 function prLoadPeriodData(year, month) {
+  var cacheKey = 'data:' + year + '-' + String(month).padStart(2, '0');
+
+  /* ── Check cache first ── */
+  if (typeof PayrollCache !== 'undefined') {
+    var cached = PayrollCache.get(cacheKey);
+    if (cached) {
+      console.log('prLoadPeriodData: CACHE HIT for ' + cacheKey);
+      return Promise.resolve(cached);
+    }
+  }
+
   if (PR_MOCK_MODE) {
     return new Promise(function(resolve) {
       setTimeout(function() {
-        resolve(PR_MOCK_buildMockData(year, month));
-      }, 300);
+        var data = PR_MOCK_buildMockData(year, month);
+        /* Store in cache */
+        if (typeof PayrollCache !== 'undefined') {
+          PayrollCache.set(cacheKey, data, 5 * 60 * 1000);
+        }
+        resolve(data);
+      }, 200);
     });
   }
   return PR_loadRealData(year, month);
@@ -334,18 +231,15 @@ function PR_MOCK_buildMockData(year, month) {
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
 
-  /* Filter elapsed for period */
   var periodElapsed = PR_MOCK.elapsed.filter(function(e) {
     var d = (e.CREATED_DATE || '').substring(0, 10);
     return d >= fromStr && d <= toStr;
   });
 
-  /* Filter tasks that have elapsed in this period */
   var taskIds = {};
   periodElapsed.forEach(function(e) { taskIds[e.TASK_ID] = true; });
   var periodTasks = PR_MOCK.tasks.filter(function(t) { return taskIds[String(t.id)]; });
 
-  /* Build tasksMeta for calc module */
   var tasksMeta = {};
   periodTasks.forEach(function(t) {
     var id = String(t.id);
@@ -367,227 +261,403 @@ function PR_MOCK_buildMockData(year, month) {
     tasksMeta: tasksMeta,
     from: range.from,
     to: range.to,
-    days: range.days
+    days: range.days,
+    fromStr: fromStr,
+    toStr: toStr
   };
 }
 
-/* ─── Real data loader ───
-   v3.2 — Улучшена загрузка elapsed: таймауты, throttling, прогресс-логирование.
-   Исправлен баг «ниче не грузит» — batch-запросы теперь с AbortController
-   и задержками между чанками. Fallback на throttled прямые запросы. */
+/* ═══════════════════════════════════════════════════════════════
+   REAL DATA LOADER — Inverted Pipeline v5.0.0
+
+   NEW PIPELINE:
+   1. Load developers (cached)
+   2. Load elapsed PER DEVELOPER for period bounds only
+   3. Extract unique task IDs from elapsed
+   4. Load ONLY referenced tasks by ID
+   5. Build metadata
+   6. Load projects (cached)
+   7. Cache result
+
+   PERIOD BOUNDARIES: current month + previous month only
+   MAX CONCURRENCY: 3 API calls
+   SAFETY LIMITS: max 300 tasks, max 5000 elapsed
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Safety limits ─── */
+var PR_MAX_TASKS = 300;
+var PR_MAX_ELAPSED = 5000;
+var PR_MAX_CONCURRENT = 3;
+
+/* ─── Throttled queue: max N concurrent promises ─── */
+function _prThrottledQueue(items, workerFn, maxConcurrent) {
+  if (!items || !items.length) return Promise.resolve([]);
+  var maxC = maxConcurrent || PR_MAX_CONCURRENT;
+  var results = [];
+  var idx = 0;
+  var active = 0;
+  var resolveAll;
+
+  function next() {
+    while (active < maxC && idx < items.length) {
+      var item = items[idx];
+      var itemIdx = idx;
+      idx++;
+      active++;
+      workerFn(item, itemIdx).then(function(result) {
+        active--;
+        results[itemIdx] = result;
+        if (idx >= items.length && active === 0) {
+          resolveAll(results);
+        } else {
+          next();
+        }
+      }).catch(function(err) {
+        active--;
+        results[itemIdx] = null;
+        if (idx >= items.length && active === 0) {
+          resolveAll(results);
+        } else {
+          next();
+        }
+      });
+    }
+  }
+
+  return new Promise(function(resolve) {
+    resolveAll = resolve;
+    next();
+  });
+}
+
+/* ─── Get payroll periods: current month + previous month ─── */
+function getPayrollPeriods() {
+  var now = new Date();
+  var current = { year: now.getFullYear(), month: now.getMonth() + 1 };
+  var prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  var previous = { year: prevDate.getFullYear(), month: prevDate.getMonth() + 1 };
+  return { current: current, previous: previous };
+}
+
+/* ─── Real data loader v5.0 ─── */
 function PR_loadRealData(year, month) {
   var range = prGetMonthRange(year, month);
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
+  var periodKey = year + '-' + String(month).padStart(2, '0');
+  var cacheKey = 'data:' + periodKey;
 
-  /* Lookback: 3 месяца назад — чтобы найти задачи, созданные ранее,
-     но имеющие затраченное время в текущем периоде */
-  var lookbackDate = new Date(year, month - 4, 1);
-  var lookbackStr = fmt(lookbackDate);
+  console.log('PR_loadRealData v5.0: загрузка за ' + fromStr + ' — ' + toStr + ' (elapsed-first pipeline)');
 
-  console.log('PR_loadRealData: загрузка ЖИВЫХ данных за ' + fromStr + ' — ' + toStr + ' (lookback: ' + lookbackStr + ')');
+  /* ── Step 0: Check cache ── */
+  if (typeof PayrollCache !== 'undefined') {
+    var cached = PayrollCache.get(cacheKey);
+    if (cached) {
+      console.log('PR_loadRealData: CACHE HIT for ' + cacheKey);
+      return Promise.resolve(cached);
+    }
+
+    /* ── Stale-while-revalidate: use stale data, refresh in background ── */
+    var stale = PayrollCache.getStale(cacheKey);
+    if (stale) {
+      console.log('PR_loadRealData: serving stale data, refreshing in background');
+      _prBackgroundRefresh(year, month, cacheKey);
+      return Promise.resolve(stale);
+    }
+  }
+
+  return _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey);
+}
+
+/* ─── Fresh data load (no cache) ─── */
+function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) {
+  var perfStart = Date.now();
+
+  /* ── Step 1: Load developers (cached) ── */
   _prLoadingMsg('Загрузка разработчиков...');
 
-  /* Шаг 0: Загрузить разработчиков из Bitrix24 */
-  var devPromise = (typeof bxLoadDevelopers === 'function')
-    ? bxLoadDevelopers()
-    : Promise.resolve(DEVELOPERS);
+  var devPromise;
+  if (typeof PayrollCache !== 'undefined' && PayrollCache.has('developers')) {
+    devPromise = Promise.resolve(PayrollCache.get('developers'));
+  } else {
+    devPromise = (typeof bxLoadDevelopers === 'function')
+      ? bxLoadDevelopers().then(function() {
+          if (typeof PayrollCache !== 'undefined') {
+            PayrollCache.set('developers', DEVELOPERS, 30 * 60 * 1000); /* 30 min cache */
+          }
+          return DEVELOPERS;
+        })
+      : Promise.resolve(DEVELOPERS);
+  }
 
   return devPromise.then(function() {
-    _prLoadingMsg('Загрузка задач для ' + DEV_IDS.length + ' разработчиков...');
+    _prLoadingMsg('Загрузка затраченного времени...');
 
-    /* Шаг 1: Загрузить задачи по каждому разработчику
-       Стратегия: 2 запроса на разработчика:
-       A) Задачи за 3 месяца (lookback) — основные
-       B) Задачи закрытые в текущем периоде (могли быть созданы давно)
-    */
-    var taskProms = DEV_IDS.map(function(devId) {
-      /* Запрос A: задачи за 3 месяца */
-      var pA = fetchTasksPaginated({
-        filter: {
-          RESPONSIBLE_ID: devId,
-          '>=CREATED_DATE': lookbackStr
-        },
-        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-      }, 10);
+    /* ── Step 2: Load elapsed PER DEVELOPER for period ──
+       Source of truth = elapsed. We load elapsed for each dev,
+       bounded to the current period. This is the INVERTED pipeline. */
+    return _prLoadElapsedByDev(fromStr, toStr);
 
-      /* Запрос B: задачи закрытые в текущем периоде */
-      var pB = fetchTasksPaginated({
-        filter: {
-          RESPONSIBLE_ID: devId,
-          STATUS: '5',
-          '>=CLOSED_DATE': fromStr
-        },
-        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-      }, 5);
+  }).then(function(allElapsed) {
+    console.log('PR_loadRealData: получено ' + allElapsed.length + ' elapsed записей за ' + ((Date.now() - perfStart) / 1000).toFixed(1) + 's');
 
-      return Promise.all([pA, pB]).then(function(batches) {
-        var all = (batches[0] || []).concat(batches[1] || []);
-        return all;
-      }).catch(function() {
-        return [];
-      });
+    /* Safety limit */
+    if (allElapsed.length > PR_MAX_ELAPSED) {
+      console.warn('PR_loadRealData: SAFETY LIMIT — обрезаем elapsed с ' + allElapsed.length + ' до ' + PR_MAX_ELAPSED);
+      allElapsed = allElapsed.slice(0, PR_MAX_ELAPSED);
+    }
+
+    /* ── Step 3: Extract unique task IDs from elapsed ── */
+    _prLoadingMsg('Загрузка задач...');
+    var taskIds = {};
+    allElapsed.forEach(function(e) {
+      taskIds[String(e.TASK_ID)] = true;
     });
+    var uniqueTaskIds = Object.keys(taskIds);
+    console.log('PR_loadRealData: ' + uniqueTaskIds.length + ' уникальных задач из elapsed');
 
-    return Promise.all(taskProms);
+    /* Safety limit */
+    if (uniqueTaskIds.length > PR_MAX_TASKS) {
+      console.warn('PR_loadRealData: SAFETY LIMIT — обрезаем задачи с ' + uniqueTaskIds.length + ' до ' + PR_MAX_TASKS);
+      uniqueTaskIds = uniqueTaskIds.slice(0, PR_MAX_TASKS);
+    }
 
-  }).then(function(allTaskBatches) {
-    /* Собираем уникальные задачи */
-    var tasksMap = {};
-    var allTasks = [];
-    allTaskBatches.forEach(function(batch) {
-      if (!Array.isArray(batch)) return;
-      batch.forEach(function(t) {
+    if (!uniqueTaskIds.length) {
+      return _prBuildEmptyResult(range);
+    }
+
+    /* ── Step 4: Load ONLY referenced tasks ── */
+    return _prLoadTasksByIdsThrottled(uniqueTaskIds).then(function(allTasks) {
+      _prLoadingMsg('Нормализация данных...');
+
+      /* Build tasksMeta */
+      var tasksMeta = {};
+      var tasksMap = {};
+      allTasks.forEach(function(t) {
         var id = String(t.id || t.ID);
-        if (!tasksMap[id]) {
-          tasksMap[id] = true;
-          allTasks.push(t);
+        if (!id) return;
+        tasksMap[id] = true;
+        var gid = String(t.groupId || t.GROUP_ID || '0');
+        var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
+        tasksMeta[id] = {
+          groupId: gid,
+          groupName: pname,
+          title: t.title || t.TITLE || '',
+          status: t.status || t.STATUS || '0',
+          responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
+        };
+      });
+
+      /* Filter elapsed: only for tasks we loaded, in our period, from our devs */
+      var exGroups = (typeof EXCLUDE_GROUPS !== 'undefined') ? EXCLUDE_GROUPS : {};
+      var validTaskIds = {};
+      Object.keys(tasksMeta).forEach(function(tid) {
+        if (!exGroups[tasksMeta[tid].groupId]) {
+          validTaskIds[tid] = true;
         }
       });
-    });
 
-    console.log('PR_loadRealData: загружено ' + allTasks.length + ' уникальных задач');
-
-    /* Собираем ID задач для запроса elapsed */
-    var taskIds = Object.keys(tasksMap);
-    if (!taskIds.length) {
-      return {
-        elapsed: [],
-        tasks: [],
-        projects: {},
-        tasksMeta: {},
-        from: range.from,
-        to: range.to,
-        days: range.days
-      };
-    }
-
-    /* Шаг 2: Загрузить elapsed через batch API, fallback на прямые запросы */
-    _prLoadingMsg('Загрузка затраченного времени для ' + taskIds.length + ' задач...');
-    var elapsedPromise;
-    if (typeof bxLoadElapsedBatch === 'function') {
-      elapsedPromise = bxLoadElapsedBatch(taskIds, fromStr, toStr);
-    } else if (typeof bxLoadElapsedThrottled === 'function') {
-      elapsedPromise = bxLoadElapsedThrottled(taskIds);
-    } else if (typeof bxLoadElapsedDirect === 'function') {
-      elapsedPromise = bxLoadElapsedDirect(taskIds);
-    } else {
-      /* Последний fallback */
-      var elapsedProms = taskIds.map(function(tid) {
-        return bxPost('task.elapseditem.getlist', {
-          TASK_ID: parseInt(tid)
-        }, 15000).then(function(r) {
-          if (r && r.result && Array.isArray(r.result)) return r.result;
-          return [];
-        }).catch(function() { return []; });
-      });
-      elapsedPromise = Promise.all(elapsedProms).then(function(elapsedBatches) {
-        var allElapsed = [];
-        elapsedBatches.forEach(function(batch) { allElapsed = allElapsed.concat(batch); });
-        return allElapsed;
-      });
-    }
-
-    return elapsedPromise.then(function(allElapsed) {
-      _prLoadingMsg('Фильтрация данных...');
-
-      /* Фильтр по периоду и разработчикам */
       allElapsed = allElapsed.filter(function(e) {
-        var d = (e.CREATED_DATE || '').substring(0, 10);
-        return d >= fromStr && d <= toStr && DEV_IDS.indexOf(Number(e.USER_ID)) >= 0;
+        return validTaskIds[String(e.TASK_ID)];
       });
 
-      console.log('PR_loadRealData: после фильтра по периоду — ' + allElapsed.length + ' elapsed записей');
-
-      /* Найти TASK_ID из elapsed, которых нет в загруженных задачах
-         (могут быть очень старые задачи, не попавшие в lookback) */
-      var elapsedTaskIds = {};
-      allElapsed.forEach(function(e) { elapsedTaskIds[String(e.TASK_ID)] = true; });
-      var missingTaskIds = Object.keys(elapsedTaskIds).filter(function(tid) {
-        return !tasksMap[tid];
-      });
-
-      /* Шаг 2b: догрузить пропущенные задачи */
-      var missingPromise;
-      if (missingTaskIds.length > 0) {
-        console.log('PR_loadRealData: догрузка ' + missingTaskIds.length + ' пропущенных задач');
-        missingPromise = bxLoadTasksByIds(missingTaskIds);
-      } else {
-        missingPromise = Promise.resolve([]);
-      }
-
-      return missingPromise.then(function(missingTasks) {
-        missingTasks.forEach(function(t) {
-          var id = String(t.id || t.ID);
-          if (!tasksMap[id]) {
-            tasksMap[id] = true;
-            allTasks.push(t);
-          }
+      /* ── Step 5: Load projects (cached) ── */
+      _prLoadingMsg('Загрузка проектов...');
+      return _prLoadProjectsCached().then(function(projects) {
+        /* Merge project names from API into tasksMeta */
+        Object.keys(projects).forEach(function(gid) {
+          /* Already have name from API */
         });
 
-        /* Собираем метаданные задач */
-        var tasksMeta = {};
-        var validTaskIds = {};
-        allTasks.forEach(function(t) {
-          var id = String(t.id || t.ID);
-          var gid = String(t.groupId || t.GROUP_ID || '0');
-          var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
-          tasksMeta[id] = {
-            groupId: gid,
-            groupName: pname,
-            title: t.title || t.TITLE || '',
-            status: t.status || t.STATUS || '0',
-            responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
-          };
-          if (!EXCLUDE_GROUPS[gid]) {
-            validTaskIds[id] = true;
-          }
-        });
+        var elapsedMs = Date.now() - perfStart;
+        console.log('PR_loadRealData: завершено за ' + (elapsedMs / 1000).toFixed(1) + 's — ' +
+          allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' +
+          Object.keys(projects).length + ' проектов');
 
-        /* Фильтр elapsed по не-исключённым проектам */
-        allElapsed = allElapsed.filter(function(e) {
-          return validTaskIds[String(e.TASK_ID)];
-        });
+        var result = {
+          elapsed: allElapsed,
+          tasks: allTasks,
+          projects: projects,
+          tasksMeta: tasksMeta,
+          from: range.from,
+          to: range.to,
+          days: range.days,
+          fromStr: fromStr,
+          toStr: toStr
+        };
 
-        /* Шаг 3: Загрузить список проектов */
-        _prLoadingMsg('Загрузка проектов...');
-        return bxPost('sonet_group.get', {select: ['ID','NAME']}, 15000).then(function(r) {
-          var projects = {};
-          if (r && r.result) {
-            var groups = r.result;
-            if (!Array.isArray(groups)) groups = Object.values(groups);
-            groups.forEach(function(g) {
-              var id = String(g.ID || g.id);
-              var nm = g.NAME || g.name || ('Группа ' + id);
-              if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
-                projects[id] = {id: id, name: nm};
-              }
-            });
-          }
+        /* ── Step 6: Cache ── */
+        if (typeof PayrollCache !== 'undefined') {
+          PayrollCache.set(cacheKey, result, 5 * 60 * 1000);
+        }
 
-          console.log('PR_loadRealData: итог — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' + Object.keys(projects).length + ' проектов');
-
-          return {
-            elapsed: allElapsed,
-            tasks: allTasks,
-            projects: projects,
-            tasksMeta: tasksMeta,
-            from: range.from,
-            to: range.to,
-            days: range.days
-          };
-        });
+        return result;
       });
     });
+  }).catch(function(e) {
+    console.error('PR_loadRealData ERROR:', e);
+    return _prBuildEmptyResult(prGetMonthRange(year, month));
   });
 }
 
-/* ─── Вспомогательная функция для показа прогресса загрузки ─── */
+/* ─── Load elapsed per developer (period-bounded, throttled) ─── */
+function _prLoadElapsedByDev(fromStr, toStr) {
+  var devIds = (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+
+  /* For each developer, load elapsed via batch API
+     Using Bitrix24 batch: task.elapseditem.getlist with USER_ID filter */
+  return _prThrottledQueue(devIds, function(devId) {
+    /* Build batch command for this developer's elapsed */
+    return bxPost('task.elapseditem.getlist', {
+      FILTER: {
+        USER_ID: parseInt(devId),
+        '>=CREATED_DATE': fromStr,
+        '<=CREATED_DATE': toStr
+      }
+    }, 20000).then(function(r) {
+      if (r && r.error) {
+        /* Fallback: try without date filter, then filter client-side */
+        return bxPost('task.elapseditem.getlist', {
+          FILTER: { USER_ID: parseInt(devId) }
+        }, 20000).then(function(r2) {
+          var items = _prExtractElapsed(r2);
+          /* Client-side filter by period */
+          return _prFilterElapsedByPeriod(items, fromStr, toStr);
+        }).catch(function() { return []; });
+      }
+      return _prExtractElapsed(r);
+    }).catch(function() { return []; });
+  }, PR_MAX_CONCURRENT).then(function(batches) {
+    var all = [];
+    batches.forEach(function(b) {
+      if (Array.isArray(b)) all = all.concat(b);
+    });
+    return all;
+  });
+}
+
+/* ─── Extract elapsed items from API response ─── */
+function _prExtractElapsed(r) {
+  if (!r) return [];
+  if (r.result) {
+    if (Array.isArray(r.result)) return r.result;
+    if (r.result.items && Array.isArray(r.result.items)) return r.result.items;
+    if (r.result.list && Array.isArray(r.result.list)) return r.result.list;
+  }
+  return [];
+}
+
+/* ─── Filter elapsed by period (client-side) ─── */
+function _prFilterElapsedByPeriod(items, fromStr, toStr) {
+  if (!items || !items.length) return [];
+  return items.filter(function(e) {
+    var d = (e.CREATED_DATE || '').substring(0, 10);
+    return d >= fromStr && d <= toStr;
+  });
+}
+
+/* ─── Load tasks by IDs with throttled batching ─── */
+function _prLoadTasksByIdsThrottled(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+
+  /* Use bxLoadTasksByIds which already does batch, but add safety limit */
+  if (typeof bxLoadTasksByIds === 'function') {
+    return bxLoadTasksByIds(taskIds);
+  }
+
+  /* Fallback: manual batch */
+  var cmdMap = {};
+  taskIds.forEach(function(tid, idx) {
+    cmdMap['t' + idx] = 'tasks.task.list?filter[ID]=' + tid +
+      '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS' +
+      '&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
+  });
+
+  return bxBatchCall(cmdMap).then(function(results) {
+    var allTasks = [];
+    Object.keys(results).forEach(function(key) {
+      var data = results[key];
+      var tasks = [];
+      if (data && data.tasks && Array.isArray(data.tasks)) {
+        tasks = data.tasks;
+      } else if (data && data.result && data.result.tasks && Array.isArray(data.result.tasks)) {
+        tasks = data.result.tasks;
+      } else if (Array.isArray(data)) {
+        tasks = data;
+      }
+      allTasks = allTasks.concat(tasks);
+    });
+    return allTasks;
+  });
+}
+
+/* ─── Load projects with cache ─── */
+function _prLoadProjectsCached() {
+  if (typeof PayrollCache !== 'undefined' && PayrollCache.has('projects')) {
+    return Promise.resolve(PayrollCache.get('projects'));
+  }
+
+  return bxPost('sonet_group.get', {select: ['ID','NAME']}, 15000).then(function(r) {
+    var projects = {};
+    if (r && r.result) {
+      var groups = r.result;
+      if (!Array.isArray(groups)) groups = Object.values(groups);
+      groups.forEach(function(g) {
+        var id = String(g.ID || g.id);
+        var nm = g.NAME || g.name || ('Группа ' + id);
+        if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
+          projects[id] = {id: id, name: nm};
+        }
+      });
+    }
+    if (typeof PayrollCache !== 'undefined') {
+      PayrollCache.set('projects', projects, 30 * 60 * 1000); /* 30 min cache */
+    }
+    return projects;
+  }).catch(function() {
+    return {};
+  });
+}
+
+/* ─── Background refresh for stale-while-revalidate ─── */
+function _prBackgroundRefresh(year, month, cacheKey) {
+  console.log('PR: background refresh started for ' + cacheKey);
+  var range = prGetMonthRange(year, month);
+  var fromStr = fmt(range.from);
+  var toStr = fmt(range.to);
+
+  _prLoadRealDataFresh(year, month, fromStr, toStr, year + '-' + String(month).padStart(2, '0'), cacheKey)
+    .then(function(freshData) {
+      /* If data changed, trigger soft refresh */
+      if (typeof _prSoftRefresh === 'function') {
+        _prSoftRefresh(freshData);
+      }
+    }).catch(function(e) {
+      console.warn('PR: background refresh failed', e);
+    });
+}
+
+/* ─── Empty result helper ─── */
+function _prBuildEmptyResult(range) {
+  return {
+    elapsed: [],
+    tasks: [],
+    projects: {},
+    tasksMeta: {},
+    from: range.from,
+    to: range.to,
+    days: range.days,
+    fromStr: fmt(range.from),
+    toStr: fmt(range.to)
+  };
+}
+
+/* ─── Loading message helper ─── */
 function _prLoadingMsg(msg) {
   try {
     var el = document.getElementById('pr-loading-msg');
     if (el) el.textContent = msg;
-    var loader = document.querySelector('.pr-loading div:last-child');
-    if (loader && !el) loader.textContent = msg;
+    var stepEl = document.getElementById('pr-loading-step');
+    if (stepEl) stepEl.textContent = msg;
   } catch(e) {}
 }
