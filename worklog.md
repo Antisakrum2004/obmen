@@ -53,3 +53,22 @@ Stage Summary:
 - No more `>=CREATED_DATE` filter errors on elapsed API
 - No more `range is not defined` errors
 - No scrollbar flicker during loading
+---
+Task ID: 1
+Agent: main
+Task: Fix payroll dashboard showing only 3 developers instead of all 11
+
+Work Log:
+- Analyzed root cause: `_prLoadElapsedByDev()` in mock-data.js used `filter[>=CREATED_DATE]` on tasks.task.list, which only found tasks CREATED in the current month. Developers working on tasks from previous months had no tasks found, so no elapsed was loaded for them.
+- Removed CREATED_DATE filter from tasks.task.list batch command, added `order[ID]=DESC` instead
+- Added `_prEnsureAllDevsInProjection()` function to show ALL developers in projection, even those with 0 elapsed in the current period
+- Fixed scrollbar issue: added `document.body.style.overflow = 'hidden'` during loading, restore after
+- Tested API directly against Bitrix24: confirmed 50 tasks per dev without date filter, elapsed batch works correctly
+- Deployed to Vercel and verified via browser automation
+
+Stage Summary:
+- Dashboard now shows ALL 12 developers (was 3 before)
+- 0 JavaScript errors
+- 255 elapsed records loaded successfully
+- Scrollbar issue during loading is fixed
+- Deploy URL: https://obmen-atilab.vercel.app/

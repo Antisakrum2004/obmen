@@ -546,22 +546,30 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
    Bitrix24's task.elapseditem.getlist requires TASK_ID as 1st param.
    It does NOT accept FILTER[>=CREATED_DATE] as a named JSON param.
    
-   Strategy: Load tasks per developer first (tasks.task.list supports
-   date filters), then load elapsed for those tasks via batch.
-   This is Bitrix24-compatible and period-bounded. */
+   Strategy: Load ALL tasks per developer (NO CREATED_DATE filter!),
+   then load elapsed for those tasks via batch, then filter elapsed
+   client-side by period.
+   
+   CRITICAL: We do NOT filter tasks by CREATED_DATE because developers
+   often log elapsed on tasks created in PREVIOUS months. If we filter
+   by CREATED_DATE=current_month, we miss those tasks and their elapsed,
+   causing developers to disappear from the dashboard.
+   
+   Source of truth = elapsed entries, NOT task creation date. */
 function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
   var devIds = (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
   var cb = progressCb || function() {};
   var loadedDevs = 0;
 
   /* Step 1: Load task IDs per developer using tasks.task.list
-     (supports FILTER with >=CREATED_DATE) via batch */
-  cb('Загрузка задач', 'по каждому разработчику...');
+     NO CREATED_DATE filter — load ALL tasks per dev, then filter
+     elapsed client-side by period. Order by ID DESC to get recent
+     tasks first (most likely to have current elapsed). */
+  cb('Загрузка задач', 'по каждому разработчику (все задачи)...');
   var cmdMap = {};
   devIds.forEach(function(devId, idx) {
     cmdMap['d' + idx] = 'tasks.task.list?filter[RESPONSIBLE_ID]=' + devId +
-      '&filter[>=CREATED_DATE]=' + fromStr +
-      '&filter[<=CREATED_DATE]=' + toStr +
+      '&order[ID]=DESC' +
       '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
   });
 

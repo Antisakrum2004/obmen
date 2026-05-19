@@ -138,6 +138,8 @@ function _prLoadData() {
   _pr.loading = true;
   _pr._perf.loadStart = Date.now();
   _prLoadSteps = []; /* Reset step log */
+  /* Hide body scrollbar during loading to prevent ugly scrollbar flash */
+  document.body.style.overflow = 'hidden';
   _prRenderLoading();
 
   var year = prCurrentPeriod.year;
@@ -201,6 +203,9 @@ function _prLoadData() {
     _pr.totals = typeof buildPeriodTotalsCached === 'function'
       ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
 
+    /* Ensure ALL developers appear in projection, even those with 0 elapsed */
+    _prEnsureAllDevsInProjection();
+
     _prAddLoadStep('\u2713', 'Прогнозы: ' + _pr.projection.length + ' разработчиков');
 
     _pr.dirty = false;
@@ -209,10 +214,14 @@ function _prLoadData() {
     var totalMs = _pr._perf.loadEnd - _pr._perf.loadStart + normMs;
     _prAddLoadStep('\u2713', 'Готово! Общее время: ' + totalMs + 'мс');
 
+    /* Restore body scrollbar after loading completes */
+    document.body.style.overflow = '';
     _prScheduleRender();
   }).catch(function(e) {
     console.error('Ошибка загрузки', e);
     _pr.loading = false;
+    /* Restore body scrollbar on error too */
+    document.body.style.overflow = '';
     _prAddLoadStep('\u2717', 'ОШИБКА: ' + (e.message || 'Неизвестная ошибка'));
     _prRenderError(e.message || 'Ошибка загрузки данных. Проверьте подключение и режим (МОК/ЖИВОЙ).');
   });
@@ -645,6 +654,49 @@ function _prRenderDevCards() {
 
   h += '</div>';
   return h;
+}
+
+/* ─── Ensure ALL developers appear in projection (even with 0 elapsed) ─── */
+function _prEnsureAllDevsInProjection() {
+  if (typeof DEVELOPERS === 'undefined') return;
+  var existingDevs = {};
+  _pr.projection.forEach(function(dev) {
+    existingDevs[String(dev.developerId)] = true;
+  });
+  var missingCount = 0;
+  Object.keys(DEVELOPERS).forEach(function(devId) {
+    if (!existingDevs[devId]) {
+      /* This developer has no elapsed in the current period — add empty entry */
+      _pr.projection.push({
+        developerId: devId,
+        developerName: prGetDevName(devId),
+        totalFactHours: 0,
+        totalBillable: 0,
+        totalPayroll: 0,
+        totalBase: 0,
+        totalAmount: 0,
+        taskCount: 0,
+        approvedCount: 0,
+        pendingCount: 0,
+        disputedCount: 0,
+        excludedCount: 0,
+        approvalRate: 0,
+        margin: 0,
+        projectCount: 0,
+        projectNames: '',
+        projects: {}
+      });
+      missingCount++;
+    }
+  });
+  if (missingCount > 0) {
+    console.log('_prEnsureAllDevsInProjection: добавлено ' + missingCount + ' разработчиков с 0 часов');
+    /* Re-sort: by totalAmount desc, then by name */
+    _pr.projection.sort(function(a, b) {
+      if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
+      return a.developerName.localeCompare(b.developerName);
+    });
+  }
 }
 
 function _prGetFilteredProjection() {
