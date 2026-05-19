@@ -36,7 +36,10 @@ var _pr = {
   _renderScheduled: false,
   /* v5.0: performance tracking */
   _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0 },
-  _taskDateCache: {}              /* taskId -> dateStr cache for timeline */
+  _taskDateCache: {},             /* taskId -> dateStr cache for timeline */
+  adminSaveMsg: null,            /* green success message after admin save */
+  adminSaveTime: null,           /* timestamp of admin save for auto-close */
+  adminChangedDevs: {}           /* devId -> true, for green highlighting changed rows */
 };
 
 /* ─── Density mode persistence ─── */
@@ -1202,13 +1205,16 @@ function _prRenderAdminModal() {
     var inn = prGetInn(sid);
     var rate = prGetRate(sid);
     var base = prGetBase(sid);
+    var isChanged = _pr.adminChangedDevs[sid];
+    var rowBg = isChanged ? ' style="background:rgba(34,212,126,.08)"' : '';
+    var rateBorder = isChanged ? 'border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)' : '';
 
-    h += '<tr>';
+    h += '<tr' + rowBg + '>';
     h += '<td class="c-num">' + id + '</td>';
     h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name"></td>';
     h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:80px"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:100px"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:80px' + (rateBorder ? ';' + rateBorder : '') + '"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:100px' + (rateBorder ? ';' + rateBorder : '') + '"></td>';
     h += '</tr>';
   });
 
@@ -1216,6 +1222,13 @@ function _prRenderAdminModal() {
   h += '</div>';
 
   h += '<div class="pr-modal-footer">';
+  /* Show green success message if rate was just saved */
+  if (_pr.adminSaveMsg) {
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-right:auto;padding:6px 12px;background:rgba(34,212,126,.12);border:1px solid rgba(34,212,126,.3);border-radius:6px">';
+    h += '<span style="color:var(--green);font-size:14px">&#10003;</span>';
+    h += '<span style="font-family:var(--mono);font-size:11px;color:var(--green);font-weight:600">' + esc(_pr.adminSaveMsg) + '</span>';
+    h += '</div>';
+  }
   h += '<button class="pr-btn pr-btn-ghost" onclick="_prCloseAdmin()">Отмена</button>';
   h += '<button class="pr-btn pr-btn-primary" onclick="_prSaveAdmin()">Сохранить всё</button>';
   h += '</div>';
@@ -1481,12 +1494,18 @@ function _prExportDetailed() {
 /* ─── Админка ─── */
 function _prOpenAdmin() {
   _pr.modalOpen = true;
+  _pr.adminSaveMsg = null;
+  _pr.adminSaveTime = null;
+  _pr.adminChangedDevs = {};
   _prScheduleRender();
 }
 
 function _prCloseAdmin(e) {
   if (e && e.target && !e.target.classList.contains('pr-modal-overlay')) return;
   _pr.modalOpen = false;
+  _pr.adminSaveMsg = null;
+  _pr.adminSaveTime = null;
+  _pr.adminChangedDevs = {};
   _prScheduleRender();
 }
 
@@ -1501,9 +1520,11 @@ function _prSaveAdmin() {
   });
 
   var auditEntries = [];
+  var changedDevs = []; /* list of dev IDs whose rate or base changed */
   Object.keys(devData).forEach(function(devId) {
     var d = devData[devId];
     var settings = _prLoadDevSettings(devId) || {};
+    var changed = false;
     if (d.name) settings.name = d.name;
     if (d.inn !== undefined) settings.inn = d.inn;
     if (d.rate !== undefined) {
@@ -1513,6 +1534,7 @@ function _prSaveAdmin() {
           oldRate: settings.rate || СТАВКА_ПО_УМОЛЧ,
           newRate: newRate
         }));
+        changed = true;
       }
       settings.rate = newRate;
     }
@@ -1523,10 +1545,12 @@ function _prSaveAdmin() {
           oldBase: settings.base || 0,
           newBase: newBase
         }));
+        changed = true;
       }
       settings.base = newBase;
     }
     _prSaveDevSettings(devId, settings);
+    if (changed) changedDevs.push(devId);
   });
 
   if (auditEntries.length > 0) {
@@ -1534,8 +1558,80 @@ function _prSaveAdmin() {
     _prAppendAuditLog(periodKey, auditEntries);
   }
 
-  _pr.modalOpen = false;
-  _prLoadData();
+  /* Update saved reviews: apply new rate/base to all existing saved reviews for changed devs */
+  if (changedDevs.length > 0) {
+    _prApplyRateToSavedReviews(changedDevs);
+  }
+
+  /* Show success message, don't close modal immediately */
+  _pr.adminChangedDevs = {};
+  changedDevs.forEach(function(id) { _pr.adminChangedDevs[String(id)] = true; });
+  _pr.adminSaveMsg = changedDevs.length > 0
+    ? 'Ставка изменена: ' + changedDevs.map(function(id) { return prGetDevName(id); }).join(', ')
+    : 'Данные сохранены';
+  _pr.adminSaveTime = Date.now();
+
+  /* Update rows in memory with new rates — no full reload needed */
+  if (changedDevs.length > 0) {
+    var devSet = {};
+    changedDevs.forEach(function(id) { devSet[String(id)] = true; });
+    _pr.rows.forEach(function(r) {
+      if (devSet[String(r.developerId)]) {
+        r.rate = prGetRate(r.developerId);
+        r.base = prGetBase(r.developerId);
+        r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
+      }
+    });
+    /* Invalidate projection cache before recalculating */
+    if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
+    /* Recalculate projections and totals */
+    _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+      ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+    _pr.totals = typeof buildPeriodTotalsCached === 'function'
+      ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  }
+
+  _prScheduleRender();
+
+  /* Auto-close modal after 2 seconds */
+  setTimeout(function() {
+    if (_pr.adminSaveTime && Date.now() - _pr.adminSaveTime >= 1800) {
+      _pr.adminSaveMsg = null;
+      _pr.adminSaveTime = null;
+      _pr.modalOpen = false;
+      _prScheduleRender();
+    }
+  }, 2000);
+}
+
+/* Apply new rate/base to all saved reviews for specified developers */
+function _prApplyRateToSavedReviews(devIds) {
+  var year = prCurrentPeriod.year;
+  var month = prCurrentPeriod.month;
+  var savedReviews = _prLoadReviews(year, month);
+  if (!savedReviews || typeof savedReviews !== 'object') return;
+
+  var devSet = {};
+  devIds.forEach(function(id) { devSet[String(id)] = true; });
+
+  var changed = false;
+  Object.keys(savedReviews).forEach(function(reviewKey) {
+    var review = savedReviews[reviewKey];
+    if (!review || !devSet[String(review.developerId)]) return;
+    var newRate = prGetRate(review.developerId);
+    var newBase = prGetBase(review.developerId);
+    if (review.rate !== newRate || review.base !== newBase) {
+      review.rate = newRate;
+      review.base = newBase;
+      /* Recalculate payroll amount */
+      review.payrollAmount = Math.round((review.payrollHours || 0) * newRate) + newBase;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    _prSaveReviews(year, month, savedReviews);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════

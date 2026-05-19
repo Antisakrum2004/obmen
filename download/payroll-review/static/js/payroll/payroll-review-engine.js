@@ -219,8 +219,8 @@ function buildReviewRows(data, savedReviews, rateProvider) {
       factMinutes: agg.factMinutes,
       billableHours: saved ? saved.billableHours : agg.factHours,
       payrollHours: saved ? saved.payrollHours : agg.factHours,
-      rate: saved ? saved.rate : rate,
-      base: saved ? saved.base : base,
+      rate: rate,  /* always use live rate — admin changes apply to all tasks */
+      base: base,  /* always use live base */
       reviewStatus: saved ? saved.reviewStatus : PR_REVIEW_STATUS.PENDING,
       managerComment: saved ? saved.managerComment : '',
       entryCount: agg.entryCount,

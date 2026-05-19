@@ -72,3 +72,24 @@ Stage Summary:
 - 255 elapsed records loaded successfully
 - Scrollbar issue during loading is fixed
 - Deploy URL: https://obmen-atilab.vercel.app/
+---
+Task ID: 1
+Agent: main
+Task: Fix admin rate change UX and rate propagation to all tasks
+
+Work Log:
+- Analyzed `_prSaveAdmin()` in tab-payroll-review.js: it was closing modal immediately and using `_prLoadData()` which destroys modal
+- Analyzed `payroll-review-calc.js` and `payroll-review-engine.js`: rate was set from saved reviews (`saved.rate`) instead of live rate, so admin rate changes never propagated to existing tasks
+- Fixed UX: modal now stays open after save, shows green "✓ Ставка изменена: [dev names]" message, changed rows highlight green, auto-closes after 2s
+- Fixed rate propagation: changed `rate: saved ? saved.rate : rate` → `rate: rate` (always use live rate from `prGetRate()`) in both calc files
+- Added `_prApplyRateToSavedReviews()` function that updates saved reviews in localStorage with new rate/base
+- Added in-memory row update in `_prSaveAdmin()` to avoid full data reload (which would destroy modal)
+- Fixed cache bug: added `invalidateProjectionCache()` before recalculating projections/totals after rate change
+- Deployed to Vercel production, tested successfully
+
+Stage Summary:
+- Both fixes verified working on production
+- Green success message appears, modal stays open ~2s then auto-closes
+- Rate changes now apply to ALL tasks and global totals update correctly
+- Zero console errors
+- Rate reset confirmed working (values restore to original)

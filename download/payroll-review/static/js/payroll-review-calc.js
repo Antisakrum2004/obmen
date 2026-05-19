@@ -130,8 +130,8 @@ function buildTaskReviewRows(data, savedReviews) {
       factMinutes: agg.factMinutes,
       billableHours: saved ? saved.billableHours : agg.factHours,
       payrollHours: saved ? saved.payrollHours : agg.factHours,
-      rate: saved ? saved.rate : rate,
-      base: saved ? saved.base : base,
+      rate: rate,  /* always use live rate from prGetRate() — admin changes apply to all tasks */
+      base: base,  /* always use live base from prGetBase() */
       payrollAmount: 0, /* вычисляется ниже */
       reviewStatus: saved ? saved.reviewStatus : 'pending',
       managerComment: saved ? saved.managerComment : '',
