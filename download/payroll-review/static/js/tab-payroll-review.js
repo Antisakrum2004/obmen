@@ -137,6 +137,7 @@ window.TabPayrollReview = {
 function _prLoadData() {
   _pr.loading = true;
   _pr._perf.loadStart = Date.now();
+  _prLoadSteps = []; /* Reset step log */
   _prRenderLoading();
 
   var year = prCurrentPeriod.year;
@@ -146,12 +147,19 @@ function _prLoadData() {
   _prLoadPeriodState(periodKey);
   _pr.auditLog = _prLoadAuditLog(periodKey);
 
-  prLoadPeriodData(year, month).then(function(data) {
+  _prAddLoadStep('\u25B6', 'Загрузка данных за ' + МЕСЯЦЫ_ПОЛН[month - 1] + ' ' + year + '...');
+
+  prLoadPeriodData(year, month, _prLoadProgressCallback).then(function(data) {
     _pr._perf.loadEnd = Date.now();
     _pr.data = data;
     _pr._taskDateCache = {}; /* Clear date cache on new data */
 
-    _prLoadingMsg('Нормализация...');
+    var elapsedCount = (data && data.elapsed) ? data.elapsed.length : 0;
+    var taskCount = (data && data.tasks) ? data.tasks.length : 0;
+    var devCount = Object.keys(DEVELOPERS).length;
+    _prAddLoadStep('\u2713', 'Данные загружены: ' + devCount + ' разраб., ' + elapsedCount + ' elapsed, ' + taskCount + ' задач');
+
+    _prAddLoadStep('\u25B6', 'Нормализация...');
     _pr._perf.normStart = Date.now();
 
     var savedReviews = _prLoadReviews(year, month);
@@ -178,23 +186,41 @@ function _prLoadData() {
 
     _pr._perf.normEnd = Date.now();
 
+    var normMs = _pr._perf.normEnd - _pr._perf.normStart;
+    _prAddLoadStep('\u2713', 'Нормализация: ' + _pr.rows.length + ' строк за ' + normMs + 'мс');
+
     /* Safety warning for large datasets */
     if (_pr.rows.length > 300) {
       console.warn('SAFETY: ' + _pr.rows.length + ' rows exceeds 300 limit');
+      _prAddLoadStep('\u26A0', 'SAFETY: ' + _pr.rows.length + ' строк (лимит 300)');
     }
 
+    _prAddLoadStep('\u25B6', 'Построение прогнозов...');
     _pr.projection = typeof buildMonthlyProjectionCached === 'function'
       ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
     _pr.totals = typeof buildPeriodTotalsCached === 'function'
       ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+
+    _prAddLoadStep('\u2713', 'Прогнозы: ' + _pr.projection.length + ' разработчиков');
+
     _pr.dirty = false;
     _pr.loading = false;
+
+    var totalMs = _pr._perf.loadEnd - _pr._perf.loadStart + normMs;
+    _prAddLoadStep('\u2713', 'Готово! Общее время: ' + totalMs + 'мс');
+
     _prScheduleRender();
   }).catch(function(e) {
     console.error('Ошибка загрузки', e);
     _pr.loading = false;
-    _prRenderError(e.message || 'Ошибка загрузки');
+    _prAddLoadStep('\u2717', 'ОШИБКА: ' + (e.message || 'Неизвестная ошибка'));
+    _prRenderError(e.message || 'Ошибка загрузки данных. Проверьте подключение и режим (МОК/ЖИВОЙ).');
   });
+}
+
+/* Progress callback for data loader — called from mock-data.js */
+function _prLoadProgressCallback(step, detail) {
+  _prAddLoadStep('\u25B6', step + (detail ? ': ' + detail : ''));
 }
 
 /* ─── Scheduled render (batch updates via rAF) ─── */
@@ -312,13 +338,49 @@ function _prRateProvider() {
 /* ═══════════════════════════════════════════════════════════════
    РЕНДЕРИНГ
    ═══════════════════════════════════════════════════════════════ */
+
+/* Loading step log — each step shows as a line in the loading panel */
+var _prLoadSteps = [];
+
+function _prAddLoadStep(icon, text) {
+  _prLoadSteps.push({icon: icon || '\u25CB', text: text, time: Date.now()});
+  _prRenderLoadingSteps();
+}
+
+function _prRenderLoadingSteps() {
+  var el = document.getElementById('pr-loading-steps');
+  if (!el) return;
+  var h = '';
+  _prLoadSteps.forEach(function(step, idx) {
+    var isLast = idx === _prLoadSteps.length - 1;
+    var color = isLast ? 'var(--accent)' : 'var(--green)';
+    var checkmark = idx < _prLoadSteps.length - 1 ? '\u2713' : '\u25B6';
+    h += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;color:' + color + '">' +
+      '<span style="font-size:10px;width:14px;text-align:center">' + checkmark + '</span>' +
+      '<span style="font-family:var(--mono);font-size:10px">' + esc(step.text) + '</span>' +
+      '</div>';
+  });
+  el.innerHTML = h;
+  /* Force scroll to bottom */
+  el.scrollTop = el.scrollHeight;
+}
+
 function _prRenderLoading() {
   if (!_pr.container) return;
-  _pr.container.innerHTML = '<div class="pr-loading">' +
-    '<div class="pr-ring"></div>' +
-    '<div id="pr-loading-msg">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '...</div>' +
-    '<div id="pr-loading-step" style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px"></div>' +
+  _prLoadSteps = [];
+  var modeLabel = PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ';
+  _pr.container.innerHTML =
+    '<div class="pr-loading" style="gap:14px;align-items:flex-start;max-width:500px;margin:0 auto;padding:32px 24px">' +
+    '<div style="display:flex;align-items:center;gap:10px;width:100%">' +
+      '<div class="pr-ring"></div>' +
+      '<div>' +
+        '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-first v5.0</div>' +
+      '</div>' +
+    '</div>' +
+    '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:auto;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
     '</div>';
+  _prAddLoadStep('\u25B6', 'Инициализация...');
 }
 
 function _prRenderError(msg) {

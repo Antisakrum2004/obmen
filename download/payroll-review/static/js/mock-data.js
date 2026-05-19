@@ -198,31 +198,36 @@ PR_MOCK_generate();
    DATA LOADER — Mock/Real switch with cache + SWR
    ═══════════════════════════════════════════════════════════════ */
 
-function prLoadPeriodData(year, month) {
+function prLoadPeriodData(year, month, progressCb) {
   var cacheKey = 'data:' + year + '-' + String(month).padStart(2, '0');
+  var cb = progressCb || function() {};
 
   /* ── Check cache first ── */
   if (typeof PayrollCache !== 'undefined') {
     var cached = PayrollCache.get(cacheKey);
     if (cached) {
       console.log('prLoadPeriodData: CACHE HIT for ' + cacheKey);
+      cb('Из кеша', 'найден закешированный результат');
       return Promise.resolve(cached);
     }
   }
 
   if (PR_MOCK_MODE) {
+    cb('Загрузка (МОК)', 'генерация тестовых данных...');
     return new Promise(function(resolve) {
       setTimeout(function() {
+        cb('Генерация MOCK', 'создание elapsed и задач...');
         var data = PR_MOCK_buildMockData(year, month);
         /* Store in cache */
         if (typeof PayrollCache !== 'undefined') {
           PayrollCache.set(cacheKey, data, 5 * 60 * 1000);
         }
+        cb('MOCK готов', data.elapsed.length + ' elapsed, ' + data.tasks.length + ' задач');
         resolve(data);
       }, 200);
     });
   }
-  return PR_loadRealData(year, month);
+  return PR_loadRealData(year, month, progressCb);
 }
 
 /* ─── Build mock data for period ─── */
@@ -340,12 +345,13 @@ function getPayrollPeriods() {
 }
 
 /* ─── Real data loader v5.0 ─── */
-function PR_loadRealData(year, month) {
+function PR_loadRealData(year, month, progressCb) {
   var range = prGetMonthRange(year, month);
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
   var periodKey = year + '-' + String(month).padStart(2, '0');
   var cacheKey = 'data:' + periodKey;
+  var cb = progressCb || function() {};
 
   console.log('PR_loadRealData v5.0: загрузка за ' + fromStr + ' — ' + toStr + ' (elapsed-first pipeline)');
 
@@ -354,6 +360,7 @@ function PR_loadRealData(year, month) {
     var cached = PayrollCache.get(cacheKey);
     if (cached) {
       console.log('PR_loadRealData: CACHE HIT for ' + cacheKey);
+      cb('Из кеша', 'найден закешированный результат');
       return Promise.resolve(cached);
     }
 
@@ -361,23 +368,26 @@ function PR_loadRealData(year, month) {
     var stale = PayrollCache.getStale(cacheKey);
     if (stale) {
       console.log('PR_loadRealData: serving stale data, refreshing in background');
+      cb('Из кеша (устаревший)', 'фоновое обновление...');
       _prBackgroundRefresh(year, month, cacheKey);
       return Promise.resolve(stale);
     }
   }
 
-  return _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey);
+  return _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, progressCb);
 }
 
 /* ─── Fresh data load (no cache) ─── */
-function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) {
+function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, progressCb) {
   var perfStart = Date.now();
+  var cb = progressCb || function() {};
 
   /* ── Step 1: Load developers (cached) ── */
-  _prLoadingMsg('Загрузка разработчиков...');
+  cb('Загрузка разработчиков', 'из API...');
 
   var devPromise;
   if (typeof PayrollCache !== 'undefined' && PayrollCache.has('developers')) {
+    cb('Разработчики', 'из кеша');
     devPromise = Promise.resolve(PayrollCache.get('developers'));
   } else {
     devPromise = (typeof bxLoadDevelopers === 'function')
@@ -385,21 +395,23 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
           if (typeof PayrollCache !== 'undefined') {
             PayrollCache.set('developers', DEVELOPERS, 30 * 60 * 1000); /* 30 min cache */
           }
+          cb('Разработчики загружены', Object.keys(DEVELOPERS).length + ' чел.');
           return DEVELOPERS;
         })
       : Promise.resolve(DEVELOPERS);
   }
 
   return devPromise.then(function() {
-    _prLoadingMsg('Загрузка затраченного времени...');
+    cb('Загрузка elapsed', 'по каждому разработчику...');
 
     /* ── Step 2: Load elapsed PER DEVELOPER for period ──
        Source of truth = elapsed. We load elapsed for each dev,
        bounded to the current period. This is the INVERTED pipeline. */
-    return _prLoadElapsedByDev(fromStr, toStr);
+    return _prLoadElapsedByDev(fromStr, toStr, progressCb);
 
   }).then(function(allElapsed) {
     console.log('PR_loadRealData: получено ' + allElapsed.length + ' elapsed записей за ' + ((Date.now() - perfStart) / 1000).toFixed(1) + 's');
+    cb('Elapsed загружен', allElapsed.length + ' записей');
 
     /* Safety limit */
     if (allElapsed.length > PR_MAX_ELAPSED) {
@@ -408,12 +420,12 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
     }
 
     /* ── Step 3: Extract unique task IDs from elapsed ── */
-    _prLoadingMsg('Загрузка задач...');
     var taskIds = {};
     allElapsed.forEach(function(e) {
       taskIds[String(e.TASK_ID)] = true;
     });
     var uniqueTaskIds = Object.keys(taskIds);
+    cb('Извлечение ID задач', uniqueTaskIds.length + ' уникальных из elapsed');
     console.log('PR_loadRealData: ' + uniqueTaskIds.length + ' уникальных задач из elapsed');
 
     /* Safety limit */
@@ -427,8 +439,9 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
     }
 
     /* ── Step 4: Load ONLY referenced tasks ── */
+    cb('Загрузка задач', uniqueTaskIds.length + ' по ID...');
     return _prLoadTasksByIdsThrottled(uniqueTaskIds).then(function(allTasks) {
-      _prLoadingMsg('Нормализация данных...');
+      cb('Задачи загружены', allTasks.length + ' задач из API');
 
       /* Build tasksMeta */
       var tasksMeta = {};
@@ -462,7 +475,7 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
       });
 
       /* ── Step 5: Load projects (cached) ── */
-      _prLoadingMsg('Загрузка проектов...');
+      cb('Загрузка проектов', '...');
       return _prLoadProjectsCached().then(function(projects) {
         /* Merge project names from API into tasksMeta */
         Object.keys(projects).forEach(function(gid) {
@@ -473,6 +486,7 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
         console.log('PR_loadRealData: завершено за ' + (elapsedMs / 1000).toFixed(1) + 's — ' +
           allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' +
           Object.keys(projects).length + ' проектов');
+        cb('Загрузка завершена', (elapsedMs / 1000).toFixed(1) + 'с — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач');
 
         var result = {
           elapsed: allElapsed,
@@ -501,8 +515,10 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey) 
 }
 
 /* ─── Load elapsed per developer (period-bounded, throttled) ─── */
-function _prLoadElapsedByDev(fromStr, toStr) {
+function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
   var devIds = (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+  var cb = progressCb || function() {};
+  var loadedDevs = 0;
 
   /* For each developer, load elapsed via batch API
      Using Bitrix24 batch: task.elapseditem.getlist with USER_ID filter */
@@ -515,6 +531,8 @@ function _prLoadElapsedByDev(fromStr, toStr) {
         '<=CREATED_DATE': toStr
       }
     }, 20000).then(function(r) {
+      loadedDevs++;
+      cb('Elapsed', 'разраб. ' + loadedDevs + '/' + devIds.length + ' (ID ' + devId + ')');
       if (r && r.error) {
         /* Fallback: try without date filter, then filter client-side */
         return bxPost('task.elapseditem.getlist', {
