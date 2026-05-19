@@ -2,12 +2,16 @@ from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import requests as http_requests
 import os
+import logging
 
 # Resolve absolute path to static directory
 _STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'static'))
 
 app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='')
 CORS(app)
+
+# Increase logging for debugging
+logging.basicConfig(level=logging.INFO)
 
 # Webhook hardcoded for prototype
 DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/'
@@ -51,16 +55,25 @@ def proxy_api(method):
     hook = request.args.get('hook', DEFAULT_HOOK)
     url = hook.rstrip('/') + '/' + method + '.json'
 
+    # Use longer timeout for batch API calls
+    timeout = 60 if 'batch' in method else 30
+
     try:
         if request.method == 'POST':
             json_data = request.get_json(silent=True) or {}
-            resp = http_requests.post(url, json=json_data, timeout=30)
+            resp = http_requests.post(url, json=json_data, timeout=timeout)
         else:
             params = {k: v for k, v in request.args.items() if k != 'hook'}
-            resp = http_requests.get(url, params=params, timeout=30)
+            resp = http_requests.get(url, params=params, timeout=timeout)
 
-        return jsonify(resp.json())
+        # Log errors for debugging
+        result = resp.json()
+        if isinstance(result, dict) and result.get('error'):
+            app.logger.info('BX API %s -> error: %s', method, result.get('error'))
+
+        return jsonify(result)
     except Exception as e:
+        app.logger.error('Proxy error for %s: %s', method, str(e))
         return jsonify({'error': str(e), 'method': method}), 502
 
 # Catch-all: serve any static file, or return index.html for SPA

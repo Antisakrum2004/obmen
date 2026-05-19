@@ -377,37 +377,48 @@ function PR_loadRealData(year, month) {
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
 
-  /* Шаг 1: Загрузить все задачи за период по каждому разработчику */
-  var taskProms = DEV_IDS.map(function(devId) {
-    return fetchTasksPaginated({
-      filter: {
-        RESPONSIBLE_ID: devId,
-        '>=CREATED_DATE': fromStr,
-        '<=CLOSED_DATE': toStr + ' 23:59:59'
-      },
-      select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-    }).then(function(tasks) {
-      if (!Array.isArray(tasks)) tasks = [];
-      /* Добавляем задачи без CLOSED_DATE (ещё не закрытые) */
+  console.log('PR_loadRealData: загрузка ЖИВЫХ данных за ' + fromStr + ' — ' + toStr);
+
+  /* Шаг 0: Загрузить разработчиков из Bitrix24 */
+  var devPromise = (typeof bxLoadDevelopers === 'function')
+    ? bxLoadDevelopers()
+    : Promise.resolve(DEVELOPERS);
+
+  return devPromise.then(function() {
+
+    /* Шаг 1: Загрузить все задачи за период по каждому разработчику */
+    var taskProms = DEV_IDS.map(function(devId) {
       return fetchTasksPaginated({
         filter: {
           RESPONSIBLE_ID: devId,
           '>=CREATED_DATE': fromStr,
-          STATUS: '3'
+          '<=CLOSED_DATE': toStr + ' 23:59:59'
         },
         select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-      }).then(function(moreTasks) {
-        if (!Array.isArray(moreTasks)) moreTasks = [];
-        return tasks.concat(moreTasks);
+      }).then(function(tasks) {
+        if (!Array.isArray(tasks)) tasks = [];
+        /* Добавляем задачи без CLOSED_DATE (ещё не закрытые) */
+        return fetchTasksPaginated({
+          filter: {
+            RESPONSIBLE_ID: devId,
+            '>=CREATED_DATE': fromStr,
+            STATUS: '3'
+          },
+          select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
+        }).then(function(moreTasks) {
+          if (!Array.isArray(moreTasks)) moreTasks = [];
+          return tasks.concat(moreTasks);
+        }).catch(function() {
+          return tasks;
+        });
       }).catch(function() {
-        return tasks;
+        return [];
       });
-    }).catch(function() {
-      return [];
     });
-  });
 
-  return Promise.all(taskProms).then(function(allTaskBatches) {
+    return Promise.all(taskProms);
+
+  }).then(function(allTaskBatches) {
     /* Собираем уникальные задачи */
     var tasksMap = {};
     var allTasks = [];
@@ -420,6 +431,8 @@ function PR_loadRealData(year, month) {
         }
       });
     });
+
+    console.log('PR_loadRealData: загружено ' + allTasks.length + ' уникальных задач');
 
     /* Собираем ID задач для запроса elapsed */
     var taskIds = Object.keys(tasksMap);
@@ -435,32 +448,42 @@ function PR_loadRealData(year, month) {
       };
     }
 
-    /* Шаг 2: Загрузить elapsed для каждой задачи */
-    var elapsedProms = taskIds.map(function(tid) {
-      return bxPost('task.elapseditem.getlist', {
-        TASK_ID: parseInt(tid),
-        PARAMS: {}
-      }).then(function(r) {
-        if (r && r.result && Array.isArray(r.result)) {
-          return r.result;
-        }
-        return [];
-      }).catch(function() {
-        return [];
+    /* Шаг 2: Загрузить elapsed через batch API (эффективнее, чем по одной задаче) */
+    var elapsedPromise;
+    if (typeof bxLoadElapsedBatch === 'function') {
+      elapsedPromise = bxLoadElapsedBatch(taskIds, fromStr, toStr);
+    } else {
+      /* Fallback: по одной задаче (старый подход) */
+      var elapsedProms = taskIds.map(function(tid) {
+        return bxPost('task.elapseditem.getlist', {
+          TASK_ID: parseInt(tid),
+          ORDER: {ID: 'ASC'}
+        }).then(function(r) {
+          if (r && r.result && Array.isArray(r.result)) {
+            return r.result;
+          }
+          return [];
+        }).catch(function() {
+          return [];
+        });
       });
-    });
-
-    return Promise.all(elapsedProms).then(function(elapsedBatches) {
-      var allElapsed = [];
-      elapsedBatches.forEach(function(batch) {
-        allElapsed = allElapsed.concat(batch);
+      elapsedPromise = Promise.all(elapsedProms).then(function(elapsedBatches) {
+        var allElapsed = [];
+        elapsedBatches.forEach(function(batch) {
+          allElapsed = allElapsed.concat(batch);
+        });
+        return allElapsed;
       });
+    }
 
+    return elapsedPromise.then(function(allElapsed) {
       /* Фильтр по периоду и разработчикам */
       allElapsed = allElapsed.filter(function(e) {
         var d = (e.CREATED_DATE || '').substring(0, 10);
         return d >= fromStr && d <= toStr && DEV_IDS.indexOf(Number(e.USER_ID)) >= 0;
       });
+
+      console.log('PR_loadRealData: после фильтра — ' + allElapsed.length + ' elapsed записей');
 
       /* Собираем метаданные задач */
       var tasksMeta = {};
@@ -500,6 +523,8 @@ function PR_loadRealData(year, month) {
             }
           });
         }
+
+        console.log('PR_loadRealData: итог — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' + Object.keys(projects).length + ' проектов');
 
         return {
           elapsed: allElapsed,
