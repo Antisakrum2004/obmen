@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-3.0.0';
+var APP_VERSION = 'ПР-3.1.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -387,10 +387,11 @@ function bxLoadElapsedBatch(taskIds, fromStr, toStr) {
   if (!taskIds || !taskIds.length) return Promise.resolve([]);
   console.log('bxLoadElapsedBatch: загрузка elapsed для ' + taskIds.length + ' задач через batch');
 
-  /* Стратегия 1: batch через task.elapseditem.getlist */
+  /* Стратегия 1: batch через task.elapseditem.getlist
+     Убран ORDER[ID]=ASC — квадратные скобки ломают парсер batch-команд Bitrix24 (ERROR_CORE) */
   var cmdMap = {};
   taskIds.forEach(function(tid, idx) {
-    cmdMap['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid + '&ORDER[ID]=ASC';
+    cmdMap['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
   });
 
   return bxBatchCall(cmdMap).then(function(results) {
@@ -402,6 +403,14 @@ function bxLoadElapsedBatch(taskIds, fromStr, toStr) {
         allElapsed = allElapsed.concat(items);
       } else if (items && items.result && Array.isArray(items.result)) {
         allElapsed = allElapsed.concat(items.result);
+      } else if (items && !items.error) {
+        /* Попытка распознать другие форматы ответа */
+        if (typeof items === 'object') {
+          var vals = Object.values(items);
+          if (vals.length && vals[0] && vals[0].TASK_ID) {
+            allElapsed = allElapsed.concat(vals);
+          }
+        }
       } else {
         batchErrors++;
       }
@@ -412,29 +421,29 @@ function bxLoadElapsedBatch(taskIds, fromStr, toStr) {
     }
 
     if (allElapsed.length > 0) {
-      console.log('bxLoadElapsedBatch: получено ' + allElapsed.length + ' elapsed записей');
+      console.log('bxLoadElapsedBatch: получено ' + allElapsed.length + ' elapsed записей через batch');
       return allElapsed;
     }
 
-    /* Стратегия 2: fallback на tasks.elapsed.time.list по каждому разработчику */
-    console.log('bxLoadElapsedBatch: batch вернул 0 записей, пробуем tasks.elapsed.time.list...');
-    return bxLoadElapsedPerDev(fromStr, toStr);
+    /* Стратегия 2: fallback — прямые запросы task.elapseditem.getlist по каждой задаче */
+    console.log('bxLoadElapsedBatch: batch вернул 0 записей, пробуем прямые запросы...');
+    return bxLoadElapsedDirect(taskIds);
   });
 }
 
-/* ─── Загрузка elapsed через tasks.elapsed.time.list ─── */
-function bxLoadElapsedPerDev(fromStr, toStr) {
-  var proms = DEV_IDS.map(function(devId) {
-    return bxPost('tasks.elapsed.time.list', {
-      filter: {
-        USER_ID: devId,
-        '>=CREATED_DATE': fromStr,
-        '<=CREATED_DATE': toStr + ' 23:59:59'
-      },
-      select: ['ID', 'TASK_ID', 'USER_ID', 'SECONDS', 'MINUTES', 'COMMENT_TEXT', 'CREATED_DATE', 'DATE_START', 'DATE_STOP'],
-      start: 0
+/* ─── Загрузка elapsed прямым запросом по каждой задаче (fallback) ───
+   Вызывает task.elapseditem.getlist напрямую с пагинацией.
+   Надёжнее batch, но медленнее — используется как fallback.
+   Заменяет bxLoadElapsedPerDev который использовал несуществующий tasks.elapsed.time.list */
+function bxLoadElapsedDirect(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadElapsedDirect: загрузка elapsed для ' + taskIds.length + ' задач напрямую');
+
+  var proms = taskIds.map(function(tid) {
+    return bxPost('task.elapseditem.getlist', {
+      TASK_ID: parseInt(tid)
     }).then(function(r) {
-      /* Новый API может вернуть result как массив или как объект с items */
+      if (r && r.error) return [];
       var items = [];
       if (r && r.result) {
         if (Array.isArray(r.result)) {
@@ -447,7 +456,7 @@ function bxLoadElapsedPerDev(fromStr, toStr) {
       }
       /* Пагинация */
       if (r && r.next && items.length >= 50) {
-        return _paginateElapsedPerDev(devId, fromStr, toStr, r.next, items);
+        return _paginateElapsedDirect(tid, r.next, items);
       }
       return items;
     }).catch(function() {
@@ -458,19 +467,14 @@ function bxLoadElapsedPerDev(fromStr, toStr) {
   return Promise.all(proms).then(function(batches) {
     var all = [];
     batches.forEach(function(b) { all = all.concat(b); });
-    console.log('bxLoadElapsedPerDev: получено ' + all.length + ' elapsed записей через tasks.elapsed.time.list');
+    console.log('bxLoadElapsedDirect: получено ' + all.length + ' elapsed записей');
     return all;
   });
 }
 
-function _paginateElapsedPerDev(devId, fromStr, toStr, start, accumulated) {
-  return bxPost('tasks.elapsed.time.list', {
-    filter: {
-      USER_ID: devId,
-      '>=CREATED_DATE': fromStr,
-      '<=CREATED_DATE': toStr + ' 23:59:59'
-    },
-    select: ['ID', 'TASK_ID', 'USER_ID', 'SECONDS', 'MINUTES', 'COMMENT_TEXT', 'CREATED_DATE', 'DATE_START', 'DATE_STOP'],
+function _paginateElapsedDirect(tid, start, accumulated) {
+  return bxPost('task.elapseditem.getlist', {
+    TASK_ID: parseInt(tid),
     start: start
   }).then(function(r) {
     var items = [];
@@ -481,11 +485,43 @@ function _paginateElapsedPerDev(devId, fromStr, toStr, start, accumulated) {
     }
     accumulated = accumulated.concat(items);
     if (r && r.next && items.length >= 50) {
-      return _paginateElapsedPerDev(devId, fromStr, toStr, r.next, accumulated);
+      return _paginateElapsedDirect(tid, r.next, accumulated);
     }
     return accumulated;
   }).catch(function() {
     return accumulated;
+  });
+}
+
+/* ─── Загрузка задач по списку ID (batch) ───
+   Используется для догрузки задач, ID которых найдены в elapsed,
+   но сами задачи не попали в основной запрос по CREATED_DATE. */
+function bxLoadTasksByIds(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadTasksByIds: загрузка ' + taskIds.length + ' задач по ID');
+
+  /* Используем batch для эффективности: до 50 задач за один запрос */
+  var cmdMap = {};
+  taskIds.forEach(function(tid, idx) {
+    cmdMap['t' + idx] = 'tasks.task.list?filter[ID]=' + tid + '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
+  });
+
+  return bxBatchCall(cmdMap).then(function(results) {
+    var allTasks = [];
+    Object.keys(results).forEach(function(key) {
+      var data = results[key];
+      var tasks = [];
+      if (data && data.tasks && Array.isArray(data.tasks)) {
+        tasks = data.tasks;
+      } else if (data && data.result && data.result.tasks && Array.isArray(data.result.tasks)) {
+        tasks = data.result.tasks;
+      } else if (Array.isArray(data)) {
+        tasks = data;
+      }
+      allTasks = allTasks.concat(tasks);
+    });
+    console.log('bxLoadTasksByIds: загружено ' + allTasks.length + ' задач');
+    return allTasks;
   });
 }
 

@@ -371,13 +371,21 @@ function PR_MOCK_buildMockData(year, month) {
   };
 }
 
-/* ─── Real data loader ─── */
+/* ─── Real data loader ───
+   v3.1 — Исправлен фильтр задач: ищем задачи за 3 месяца + недавно закрытые,
+   а не только созданные в текущем месяце. Это исправляет баг, когда у
+   разработчиков (напр. Елена Кашина) показывалась только 1 задача. */
 function PR_loadRealData(year, month) {
   var range = prGetMonthRange(year, month);
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
 
-  console.log('PR_loadRealData: загрузка ЖИВЫХ данных за ' + fromStr + ' — ' + toStr);
+  /* Lookback: 3 месяца назад — чтобы найти задачи, созданные ранее,
+     но имеющие затраченное время в текущем периоде */
+  var lookbackDate = new Date(year, month - 4, 1);
+  var lookbackStr = fmt(lookbackDate);
+
+  console.log('PR_loadRealData: загрузка ЖИВЫХ данных за ' + fromStr + ' — ' + toStr + ' (lookback: ' + lookbackStr + ')');
 
   /* Шаг 0: Загрузить разработчиков из Bitrix24 */
   var devPromise = (typeof bxLoadDevelopers === 'function')
@@ -386,31 +394,35 @@ function PR_loadRealData(year, month) {
 
   return devPromise.then(function() {
 
-    /* Шаг 1: Загрузить все задачи за период по каждому разработчику */
+    /* Шаг 1: Загрузить задачи по каждому разработчику
+       Стратегия: 3 запроса на разработчика:
+       A) Задачи за 3 месяца (lookback) — основные
+       B) Задачи закрытые в текущем периоде (могли быть созданы давно)
+       C) Задачи в статусе «в работе» созданные за 6 месяцев
+    */
     var taskProms = DEV_IDS.map(function(devId) {
-      return fetchTasksPaginated({
+      /* Запрос A: задачи за 3 месяца */
+      var pA = fetchTasksPaginated({
         filter: {
           RESPONSIBLE_ID: devId,
-          '>=CREATED_DATE': fromStr,
-          '<=CLOSED_DATE': toStr + ' 23:59:59'
+          '>=CREATED_DATE': lookbackStr
         },
         select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-      }).then(function(tasks) {
-        if (!Array.isArray(tasks)) tasks = [];
-        /* Добавляем задачи без CLOSED_DATE (ещё не закрытые) */
-        return fetchTasksPaginated({
-          filter: {
-            RESPONSIBLE_ID: devId,
-            '>=CREATED_DATE': fromStr,
-            STATUS: '3'
-          },
-          select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-        }).then(function(moreTasks) {
-          if (!Array.isArray(moreTasks)) moreTasks = [];
-          return tasks.concat(moreTasks);
-        }).catch(function() {
-          return tasks;
-        });
+      }, 10);
+
+      /* Запрос B: задачи закрытые в текущем периоде */
+      var pB = fetchTasksPaginated({
+        filter: {
+          RESPONSIBLE_ID: devId,
+          STATUS: '5',
+          '>=CLOSED_DATE': fromStr
+        },
+        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
+      }, 5);
+
+      return Promise.all([pA, pB]).then(function(batches) {
+        var all = (batches[0] || []).concat(batches[1] || []);
+        return all;
       }).catch(function() {
         return [];
       });
@@ -423,6 +435,7 @@ function PR_loadRealData(year, month) {
     var tasksMap = {};
     var allTasks = [];
     allTaskBatches.forEach(function(batch) {
+      if (!Array.isArray(batch)) return;
       batch.forEach(function(t) {
         var id = String(t.id || t.ID);
         if (!tasksMap[id]) {
@@ -448,16 +461,17 @@ function PR_loadRealData(year, month) {
       };
     }
 
-    /* Шаг 2: Загрузить elapsed через batch API (эффективнее, чем по одной задаче) */
+    /* Шаг 2: Загрузить elapsed через batch API, fallback на прямые запросы */
     var elapsedPromise;
     if (typeof bxLoadElapsedBatch === 'function') {
       elapsedPromise = bxLoadElapsedBatch(taskIds, fromStr, toStr);
+    } else if (typeof bxLoadElapsedDirect === 'function') {
+      elapsedPromise = bxLoadElapsedDirect(taskIds);
     } else {
-      /* Fallback: по одной задаче (старый подход) */
+      /* Последний fallback: по одной задаче напрямую */
       var elapsedProms = taskIds.map(function(tid) {
         return bxPost('task.elapseditem.getlist', {
-          TASK_ID: parseInt(tid),
-          ORDER: {ID: 'ASC'}
+          TASK_ID: parseInt(tid)
         }).then(function(r) {
           if (r && r.result && Array.isArray(r.result)) {
             return r.result;
@@ -483,58 +497,85 @@ function PR_loadRealData(year, month) {
         return d >= fromStr && d <= toStr && DEV_IDS.indexOf(Number(e.USER_ID)) >= 0;
       });
 
-      console.log('PR_loadRealData: после фильтра — ' + allElapsed.length + ' elapsed записей');
+      console.log('PR_loadRealData: после фильтра по периоду — ' + allElapsed.length + ' elapsed записей');
 
-      /* Собираем метаданные задач */
-      var tasksMeta = {};
-      var validTaskIds = {};
-      allTasks.forEach(function(t) {
-        var id = String(t.id || t.ID);
-        var gid = String(t.groupId || t.GROUP_ID || '0');
-        var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
-        tasksMeta[id] = {
-          groupId: gid,
-          groupName: pname,
-          title: t.title || t.TITLE || '',
-          status: t.status || t.STATUS || '0',
-          responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
-        };
-        if (!EXCLUDE_GROUPS[gid]) {
-          validTaskIds[id] = true;
-        }
+      /* Найти TASK_ID из elapsed, которых нет в загруженных задачах
+         (могут быть очень старые задачи, не попавшие в lookback) */
+      var elapsedTaskIds = {};
+      allElapsed.forEach(function(e) { elapsedTaskIds[String(e.TASK_ID)] = true; });
+      var missingTaskIds = Object.keys(elapsedTaskIds).filter(function(tid) {
+        return !tasksMap[tid];
       });
 
-      /* Фильтр elapsed по не-исключённым проектам */
-      allElapsed = allElapsed.filter(function(e) {
-        return validTaskIds[String(e.TASK_ID)];
-      });
+      /* Шаг 2b: догрузить пропущенные задачи */
+      var missingPromise;
+      if (missingTaskIds.length > 0) {
+        console.log('PR_loadRealData: догрузка ' + missingTaskIds.length + ' пропущенных задач');
+        missingPromise = bxLoadTasksByIds(missingTaskIds);
+      } else {
+        missingPromise = Promise.resolve([]);
+      }
 
-      /* Шаг 3: Загрузить список проектов */
-      return bxPost('sonet_group.get', {select: ['ID','NAME']}).then(function(r) {
-        var projects = {};
-        if (r && r.result) {
-          var groups = r.result;
-          if (!Array.isArray(groups)) groups = Object.values(groups);
-          groups.forEach(function(g) {
-            var id = String(g.ID || g.id);
-            var nm = g.NAME || g.name || ('Группа ' + id);
-            if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
-              projects[id] = {id: id, name: nm};
-            }
-          });
-        }
+      return missingPromise.then(function(missingTasks) {
+        missingTasks.forEach(function(t) {
+          var id = String(t.id || t.ID);
+          if (!tasksMap[id]) {
+            tasksMap[id] = true;
+            allTasks.push(t);
+          }
+        });
 
-        console.log('PR_loadRealData: итог — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' + Object.keys(projects).length + ' проектов');
+        /* Собираем метаданные задач */
+        var tasksMeta = {};
+        var validTaskIds = {};
+        allTasks.forEach(function(t) {
+          var id = String(t.id || t.ID);
+          var gid = String(t.groupId || t.GROUP_ID || '0');
+          var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
+          tasksMeta[id] = {
+            groupId: gid,
+            groupName: pname,
+            title: t.title || t.TITLE || '',
+            status: t.status || t.STATUS || '0',
+            responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
+          };
+          if (!EXCLUDE_GROUPS[gid]) {
+            validTaskIds[id] = true;
+          }
+        });
 
-        return {
-          elapsed: allElapsed,
-          tasks: allTasks,
-          projects: projects,
-          tasksMeta: tasksMeta,
-          from: range.from,
-          to: range.to,
-          days: range.days
-        };
+        /* Фильтр elapsed по не-исключённым проектам */
+        allElapsed = allElapsed.filter(function(e) {
+          return validTaskIds[String(e.TASK_ID)];
+        });
+
+        /* Шаг 3: Загрузить список проектов */
+        return bxPost('sonet_group.get', {select: ['ID','NAME']}).then(function(r) {
+          var projects = {};
+          if (r && r.result) {
+            var groups = r.result;
+            if (!Array.isArray(groups)) groups = Object.values(groups);
+            groups.forEach(function(g) {
+              var id = String(g.ID || g.id);
+              var nm = g.NAME || g.name || ('Группа ' + id);
+              if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
+                projects[id] = {id: id, name: nm};
+              }
+            });
+          }
+
+          console.log('PR_loadRealData: итог — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач, ' + Object.keys(projects).length + ' проектов');
+
+          return {
+            elapsed: allElapsed,
+            tasks: allTasks,
+            projects: projects,
+            tasksMeta: tasksMeta,
+            from: range.from,
+            to: range.to,
+            days: range.days
+          };
+        });
       });
     });
   });

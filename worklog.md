@@ -73,3 +73,28 @@ Stage Summary:
 - Developers dynamically loaded from Bitrix24
 - Version updated to ПР-3.0.0
 - Deployed to https://obmen-atilab.vercel.app
+---
+Task ID: 1
+Agent: Main
+Task: Fix Bitrix24 data loading — missing tasks for developers (Elena Kashina showing only 1 task)
+
+Work Log:
+- Diagnosed 3 root causes:
+  1. Task filter too restrictive: `>=CREATED_DATE: fromStr` only found tasks CREATED in current month, missing tasks created earlier but with elapsed time this month
+  2. `ORDER[ID]=ASC` in batch commands caused ERROR_CORE — square brackets break Bitrix24 batch parser
+  3. `tasks.elapsed.time.list` fallback method doesn't exist in Bitrix24 API → 404 error
+- Fixed core.js: removed ORDER[ID]=ASC from batch commands, replaced bxLoadElapsedPerDev (non-existent method) with bxLoadElapsedDirect (uses task.elapseditem.getlist directly with pagination)
+- Fixed mock-data.js PR_loadRealData: 
+  - Changed task filter to 3-month lookback (CREATED_DATE >= 3 months ago) instead of current month only
+  - Added second query for tasks completed in the period (STATUS=5, CLOSED_DATE >= fromStr)
+  - Added "missing task recovery" — after loading elapsed, finds task IDs not in loaded tasks and backfills them via bxLoadTasksByIds
+- Added bxLoadTasksByIds function in core.js — loads task details by ID using batch API
+- Made debug panel visible in LIVE mode (was only shown in MOCK mode) — added per-developer task count summary
+- Bumped version to ПР-3.1.0
+- Deployed to Vercel: obmen-atilab.vercel.app
+
+Stage Summary:
+- Key fix: Broader task filter catches tasks created before the period but with elapsed time in the period
+- Key fix: Removed ORDER[ID]=ASC from batch commands that caused ERROR_CORE
+- Key fix: Replaced non-existent tasks.elapsed.time.list with working task.elapseditem.getlist direct calls
+- Version: ПР-3.1.0 deployed to production

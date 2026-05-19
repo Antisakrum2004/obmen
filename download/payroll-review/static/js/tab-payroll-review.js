@@ -522,11 +522,12 @@ function _prRenderSaveBar() {
   return h;
 }
 
-/* ─── Отладка (только в режиме МОК) ─── */
+/* ─── Отладка ─── */
 function _prRenderDebug() {
-  if (!PR_MOCK_MODE) return '';
+  /* Показываем отладку всегда — в ЖИВОМ режиме критически важно видеть данные загрузки */
   var h = '<div class="pr-debug">';
-  h += '<div class="pr-debug-title">ОТЛАДКА (МОК)</div>';
+  h += '<div class="pr-debug-title">ОТЛАДКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
+  h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
   h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
   h += '<div class="pr-debug-row">Строк обзора: ' + _pr.rows.length + '</div>';
   h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
@@ -545,6 +546,17 @@ function _prRenderDebug() {
     var sample = _pr.data.elapsed[0];
     h += '<div class="pr-debug-row">Пример elapsed: ID=' + sample.ID + ' ЗАД=' + sample.TASK_ID + ' СЕК=' + sample.SECONDS + '</div>';
   }
+  /* Сводка по разработчикам — сколько задач у каждого */
+  var devTaskCount = {};
+  _pr.rows.forEach(function(r) {
+    if (!devTaskCount[r.developerId]) devTaskCount[r.developerId] = {name: r.developerName, count: 0, hours: 0};
+    devTaskCount[r.developerId].count++;
+    devTaskCount[r.developerId].hours += r.factHours;
+  });
+  Object.keys(devTaskCount).forEach(function(did) {
+    var d = devTaskCount[did];
+    h += '<div class="pr-debug-row">' + esc(d.name) + ': ' + d.count + ' задач, ' + d.hours.toFixed(1) + ' ч</div>';
+  });
   h += '<div class="pr-debug-row">Доменная модель: v' + (typeof PR_DOMAIN_VERSION !== 'undefined' ? PR_DOMAIN_VERSION : '?') + '</div>';
   h += '<div class="pr-debug-row">Аудит записей: ' + _pr.auditLog.length + '</div>';
 
