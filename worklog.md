@@ -93,3 +93,34 @@ Stage Summary:
 - Rate changes now apply to ALL tasks and global totals update correctly
 - Zero console errors
 - Rate reset confirmed working (values restore to original)
+---
+Task ID: 2
+Agent: main
+Task: Multiple features — exclude devs, fix base salary, add fines, fix hours discrepancy
+
+Work Log:
+- Added EXCLUDED_DEV_IDS (80=Сергей Приходько, 94=Denius Coder, 96=Марина Савчук) and ACTIVE_DEV_IDS in core.js
+- Added prGetFine(), prGetFineComment(), prIsExcludedDev() functions in core.js
+- Added DEV_FINE and DEV_FINE_COMMENT config objects in core.js
+- Updated _prLoadElapsedByDev in mock-data.js to use ACTIVE_DEV_IDS instead of DEV_IDS
+- Updated normalizeElapsed in payroll-review-calc.js and payroll-normalizer.js to filter out excluded devs
+- Fixed base salary calculation: changed from per-task to per-developer (once)
+  - payroll-review-calc.js: payrollAmount = payrollHours * rate (NO +base)
+  - payroll-domain.js: calculateReviewAmount = payrollHours * rate (NO +base)
+  - payroll-projection.js: totalAmount = sum(taskAmounts) + base - fine (per dev)
+- Added fine/fineComment fields in admin panel with red styling for fines
+- Restructured admin panel: "Активные разработчики" section + "Исключены из расчётов" section
+- Added base/fine breakdown in card "К выплате" section
+- Added fine metric (red) in card footer with comment
+- Fixed buildPeriodTotals to include base salary and fines
+- Fixed phantom developers (e.g., "Пользователь 114") appearing in projection
+- Fixed filter dropdown to include all active developers (even with 0 tasks)
+- Investigated hours discrepancy: 568.3h vs 621:25h — root causes identified (RESPONSIBLE_ID filter, no pagination, excluded groups)
+
+Stage Summary:
+- 3 developers excluded from all views and calculations
+- Base salary now applies once per developer (not per task)
+- Fines with comments fully implemented
+- Admin panel has two visual sections
+- All totals (header/footer) correctly include base and fine
+- 8 active developers shown consistently

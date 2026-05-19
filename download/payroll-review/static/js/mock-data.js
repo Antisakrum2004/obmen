@@ -557,7 +557,7 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
    
    Source of truth = elapsed entries, NOT task creation date. */
 function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
-  var devIds = (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+  var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
   var cb = progressCb || function() {};
   var loadedDevs = 0;
 

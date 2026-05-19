@@ -32,6 +32,16 @@ var DEVELOPERS = {
 };
 var DEV_IDS = Object.keys(DEVELOPERS).map(Number);
 
+/* ─── Исключённые разработчики (не работают, убраны из расчётов) ─── */
+var EXCLUDED_DEV_IDS = {
+  '80': true,  /* Сергей Приходько */
+  '94': true,  /* Denius Coder */
+  '96': true   /* Марина Савчук */
+};
+
+/* Активные разработчики (все, кроме исключённых) */
+var ACTIVE_DEV_IDS = DEV_IDS.filter(function(id) { return !EXCLUDED_DEV_IDS[String(id)]; });
+
 /* ─── Ставка по умолчанию (1000 р/час) ─── */
 var СТАВКА_ПО_УМОЛЧ = 1000;
 
@@ -50,7 +60,7 @@ var DEV_RATES = {
   '116': 1000
 };
 
-/* ─── Базовая часть (оклад/премия) — можно менять в админке ─── */
+/* ─── Базовая часть (оклад/премия) — единовременно, НЕ на задачу ─── */
 var DEV_BASE = {
   '1':   0,
   '18':  0,
@@ -63,6 +73,36 @@ var DEV_BASE = {
   '96':  0,
   '98':  0,
   '116': 0
+};
+
+/* ─── Штрафы (вычитаются из общей суммы) ─── */
+var DEV_FINE = {
+  '1':   0,
+  '18':  0,
+  '38':  0,
+  '54':  0,
+  '80':  0,
+  '82':  0,
+  '92':  0,
+  '94':  0,
+  '96':  0,
+  '98':  0,
+  '116': 0
+};
+
+/* ─── Комментарии к штрафам ─── */
+var DEV_FINE_COMMENT = {
+  '1':   '',
+  '18':  '',
+  '38':  '',
+  '54':  '',
+  '80':  '',
+  '82':  '',
+  '92':  '',
+  '94':  '',
+  '96':  '',
+  '98':  '',
+  '116': ''
 };
 
 /* ─── ИНН разработчиков ─── */
@@ -246,6 +286,26 @@ function prGetDevName(developerId) {
     if (saved && saved.name) return saved.name;
   }
   return DEVELOPERS[String(developerId)] || ('ID ' + developerId);
+}
+
+function prGetFine(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fine !== undefined) return saved.fine;
+  }
+  return DEV_FINE[String(developerId)] || 0;
+}
+
+function prGetFineComment(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fineComment) return saved.fineComment;
+  }
+  return DEV_FINE_COMMENT[String(developerId)] || '';
+}
+
+function prIsExcludedDev(developerId) {
+  return !!EXCLUDED_DEV_IDS[String(developerId)];
 }
 
 /* ─── API ─── */

@@ -86,9 +86,10 @@ function normalizeElapsedEntry(entry, options) {
   var userId = String(entry.USER_ID || '').trim();
   if (!taskId || !userId) return null;
 
-  /* ── Фильтр неизвестных разработчиков ── */
+  /* ── Фильтр неизвестных и исключённых разработчиков ── */
   var devIds = _normGetDevIds();
   if (devIds.length > 0 && devIds.indexOf(Number(userId)) < 0) return null;
+  if (typeof EXCLUDED_DEV_IDS !== 'undefined' && EXCLUDED_DEV_IDS[userId]) return null;
 
   /* ── Вычисление часов ── */
   var minutes = Math.round(seconds / 60);

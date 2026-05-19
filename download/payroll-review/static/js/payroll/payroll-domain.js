@@ -138,7 +138,8 @@ function createTaskReview(params) {
 function calculateReviewAmount(review) {
   if (!review) return review;
   var r = shallowClone(review);
-  r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
+  /* payrollAmount per task = hours × rate. Base salary is added once per developer in projection, NOT per task. */
+  r.payrollAmount = Math.round(r.payrollHours * r.rate);
 
   /* Profitability calculations */
   r = calculateProfitability(r);

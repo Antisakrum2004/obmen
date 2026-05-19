@@ -105,6 +105,7 @@ function buildMonthlyProjection(reviews) {
         totalBillable: 0,
         totalPayroll: 0,
         totalBase: 0,
+        totalFine: 0,
         totalAmount: 0,
         taskCount: 0,
         approvedCount: 0,
@@ -139,6 +140,18 @@ function buildMonthlyProjection(reviews) {
     d.totalFactHours = safeRound(d.totalFactHours, 1);
     d.totalBillable = safeRound(d.totalBillable, 1);
     d.totalPayroll = safeRound(d.totalPayroll, 1);
+
+    /* Базовая выплата добавляется ОДИН раз (не на задачу) */
+    var baseSalary = (typeof prGetBase === 'function') ? prGetBase(uid) : 0;
+    d.totalBase = baseSalary;
+
+    /* Штраф вычитается ОДИН раз */
+    var fine = (typeof prGetFine === 'function') ? prGetFine(uid) : 0;
+    d.totalFine = fine;
+
+    /* totalAmount = сумма по задачам + базовая − штраф */
+    d.totalAmount = d.totalAmount + baseSalary - fine;
+
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
 
     /* Маржа: billable revenue - payroll cost */
@@ -174,6 +187,7 @@ function buildPeriodTotals(reviews) {
     totalBillable: 0,
     totalPayroll: 0,
     totalBase: 0,
+    totalFine: 0,
     totalPayrollAmount: 0,
     totalMargin: 0,
     totalTasks: 0,
@@ -194,7 +208,6 @@ function buildPeriodTotals(reviews) {
       totals.totalFactHours += r.factHours;
       totals.totalBillable += r.billableHours;
       totals.totalPayroll += r.payrollHours;
-      totals.totalBase += r.base;
       totals.totalPayrollAmount += r.payrollAmount;
     }
   });
@@ -203,6 +216,21 @@ function buildPeriodTotals(reviews) {
   totals.totalBillable = safeRound(totals.totalBillable, 1);
   totals.totalPayroll = safeRound(totals.totalPayroll, 1);
   totals.totalPayrollAmount = Math.round(totals.totalPayrollAmount);
+
+  /* Add base salary and fines per developer (not per task) */
+  var totalBaseAll = 0;
+  var totalFineAll = 0;
+  if (typeof prGetBase === 'function') {
+    var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
+                 (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+    devIds.forEach(function(devId) {
+      totalBaseAll += prGetBase(devId);
+      if (typeof prGetFine === 'function') totalFineAll += prGetFine(devId);
+    });
+  }
+  totals.totalBase = totalBaseAll;
+  totals.totalFine = totalFineAll;
+  totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
 
   /* Маржа: разница между billable revenue и payroll cost */
   var avgRate = totals.totalPayroll > 0 ? totals.totalPayrollAmount / totals.totalPayroll : 0;

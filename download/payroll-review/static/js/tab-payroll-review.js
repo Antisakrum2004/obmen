@@ -161,7 +161,7 @@ function _prLoadData() {
 
     var elapsedCount = (data && data.elapsed) ? data.elapsed.length : 0;
     var taskCount = (data && data.tasks) ? data.tasks.length : 0;
-    var devCount = Object.keys(DEVELOPERS).length;
+    var devCount = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS.length : Object.keys(DEVELOPERS).length;
     _prAddLoadStep('\u2713', 'Данные загружены: ' + devCount + ' разраб., ' + elapsedCount + ' elapsed, ' + taskCount + ' задач');
 
     _prAddLoadStep('\u25B6', 'Нормализация...');
@@ -468,7 +468,7 @@ function _prRenderHeader() {
     ? '<span class="pr-badge pr-badge-mock">МОК</span>'
     : '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
 
-  var devCount = Object.keys(DEVELOPERS).length;
+  var devCount = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS.length : Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
 
   var psLabel = typeof PR_PERIOD_STATUS_LABELS !== 'undefined'
@@ -606,6 +606,10 @@ function _prRenderFilters() {
   h += '<select class="pr-select" id="prFilterDev" onchange="_prOnFilterChange()">';
   h += '<option value="">Все разработчики</option>';
   var devSet = {};
+  /* Include ALL active developers in filter, even those with 0 tasks */
+  var filterIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
+  filterIds.forEach(function(id) { devSet[String(id)] = prGetDevName(String(id)); });
+  /* Also add any developers from rows that might not be in the registry */
   _pr.rows.forEach(function(r) { devSet[r.developerId] = r.developerName; });
   Object.keys(devSet).sort(function(a, b) { return devSet[a].localeCompare(devSet[b]); }).forEach(function(id) {
     var sel = f.developer === id ? ' selected' : '';
@@ -659,15 +663,26 @@ function _prRenderDevCards() {
   return h;
 }
 
-/* ─── Ensure ALL developers appear in projection (even with 0 elapsed) ─── */
+/* ─── Ensure only ACTIVE developers appear in projection ─── */
 function _prEnsureAllDevsInProjection() {
   if (typeof DEVELOPERS === 'undefined') return;
+
+  /* Step 1: Remove phantom developers (not in DEVELOPERS or excluded) */
+  var activeSet = {};
+  var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
+  activeIds.forEach(function(id) { activeSet[String(id)] = true; });
+  _pr.projection = _pr.projection.filter(function(dev) {
+    return activeSet[String(dev.developerId)];
+  });
+
+  /* Step 2: Add missing active developers with 0 hours */
   var existingDevs = {};
   _pr.projection.forEach(function(dev) {
     existingDevs[String(dev.developerId)] = true;
   });
   var missingCount = 0;
-  Object.keys(DEVELOPERS).forEach(function(devId) {
+  activeIds.forEach(function(id) {
+    var devId = String(id);
     if (!existingDevs[devId]) {
       /* This developer has no elapsed in the current period — add empty entry */
       _pr.projection.push({
@@ -677,6 +692,7 @@ function _prEnsureAllDevsInProjection() {
         totalBillable: 0,
         totalPayroll: 0,
         totalBase: 0,
+        totalFine: 0,
         totalAmount: 0,
         taskCount: 0,
         approvedCount: 0,
@@ -771,6 +787,15 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-kpi-primary">';
   h += '<div class="pr-kpi-money">' + _prFmtMoney(dev.totalAmount) + '</div>';
   h += '<div class="pr-kpi-money-label">К выплате</div>';
+  /* Breakdown: задачи + базовая − штраф */
+  var taskSum = dev.totalAmount - (dev.totalBase || 0) + (dev.totalFine || 0);
+  var baseVal = dev.totalBase || 0;
+  var fineVal = dev.totalFine || 0;
+  h += '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px;line-height:1.4">';
+  h += _prFmtMoney(taskSum) + ' по задачам';
+  if (baseVal > 0) h += ' + <span style="color:var(--green)">' + _prFmtMoney(baseVal) + ' баз.</span>';
+  if (fineVal > 0) h += ' − <span style="color:var(--red)">' + _prFmtMoney(fineVal) + ' штраф</span>';
+  h += '</div>';
   h += '</div>';
   h += '</div>';
 
@@ -838,6 +863,11 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'h</div><div class="pr-footer-label">Ср/зад</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + weekendH.toFixed(0) + '</div><div class="pr-footer-label">Выходн</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + overtimeH.toFixed(0) + '</div><div class="pr-footer-label">Сверхур</div></div>';
+  /* Штраф в футере, если есть */
+  if (fineVal > 0) {
+    var fineComment = prGetFineComment(dev.developerId);
+    h += '<div class="pr-footer-metric" style="color:var(--red)"><div class="pr-footer-val" style="color:var(--red)">-' + _prFmtMoney(fineVal) + '</div><div class="pr-footer-label" style="color:var(--red)">Штраф' + (fineComment ? ' (' + esc(truncate(fineComment, 15)) + ')' : '') + '</div></div>';
+  }
   h += '</div>';
 
   /* ─── EXPAND / TIMELINE ─── */
@@ -1187,7 +1217,7 @@ function _prRenderDebug() {
 function _prRenderAdminModal() {
   if (!_pr.modalOpen) return '';
   var h = '<div class="pr-modal-overlay" onclick="_prCloseAdmin(event)">';
-  h += '<div class="pr-modal" onclick="event.stopPropagation()">';
+  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:960px">';
 
   h += '<div class="pr-modal-header">';
   h += '<span class="pr-modal-title">&#9881; Админка — Данные разработчиков</span>';
@@ -1195,31 +1225,59 @@ function _prRenderAdminModal() {
   h += '</div>';
 
   h += '<div class="pr-modal-body">';
+
+  /* ── Секция: Активные разработчики ── */
+  h += '<div style="margin-bottom:16px">';
+  h += '<div style="font-family:var(--mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">Активные разработчики</div>';
   h += '<table class="pr-admin-table"><thead><tr>';
-  h += '<th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка (р/ч)</th><th>Базовая (р)</th>';
+  h += '<th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка<br>(р/ч)</th><th>Базовая /<br>Премия (р)</th><th style="color:var(--red)">Штраф<br>(р)</th><th>Коммент.<br>к штрафу</th>';
   h += '</tr></thead><tbody>';
 
-  DEV_IDS.forEach(function(id) {
+  var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
+  activeIds.forEach(function(id) {
     var sid = String(id);
     var name = prGetDevName(sid);
     var inn = prGetInn(sid);
     var rate = prGetRate(sid);
     var base = prGetBase(sid);
+    var fine = prGetFine(sid);
+    var fineComment = prGetFineComment(sid);
     var isChanged = _pr.adminChangedDevs[sid];
     var rowBg = isChanged ? ' style="background:rgba(34,212,126,.08)"' : '';
-    var rateBorder = isChanged ? 'border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)' : '';
+    var greenBorder = isChanged ? 'border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)' : '';
 
     h += '<tr' + rowBg + '>';
     h += '<td class="c-num">' + id + '</td>';
     h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name"></td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:80px' + (rateBorder ? ';' + rateBorder : '') + '"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:100px' + (rateBorder ? ';' + rateBorder : '') + '"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН" style="width:80px"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:70px' + (greenBorder ? ';' + greenBorder : '') + '"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:80px' + (greenBorder ? ';' + greenBorder : '') + '" title="Единовременная выплата (оклад/премия), добавляется 1 раз к сумме по задачам"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="width:80px;color:var(--red)" title="Штраф, вычитается из общей суммы"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" placeholder="Причина" style="width:100px"></td>';
     h += '</tr>';
   });
 
   h += '</tbody></table>';
   h += '</div>';
+
+  /* ── Секция: Исключённые (не работают) ── */
+  if (typeof EXCLUDED_DEV_IDS !== 'undefined' && Object.keys(EXCLUDED_DEV_IDS).length > 0) {
+    h += '<div style="margin-top:12px">';
+    h += '<div style="font-family:var(--mono);font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">&#9888; Исключены из расчётов (не работают)</div>';
+    h += '<table class="pr-admin-table"><thead><tr>';
+    h += '<th>ID</th><th>ФИО</th>';
+    h += '</tr></thead><tbody>';
+    Object.keys(EXCLUDED_DEV_IDS).forEach(function(devId) {
+      h += '<tr style="opacity:0.5">';
+      h += '<td class="c-num">' + devId + '</td>';
+      h += '<td style="color:var(--text3);text-decoration:line-through">' + esc(prGetDevName(devId)) + '</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    h += '</div>';
+  }
+
+  h += '</div>'; /* end pr-modal-body */
 
   h += '<div class="pr-modal-footer">';
   /* Show green success message if rate was just saved */
@@ -1520,7 +1578,7 @@ function _prSaveAdmin() {
   });
 
   var auditEntries = [];
-  var changedDevs = []; /* list of dev IDs whose rate or base changed */
+  var changedDevs = []; /* list of dev IDs whose rate/base/fine changed */
   Object.keys(devData).forEach(function(devId) {
     var d = devData[devId];
     var settings = _prLoadDevSettings(devId) || {};
@@ -1549,6 +1607,21 @@ function _prSaveAdmin() {
       }
       settings.base = newBase;
     }
+    if (d.fine !== undefined) {
+      var newFine = parseInt(d.fine) || 0;
+      if (newFine !== (settings.fine || 0)) {
+        auditEntries.push(createAuditEntry('change_fine', 'developer', devId, {
+          oldFine: settings.fine || 0,
+          newFine: newFine
+        }));
+        changed = true;
+      }
+      settings.fine = newFine;
+    }
+    if (d.fineComment !== undefined) {
+      if (d.fineComment !== (settings.fineComment || '')) changed = true;
+      settings.fineComment = d.fineComment;
+    }
     _prSaveDevSettings(devId, settings);
     if (changed) changedDevs.push(devId);
   });
@@ -1558,7 +1631,7 @@ function _prSaveAdmin() {
     _prAppendAuditLog(periodKey, auditEntries);
   }
 
-  /* Update saved reviews: apply new rate/base to all existing saved reviews for changed devs */
+  /* Update saved reviews: apply new rate to all existing saved reviews for changed devs */
   if (changedDevs.length > 0) {
     _prApplyRateToSavedReviews(changedDevs);
   }
@@ -1567,7 +1640,7 @@ function _prSaveAdmin() {
   _pr.adminChangedDevs = {};
   changedDevs.forEach(function(id) { _pr.adminChangedDevs[String(id)] = true; });
   _pr.adminSaveMsg = changedDevs.length > 0
-    ? 'Ставка изменена: ' + changedDevs.map(function(id) { return prGetDevName(id); }).join(', ')
+    ? 'Изменено: ' + changedDevs.map(function(id) { return prGetDevName(id); }).join(', ')
     : 'Данные сохранены';
   _pr.adminSaveTime = Date.now();
 
@@ -1579,7 +1652,8 @@ function _prSaveAdmin() {
       if (devSet[String(r.developerId)]) {
         r.rate = prGetRate(r.developerId);
         r.base = prGetBase(r.developerId);
-        r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
+        /* payrollAmount per task = hours × rate (base is added once in projection) */
+        r.payrollAmount = Math.round(r.payrollHours * r.rate);
       }
     });
     /* Invalidate projection cache before recalculating */
