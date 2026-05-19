@@ -223,7 +223,7 @@ var PR_CSS = [
   '.pr-comment-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:4px 8px;outline:none;width:120px;transition:border-color .15s}',
   '.pr-comment-input:focus{border-color:var(--accent)}',
   '.pr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}',
-  '.pr-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}',
+  '.pr-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px;overflow:hidden}',
   '.pr-ring{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:prspin .7s linear infinite}',
   '@keyframes prspin{to{transform:rotate(360deg)}}',
   '.pr-save-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.15);border-radius:8px;margin-top:4px}',

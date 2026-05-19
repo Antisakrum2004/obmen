@@ -378,7 +378,7 @@ function _prRenderLoading() {
         '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-first v5.0</div>' +
       '</div>' +
     '</div>' +
-    '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:auto;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
+    '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
     '</div>';
   _prAddLoadStep('\u25B6', 'Инициализация...');
 }

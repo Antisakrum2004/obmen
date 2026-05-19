@@ -402,14 +402,19 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
   }
 
   return devPromise.then(function() {
-    cb('Загрузка elapsed', 'по каждому разработчику...');
+    cb('Загрузка данных', 'задачи + elapsed по разработчикам...');
 
-    /* ── Step 2: Load elapsed PER DEVELOPER for period ──
-       Source of truth = elapsed. We load elapsed for each dev,
-       bounded to the current period. This is the INVERTED pipeline. */
+    /* ── Step 2: Load tasks + elapsed per developer for period ──
+       Uses Bitrix24-compatible batch API:
+       1) tasks.task.list per dev with date filter
+       2) task.elapseditem.getlist per task ID
+       Period-bounded, throttled. */
     return _prLoadElapsedByDev(fromStr, toStr, progressCb);
 
-  }).then(function(allElapsed) {
+  }).then(function(loadResult) {
+    /* _prLoadElapsedByDev now returns { elapsed, tasks } */
+    var allElapsed = Array.isArray(loadResult) ? loadResult : (loadResult.elapsed || []);
+    var preloadedTasks = (loadResult && loadResult.tasks) ? loadResult.tasks : [];
     console.log('PR_loadRealData: получено ' + allElapsed.length + ' elapsed записей за ' + ((Date.now() - perfStart) / 1000).toFixed(1) + 's');
     cb('Elapsed загружен', allElapsed.length + ' записей');
 
@@ -435,12 +440,34 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
     }
 
     if (!uniqueTaskIds.length) {
-      return _prBuildEmptyResult(range);
+      return _prBuildEmptyResult(prGetMonthRange(year, month));
     }
 
-    /* ── Step 4: Load ONLY referenced tasks ── */
-    cb('Загрузка задач', uniqueTaskIds.length + ' по ID...');
-    return _prLoadTasksByIdsThrottled(uniqueTaskIds).then(function(allTasks) {
+    /* ── Step 4: Load ONLY referenced tasks (skip if already loaded) ── */
+    /* Merge preloaded tasks with any additional ones needed */
+    var preloadedIds = {};
+    preloadedTasks.forEach(function(t) {
+      var id = String(t.id || t.ID || '');
+      if (id) preloadedIds[id] = t;
+    });
+
+    /* Find task IDs we still need to load */
+    var missingTaskIds = uniqueTaskIds.filter(function(tid) {
+      return !preloadedIds[tid];
+    });
+
+    var tasksPromise;
+    if (missingTaskIds.length > 0) {
+      cb('Загрузка задач', missingTaskIds.length + ' дополнительных по ID...');
+      tasksPromise = _prLoadTasksByIdsThrottled(missingTaskIds).then(function(extraTasks) {
+        return preloadedTasks.concat(extraTasks);
+      });
+    } else {
+      cb('Задачи', 'все ' + uniqueTaskIds.length + ' задач уже загружены');
+      tasksPromise = Promise.resolve(preloadedTasks);
+    }
+
+    return tasksPromise.then(function(allTasks) {
       cb('Задачи загружены', allTasks.length + ' задач из API');
 
       /* Build tasksMeta */
@@ -488,14 +515,15 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
           Object.keys(projects).length + ' проектов');
         cb('Загрузка завершена', (elapsedMs / 1000).toFixed(1) + 'с — ' + allElapsed.length + ' elapsed, ' + allTasks.length + ' задач');
 
+        var periodRange = prGetMonthRange(year, month);
         var result = {
           elapsed: allElapsed,
           tasks: allTasks,
           projects: projects,
           tasksMeta: tasksMeta,
-          from: range.from,
-          to: range.to,
-          days: range.days,
+          from: periodRange.from,
+          to: periodRange.to,
+          days: periodRange.days,
           fromStr: fromStr,
           toStr: toStr
         };
@@ -514,43 +542,107 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
   });
 }
 
-/* ─── Load elapsed per developer (period-bounded, throttled) ─── */
+/* ─── Load elapsed per developer (period-bounded, throttled) ───
+   Bitrix24's task.elapseditem.getlist requires TASK_ID as 1st param.
+   It does NOT accept FILTER[>=CREATED_DATE] as a named JSON param.
+   
+   Strategy: Load tasks per developer first (tasks.task.list supports
+   date filters), then load elapsed for those tasks via batch.
+   This is Bitrix24-compatible and period-bounded. */
 function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
   var devIds = (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
   var cb = progressCb || function() {};
   var loadedDevs = 0;
 
-  /* For each developer, load elapsed via batch API
-     Using Bitrix24 batch: task.elapseditem.getlist with USER_ID filter */
-  return _prThrottledQueue(devIds, function(devId) {
-    /* Build batch command for this developer's elapsed */
-    return bxPost('task.elapseditem.getlist', {
-      FILTER: {
-        USER_ID: parseInt(devId),
-        '>=CREATED_DATE': fromStr,
-        '<=CREATED_DATE': toStr
+  /* Step 1: Load task IDs per developer using tasks.task.list
+     (supports FILTER with >=CREATED_DATE) via batch */
+  cb('Загрузка задач', 'по каждому разработчику...');
+  var cmdMap = {};
+  devIds.forEach(function(devId, idx) {
+    cmdMap['d' + idx] = 'tasks.task.list?filter[RESPONSIBLE_ID]=' + devId +
+      '&filter[>=CREATED_DATE]=' + fromStr +
+      '&filter[<=CREATED_DATE]=' + toStr +
+      '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
+  });
+
+  return bxBatchCall(cmdMap, {
+    delayMs: 500,
+    timeoutMs: 60000,
+    onProgress: function(chunkIdx, totalChunks, resultsSoFar) {
+      cb('Задачи', 'чанк ' + (chunkIdx + 1) + '/' + totalChunks + '...');
+    }
+  }).then(function(results) {
+    /* Extract all tasks and unique task IDs from batch results */
+    var allTasks = [];
+    var taskIds = [];
+    var taskIdsSet = {};
+
+    Object.keys(results).forEach(function(key) {
+      var data = results[key];
+      var tasks = [];
+      if (data && data.tasks && Array.isArray(data.tasks)) {
+        tasks = data.tasks;
+      } else if (data && data.result && data.result.tasks && Array.isArray(data.result.tasks)) {
+        tasks = data.result.tasks;
+      } else if (Array.isArray(data)) {
+        tasks = data;
       }
-    }, 20000).then(function(r) {
-      loadedDevs++;
-      cb('Elapsed', 'разраб. ' + loadedDevs + '/' + devIds.length + ' (ID ' + devId + ')');
-      if (r && r.error) {
-        /* Fallback: try without date filter, then filter client-side */
-        return bxPost('task.elapseditem.getlist', {
-          FILTER: { USER_ID: parseInt(devId) }
-        }, 20000).then(function(r2) {
-          var items = _prExtractElapsed(r2);
-          /* Client-side filter by period */
-          return _prFilterElapsedByPeriod(items, fromStr, toStr);
-        }).catch(function() { return []; });
-      }
-      return _prExtractElapsed(r);
-    }).catch(function() { return []; });
-  }, PR_MAX_CONCURRENT).then(function(batches) {
-    var all = [];
-    batches.forEach(function(b) {
-      if (Array.isArray(b)) all = all.concat(b);
+      tasks.forEach(function(t) {
+        var id = String(t.id || t.ID || '');
+        if (id && !taskIdsSet[id]) {
+          taskIdsSet[id] = true;
+          taskIds.push(id);
+        }
+        allTasks.push(t);
+      });
     });
-    return all;
+
+    loadedDevs = devIds.length;
+    cb('Задачи получены', taskIds.length + ' уникальных задач от ' + loadedDevs + ' разраб.');
+
+    if (!taskIds.length) {
+      return { elapsed: [], tasks: allTasks };
+    }
+
+    /* Step 2: Load elapsed for the found task IDs using batch
+       (task.elapseditem.getlist?TASK_ID=X works correctly) */
+    cb('Загрузка elapsed', taskIds.length + ' задач...');
+
+    /* Build batch commands for elapsed */
+    var elapsedCmdMap = {};
+    taskIds.forEach(function(tid, idx) {
+      elapsedCmdMap['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
+    });
+
+    return bxBatchCall(elapsedCmdMap, {
+      delayMs: 500,
+      timeoutMs: 60000,
+      onProgress: function(chunkIdx, totalChunks, resultsSoFar) {
+        cb('Elapsed', 'чанк ' + (chunkIdx + 1) + '/' + totalChunks +
+          ' (' + resultsSoFar + ' результатов)...');
+      }
+    }).then(function(elapsedResults) {
+      var allElapsed = [];
+      Object.keys(elapsedResults).forEach(function(key) {
+        var items = elapsedResults[key];
+        if (Array.isArray(items)) {
+          allElapsed = allElapsed.concat(items);
+        } else if (items && items.result && Array.isArray(items.result)) {
+          allElapsed = allElapsed.concat(items.result);
+        } else if (items && typeof items === 'object' && !items.error) {
+          var vals = Object.values(items);
+          if (vals.length && vals[0] && vals[0].TASK_ID) {
+            allElapsed = allElapsed.concat(vals);
+          }
+        }
+      });
+
+      /* Filter elapsed by period client-side (some may be outside range) */
+      allElapsed = _prFilterElapsedByPeriod(allElapsed, fromStr, toStr);
+
+      cb('Elapsed загружен', allElapsed.length + ' записей');
+      return { elapsed: allElapsed, tasks: allTasks };
+    });
   });
 }
 

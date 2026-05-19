@@ -30,3 +30,26 @@ Stage Summary:
 - Real-time per-developer elapsed loading progress in LIVE mode
 - Cache hit shows "Из кеша" step
 - Deployed successfully to production
+---
+Task ID: 1
+Agent: main
+Task: Fix Bitrix24 API errors, range undefined, scrollbar - deploy
+
+Work Log:
+- Identified root cause: `task.elapseditem.getlist` does NOT accept FILTER with `>=CREATED_DATE` as named JSON param. Bitrix24 interprets it as ORDER parameter, causing all elapsed API calls to fail
+- Rewrote `_prLoadElapsedByDev` in mock-data.js to use Bitrix24-compatible approach:
+  Step 1: Load tasks per developer using `tasks.task.list` batch commands with date filters (this API supports FILTER[>=CREATED_DATE])
+  Step 2: Load elapsed for found task IDs using `task.elapseditem.getlist?TASK_ID=X` batch commands (this format works correctly)
+  Step 3: Filter elapsed by period client-side
+- Fixed `ReferenceError: range is not defined` at mock-data.js:438 — replaced `range` with `prGetMonthRange(year, month)` and added `periodRange` variable
+- Fixed `range.from/to/days` references in result object to use `periodRange` 
+- Fixed scrollbar during loading: changed `overflow-y:auto` to `overflow-y:hidden` on loading steps div and added `overflow:hidden` to `.pr-loading` CSS class
+- Added smart task preloading: tasks loaded in Step 1 are reused in Step 4, avoiding duplicate API calls
+- Deployed to Vercel: https://obmen-atilab.vercel.app
+
+Stage Summary:
+- All 3 critical bugs fixed
+- Pipeline now uses Bitrix24-compatible batch API approach
+- No more `>=CREATED_DATE` filter errors on elapsed API
+- No more `range is not defined` errors
+- No scrollbar flicker during loading
