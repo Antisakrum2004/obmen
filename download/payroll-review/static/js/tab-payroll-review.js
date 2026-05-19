@@ -120,7 +120,14 @@ window.TabPayrollReview = {
   },
 
   refresh: function() {
-    if (!_pr.loading) _prLoadData();
+    if (!_pr.loading) {
+      /* Stage 12: Invalidate cache on manual refresh */
+      if (typeof PayrollCache !== 'undefined') {
+        var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+        PayrollCache.invalidate('data:' + pk);
+      }
+      _prLoadData();
+    }
   }
 };
 
@@ -327,6 +334,8 @@ function _prRenderAll() {
   h += _prRenderKPIs();
   h += _prRenderHeatmap();
   h += _prRenderFilters();
+  /* Stage 11: Safety limit warning banner */
+  h += _prRenderSafetyBanner();
   if (_pr.viewMode === 'cards') {
     h += _prRenderDevCards();
   } else {
@@ -338,6 +347,43 @@ function _prRenderAll() {
   h += _prRenderAdminModal();
   _pr.container.innerHTML = h;
   _pr._perf.renderEnd = Date.now();
+}
+
+/* Stage 7: Partial card render — only update a single dev card DOM */
+function _prRenderCardPartial(devId) {
+  if (!_pr.container) return;
+  var cardEl = document.getElementById('pr-card-' + devId);
+  if (!cardEl) { _prScheduleRender(); return; }
+  /* Find matching projection */
+  var dev = null;
+  _pr.projection.forEach(function(d) {
+    if (String(d.developerId) === String(devId)) dev = d;
+  });
+  if (!dev) return;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = _prRenderOneDevCard(dev);
+  var newCard = tmp.firstChild;
+  if (newCard && cardEl.parentNode) {
+    cardEl.parentNode.replaceChild(newCard, cardEl);
+  }
+}
+
+/* Stage 11: Safety limit warning banner */
+function _prRenderSafetyBanner() {
+  var warnings = [];
+  var elapsedCount = (_pr.data && _pr.data.elapsed) ? _pr.data.elapsed.length : 0;
+  if (_pr.rows.length > 300) {
+    warnings.push('Строк обзора: ' + _pr.rows.length + ' (лимит 300). Данные обрезаны.');
+  }
+  if (elapsedCount > 5000) {
+    warnings.push('Elapsed записей: ' + elapsedCount + ' (лимит 5000). Данные обрезаны.');
+  }
+  if (!warnings.length) return '';
+  var h = '<div style="background:rgba(255,79,106,.1);border:1px solid rgba(255,79,106,.3);border-radius:8px;padding:8px 14px;margin-bottom:8px;display:flex;align-items:center;gap:8px">';
+  h += '<span style="color:var(--red);font-size:16px">&#9888;</span>';
+  h += '<span style="font-family:var(--mono);font-size:11px;color:var(--red)">SAFETY: ' + esc(warnings.join(' | ')) + '</span>';
+  h += '</div>';
+  return h;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -364,10 +410,10 @@ function _prRenderHeader() {
   h += '</div>';
   h += '<div class="pr-controls">';
 
-  /* Выбор периода */
+  /* Выбор периода — только текущий + предыдущий (Stage 2: period boundaries) */
   h += '<select class="pr-select" id="prPeriodSelect" onchange="_prOnPeriodChange()">';
   var now = new Date();
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 2; i++) {
     var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var y = d.getFullYear(), m = d.getMonth() + 1;
     var sel = (y === prCurrentPeriod.year && m === prCurrentPeriod.month) ? ' selected' : '';
@@ -730,7 +776,8 @@ function _prCalcDevStatus(dev) {
 
 function _prToggleCard(devId) {
   _pr.expandedCards[devId] = !_pr.expandedCards[devId];
-  _prScheduleRender();
+  /* Stage 7: Partial render — only re-render the affected card, not the whole dashboard */
+  _prRenderCardPartial(devId);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1268,12 +1315,22 @@ function _prApproveAll() {
   _pr.dirty = true;
   _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  /* Stage 12: Invalidate data cache on review approve */
+  if (typeof PayrollCache !== 'undefined') {
+    var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    PayrollCache.invalidate('data:' + pk);
+  }
   _prScheduleRender();
 }
 
 function _prExport() {
   if (!_pr.rows.length) return;
   _prSaveAll();
+  /* Stage 12: Invalidate cache on export */
+  if (typeof PayrollCache !== 'undefined') {
+    var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    PayrollCache.invalidate('data:' + pk);
+  }
 
   if (typeof createPayrollExportDTO === 'function' && typeof serializeDTOToAggregatedCSV === 'function') {
     var dto = createPayrollExportDTO(_pr.rows, prCurrentPeriod.year, prCurrentPeriod.month);

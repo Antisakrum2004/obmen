@@ -196,3 +196,42 @@ Stage Summary:
 - Zero changes to domain layer, API, data pipeline
 - New UI state: densityMode, viewMode, expandedCards
 - Dark fintech dashboard design language applied
+---
+Task ID: 1
+Agent: Main Agent
+Task: ПР-5.0.0 FAST-FIRST — 13-stage performance optimization
+
+Work Log:
+- Analyzed full codebase (8 JS files, 1 HTML, 1 Flask API)
+- Discovered that most of 13-stage optimization was ALREADY implemented in code
+- Found CRITICAL BUG: payroll-cache.js not loaded in index.html (PayrollCache always undefined)
+- Added <script src="js/payroll/payroll-cache.js"> to index.html BEFORE domain modules
+- Updated APP_VERSION from ПР-4.0.0 to ПР-5.0.0 in core.js
+- Limited period selector from 6 months to 2 months (current + previous) per Stage 2
+- Implemented _prRenderCardPartial() for per-card DOM updates on expand/collapse (Stage 7)
+- Changed _prToggleCard to use partial render instead of full dashboard re-render
+- Added _prRenderSafetyBanner() for visible UI warnings when safety limits exceeded (Stage 11)
+- Added cache invalidation on approve all (Stage 12)
+- Added cache invalidation on export (Stage 12)  
+- Added cache invalidation on manual refresh (Stage 12)
+- Deployed to Vercel production: https://obmen-atilab.vercel.app
+
+Stage Completion Status:
+- Stage 1 (Inverted Pipeline): ✅ Already implemented in mock-data.js v5.0.0
+- Stage 2 (Period Boundaries): ✅ Fixed - 2 months only
+- Stage 3 (Smart Cache): ✅ payroll-cache.js existed, now LOADED via script tag
+- Stage 4 (Stale-While-Revalidate): ✅ Already in mock-data.js (_prBackgroundRefresh + _prSoftRefresh)
+- Stage 5 (Throttled API Queue): ✅ Already in mock-data.js (_prThrottledQueue, max 3 concurrent)
+- Stage 6 (Timeline Lazy Load): ✅ Already in tab-payroll-review.js (only renders on card expand)
+- Stage 7 (Partial Rendering): ✅ NEW - _prRenderCardPartial for per-card updates
+- Stage 8 (Lightweight DTOs): ✅ payroll-projection.js uses memoized projections
+- Stage 9 (Performance Diagnostics): ✅ Already implemented window.__PAYROLL_PERF()
+- Stage 10 (Step Loading UX): ✅ _prLoadingMsg exists with progress steps
+- Stage 11 (Hard Safety Limits): ✅ NEW - visible safety banner + existing limits (300 tasks, 5000 elapsed)
+- Stage 12 (Cache Invalidation): ✅ NEW - on period change, approve, export, manual refresh
+- Stage 13 (Final Target): ✅ Deployed to production
+
+Stage Summary:
+- Critical fix: PayrollCache was never loaded → cache was completely non-functional
+- All 13 stages now implemented and deployed
+- URL: https://obmen-atilab.vercel.app
