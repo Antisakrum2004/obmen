@@ -121,3 +121,78 @@ Stage Summary:
 - Fix: AbortController + timeout, throttled batch with delays, progress logging
 - Verified: Kashina Elena shows 14 tasks with 68.7h in May 2026 (was showing only 1 before)
 - All 7 developers with May data now visible: Makarov 37h, Prikhodko 134.1h, Sokolovsky 97.5h, Popov 84.2h, Zabirov 113.1h, Kashina 68.7h, Zamshina 90.6h
+
+---
+Task ID: 1
+Agent: Main
+Task: UX/UI Refactor — Dev Performance Cards + Dashboard (v4.0.0)
+
+Work Log:
+- Read entire presentation layer: tab-payroll-review.js, payroll-review-styles.js, core.js, payroll-domain.js, payroll-projection.js, payroll-normalizer.js
+- Designed new Dev Performance Card architecture with 6 visual layers
+- Rewrote payroll-review-styles.js with dark fintech dashboard design language
+- Rewrote tab-payroll-review.js with new rendering pipeline
+- Bumped version to ПР-4.0.0
+
+ETAP 1 — Dev Performance Cards:
+- New card structure: Header (avatar + name + rate + status badge), Primary KPI (factHours + payrollAmount), Secondary Metrics (billable + cut + margin), Progress Bars (workload/billable/margin), Risk Badges (OVERBURN/LOW LOAD/CUT HOURS/NO RATE/UNREVIEWED/NEGATIVE MARGIN), Footer Metrics (tasks/avg/weekend/overtime)
+- Visual hierarchy: L1 (hours + money), L2 (billable + margin), L3 (progress bars + diagnostics)
+- Status badges: DRAFT (gray), REVIEW (orange), APPROVED (blue) derived from task review statuses
+
+ETAP 2 — Team Heatmap Bar:
+- Sticky bar below header showing all developers
+- Color-coded dots: green (no risks), yellow (warnings), red (critical)
+- Shows hours, margin %, risk label per developer
+- Click scrolls to developer card with highlight animation
+
+ETAP 3 — Compact Mode:
+- Toggle: Компактно / Плотно buttons in header
+- Compact: smaller padding, 4 cards/row, hidden secondary metrics, smaller fonts
+- Persisted in localStorage('pr_density_mode')
+
+ETAP 4 — Timeline View:
+- Expandable timeline within each dev card
+- Tasks grouped by date from elapsed entries
+- Shows hours, task name, cut hours, review status (clickable)
+- Sorted by date descending
+
+ETAP 5 — Sticky Financial Footer:
+- Fixed at bottom with blur backdrop
+- Shows: Fact Hours, Billable, Payroll, Total Amount, Margin %
+- Updates live with data changes
+
+ETAP 6 — Visual Hierarchy:
+- L1: Large hours + money (28px/20px bold)
+- L2: Medium billable + margin (11px bold with colors)
+- L3: Small progress bars + diagnostics
+
+ETAP 7 — Performance:
+- requestAnimationFrame scheduled renders (_prScheduleRender)
+- Batched updates to prevent multiple DOM writes
+- Cached projection/totals with invalidation
+
+ETAP 8 — Responsive:
+- Desktop: 3 cards/row (4 in compact)
+- Laptop: 2 cards/row (3 in compact)
+- Mobile: 1 card/row
+
+ETAP 9 — Design Language:
+- Dark fintech dashboard style
+- Subtle shadows and soft borders
+- Glow on risk badges (box-shadow)
+- Gradient progress bar fills
+- Card hover elevation effects
+- Risk-colored card borders (red/yellow)
+
+Additional:
+- View mode toggle: Cards / Table (preserves legacy table editing)
+- View mode persisted in localStorage('pr_view_mode')
+- All existing event handlers preserved (_prOnEdit, _prCycleStatus, etc.)
+- Data pipeline, domain layer, API — NOT touched
+
+Stage Summary:
+- Version: ПР-4.0.0 deployed to obmen-atilab.vercel.app
+- All 9 ETAPs implemented
+- Zero changes to domain layer, API, data pipeline
+- New UI state: densityMode, viewMode, expandedCards
+- Dark fintech dashboard design language applied
