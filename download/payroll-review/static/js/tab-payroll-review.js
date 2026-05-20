@@ -919,8 +919,9 @@ function _prCalcDevRisks(dev) {
 
 function _prCalcMarginPct(dev) {
   var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : prGetRate(dev.developerId);
-  /* Клиентская выручка: billable × clientRate + базовая (клиент платит и за задачи и за базовую часть) */
-  var clientRevenue = dev.totalBillable * clientRate + (dev.totalBase || 0);
+  /* Клиентская выручка = только billable × clientRate (клиент платит только за задачи по часам)
+     Наши затраты = totalAmount (зарплата по задачам + базовая − штраф) */
+  var clientRevenue = dev.totalBillable * clientRate;
   var payrollCost = dev.totalAmount;
   if (clientRevenue <= 0) return 0;
   return safeRound((clientRevenue - payrollCost) / clientRevenue * 100, 0);

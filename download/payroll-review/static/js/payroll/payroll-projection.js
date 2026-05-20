@@ -154,9 +154,10 @@ function buildMonthlyProjection(reviews) {
 
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
 
-    /* Маржа: клиентская выручка (billable × clientRate + базовая) минус наши затраты */
+    /* Маржа: клиентская выручка (billable × clientRate) минус наши затраты (totalAmount)
+       Клиент платит только за задачи по часам. Базовая — наш расход, не доход клиента. */
     var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(uid) : ((typeof prGetRate === 'function') ? prGetRate(uid) : 0);
-    var clientRevenue = d.totalBillable * clientRate + baseSalary;
+    var clientRevenue = d.totalBillable * clientRate;
     d.clientRevenue = Math.round(clientRevenue);
     d.clientRate = clientRate;
     d.marginPct = clientRevenue > 0
@@ -237,7 +238,8 @@ function buildPeriodTotals(reviews) {
   totals.totalFine = totalFineAll;
   totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
 
-  /* Клиентская выручка: billable × clientRate + базовая (клиент платит и за задачи и за базовую часть) */
+  /* Клиентская выручка: только billable × clientRate (клиент платит только за задачи по часам)
+     Базовая/премия — это наш расход, клиент за них не платит */
   var totalClientRevenue = 0;
   var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
                (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
@@ -251,9 +253,6 @@ function buildPeriodTotals(reviews) {
       }
     });
     totalClientRevenue += Math.round(devBillable * cr);
-    /* Базовая часть тоже оплачивается клиентом */
-    var base = (typeof prGetBase === 'function') ? prGetBase(String(devId)) : 0;
-    totalClientRevenue += base;
   });
 
   totals.totalClientRevenue = totalClientRevenue;
