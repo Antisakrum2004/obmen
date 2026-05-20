@@ -542,7 +542,7 @@ function _prRenderKPIs() {
   var marginSign = t.totalMarginPct >= 0 ? '+' : '';
   var h = '<div class="pr-kpi-grid">';
   h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Опл. клиенту', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
+  h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
   h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
   h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
   h += '</div>';
@@ -807,7 +807,7 @@ function _prRenderOneDevCard(dev) {
 
   /* ─── SECONDARY METRICS (L2) ─── */
   h += '<div class="pr-card-secondary">';
-  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиенту</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
+  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
   h += '<div class="pr-sec-divider"></div>';
   if (cutHours > 0) {
     h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'ч</span></div>';
@@ -835,7 +835,7 @@ function _prRenderOneDevCard(dev) {
   var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
   var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
   h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Опл. клиенту</span>';
+  h += '<span class="pr-progress-label">Опл. клиента</span>';
   h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
   h += '<span class="pr-progress-val">' + billPct + '%</span>';
   h += '</div>';
@@ -918,9 +918,9 @@ function _prCalcDevRisks(dev) {
 }
 
 function _prCalcMarginPct(dev) {
-  if (dev.totalBillable <= 0) return 0;
   var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : prGetRate(dev.developerId);
-  var clientRevenue = dev.totalBillable * clientRate;
+  /* Клиентская выручка: billable × clientRate + базовая (клиент платит и за задачи и за базовую часть) */
+  var clientRevenue = dev.totalBillable * clientRate + (dev.totalBase || 0);
   var payrollCost = dev.totalAmount;
   if (clientRevenue <= 0) return 0;
   return safeRound((clientRevenue - payrollCost) / clientRevenue * 100, 0);
@@ -1054,7 +1054,7 @@ function _prRenderFinFooter() {
 
   var h = '<div class="pr-fin-footer">';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">Факт часы</div><div class="pr-fin-val fact">' + t.totalFactHours.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Опл. клиенту</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + 'ч</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">Опл. клиента</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + 'ч</div></div>';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">От клиента</div><div class="pr-fin-val" style="color:var(--cyan)">' + _prFmtMoney(t.totalClientRevenue || 0) + ' р</div></div>';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">К выплате</div><div class="pr-fin-val" style="color:var(--orange)">' + _prFmtMoney(t.totalPayrollAmount) + ' р</div></div>';
   h += '<div class="pr-fin-spacer"></div>';
@@ -1075,7 +1075,7 @@ function _prRenderTable() {
   h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortInd('projectName') + '</th>';
   h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortInd('developerName') + '</th>';
   h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт\u00A0(ч) ' + _prSortInd('factHours') + '</th>';
-  h += '<th class="c-num">Опл.\u00A0клиенту\u00A0(ч)</th>';
+  h += '<th class="c-num">Опл.\u00A0клиента\u00A0(ч)</th>';
   h += '<th class="c-num">К\u00A0выплате\u00A0(ч)</th>';
   h += '<th class="c-num">Ставка\u00A0(р/ч)</th>';
   h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма\u00A0(р) ' + _prSortInd('payrollAmount') + '</th>';

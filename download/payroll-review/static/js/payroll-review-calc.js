@@ -211,9 +211,9 @@ function buildPayrollProjection(rows) {
     /* totalAmount = сумма по задачам + базовая − штраф */
     d.totalAmount = d.totalAmount + baseSalary - fine;
 
-    /* Клиентская выручка и маржа */
+    /* Клиентская выручка и маржа (базовая часть тоже оплачивается клиентом) */
     var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(uid) : (typeof prGetRate === 'function' ? prGetRate(uid) : 0);
-    d.clientRevenue = Math.round(d.totalBillable * clientRate);
+    d.clientRevenue = Math.round(d.totalBillable * clientRate) + baseSalary;
     d.clientRate = clientRate;
     d.marginPct = d.clientRevenue > 0
       ? Math.round((d.clientRevenue - d.totalAmount) / d.clientRevenue * 100)
@@ -278,7 +278,7 @@ function buildPeriodTotals(rows) {
   totals.totalFine = totalFineAll;
   totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
 
-  /* Клиентская выручка и общая маржа */
+  /* Клиентская выручка и общая маржа (базовая часть тоже оплачивается клиентом) */
   var totalClientRevenue = 0;
   if (typeof prGetClientRate === 'function' || typeof prGetRate === 'function') {
     var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
@@ -293,6 +293,9 @@ function buildPeriodTotals(rows) {
         }
       });
       totalClientRevenue += Math.round(devBillable * cr);
+      /* Базовая часть тоже оплачивается клиентом */
+      var devBase = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
+      totalClientRevenue += devBase;
     });
   }
   totals.totalClientRevenue = totalClientRevenue;

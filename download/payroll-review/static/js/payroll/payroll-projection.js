@@ -154,10 +154,15 @@ function buildMonthlyProjection(reviews) {
 
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
 
-    /* Маржа: billable revenue - payroll cost */
-    d.margin = safeRound(d.totalBillable * d.totalAmount / (d.totalPayroll || 1) - d.totalAmount, 0);
-    /* Если нет payroll часов, маржа = 0 */
-    if (d.totalPayroll === 0) d.margin = 0;
+    /* Маржа: клиентская выручка (billable × clientRate + базовая) минус наши затраты */
+    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(uid) : ((typeof prGetRate === 'function') ? prGetRate(uid) : 0);
+    var clientRevenue = d.totalBillable * clientRate + baseSalary;
+    d.clientRevenue = Math.round(clientRevenue);
+    d.clientRate = clientRate;
+    d.marginPct = clientRevenue > 0
+      ? Math.round((clientRevenue - d.totalAmount) / clientRevenue * 100)
+      : 0;
+    d.margin = safeRound(clientRevenue - d.totalAmount, 0);
 
     /* Количество проектов */
     d.projectCount = Object.keys(d.projects).length;
@@ -232,9 +237,30 @@ function buildPeriodTotals(reviews) {
   totals.totalFine = totalFineAll;
   totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
 
-  /* Маржа: разница между billable revenue и payroll cost */
-  var avgRate = totals.totalPayroll > 0 ? totals.totalPayrollAmount / totals.totalPayroll : 0;
-  totals.totalMargin = safeRound(totals.totalBillable * avgRate - totals.totalPayrollAmount, 0);
+  /* Клиентская выручка: billable × clientRate + базовая (клиент платит и за задачи и за базовую часть) */
+  var totalClientRevenue = 0;
+  var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
+               (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+  devIds.forEach(function(devId) {
+    var cr = (typeof prGetClientRate === 'function') ? prGetClientRate(String(devId)) : ((typeof prGetRate === 'function') ? prGetRate(String(devId)) : 0);
+    /* Считаем billable часы этого разраба из reviews */
+    var devBillable = 0;
+    (reviews || []).forEach(function(r) {
+      if (String(r.developerId) === String(devId) && r.reviewStatus !== PR_REVIEW_STATUS.EXCLUDED) {
+        devBillable += r.billableHours;
+      }
+    });
+    totalClientRevenue += Math.round(devBillable * cr);
+    /* Базовая часть тоже оплачивается клиентом */
+    var base = (typeof prGetBase === 'function') ? prGetBase(String(devId)) : 0;
+    totalClientRevenue += base;
+  });
+
+  totals.totalClientRevenue = totalClientRevenue;
+  totals.totalMargin = totalClientRevenue - totals.totalPayrollAmount;
+  totals.totalMarginPct = totalClientRevenue > 0
+    ? Math.round(totals.totalMargin / totalClientRevenue * 100)
+    : 0;
 
   return totals;
 }
