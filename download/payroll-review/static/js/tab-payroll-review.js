@@ -575,7 +575,7 @@ function _prRenderHeatmap() {
     h += '<div class="pr-heatmap-chip" onclick="_prScrollToDev(\'' + esc(dev.developerId) + '\')">';
     h += '<span class="pr-heatmap-dot ' + riskLevel + '"></span>';
     h += '<span class="pr-heatmap-name">' + esc(firstName) + '</span>';
-    h += '<span class="pr-heatmap-hours">' + dev.totalFactHours.toFixed(0) + 'h</span>';
+    h += '<span class="pr-heatmap-hours">' + dev.totalFactHours.toFixed(0) + 'ч</span>';
     h += '<span class="pr-heatmap-margin ' + marginCls + '">' + marginTxt + '</span>';
     if (risks.length > 0) {
       h += '<span class="pr-heatmap-risk">' + risks[0] + '</span>';
@@ -801,16 +801,16 @@ function _prRenderOneDevCard(dev) {
 
   /* ─── SECONDARY METRICS (L2) ─── */
   h += '<div class="pr-card-secondary">';
-  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Billable</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'h</span></div>';
+  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиенту</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
   h += '<div class="pr-sec-divider"></div>';
   if (cutHours > 0) {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'h</span></div>';
+    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'ч</span></div>';
   } else {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>';
+    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val" style="color:var(--text3)">0ч</span></div>';
   }
   h += '<div class="pr-sec-divider"></div>';
   var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
-  h += '<div class="pr-sec-item"><span class="pr-sec-label">Margin</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
+  h += '<div class="pr-sec-item"><span class="pr-sec-label">Маржа</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
   h += '</div>';
 
   /* ─── PROGRESS BARS (L3) ─── */
@@ -822,14 +822,14 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-progress-row">';
   h += '<span class="pr-progress-label">Загрузка</span>';
   h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + workloadColor + '" style="width:' + workloadPct + '%"></div></div>';
-  h += '<span class="pr-progress-val">' + dev.totalFactHours.toFixed(0) + '/160h</span>';
+  h += '<span class="pr-progress-val">' + dev.totalFactHours.toFixed(0) + '/160ч</span>';
   h += '</div>';
 
   /* Billable efficiency: billable / fact */
   var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
   var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
   h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Billable</span>';
+  h += '<span class="pr-progress-label">Опл. клиенту</span>';
   h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
   h += '<span class="pr-progress-val">' + billPct + '%</span>';
   h += '</div>';
@@ -838,7 +838,7 @@ function _prRenderOneDevCard(dev) {
   var marginBarPct = Math.min(Math.abs(marginPct), 100);
   var marginBarColor = marginPct >= 30 ? 'green' : marginPct >= 10 ? 'yellow' : marginPct >= 0 ? 'accent' : 'red';
   h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Маржа</span>';
+  h += '<span class="pr-progress-label">Маржа</span>';  /* already Russian */
   h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + marginBarColor + '" style="width:' + marginBarPct + '%"></div></div>';
   h += '<span class="pr-progress-val">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span>';
   h += '</div>';
@@ -848,8 +848,9 @@ function _prRenderOneDevCard(dev) {
   /* ─── RISK BADGES ─── */
   if (risks.length > 0) {
     h += '<div class="pr-card-risks">';
+    var _riskCssMap = {'ПЕРЕРАБОТКА':'risk-overburn','МАЛО НАГРУЗКИ':'risk-lowload','СРЕЗ':'risk-cuthours','НЕТ СТАВКИ':'risk-norate','НЕ ПРОВЕРЕН':'risk-unreviewed','УБЫТОК':'risk-negmargin'};
     risks.forEach(function(risk) {
-      var riskCls2 = 'risk-' + risk.toLowerCase().replace(/\s+/g, '');
+      var riskCls2 = _riskCssMap[risk] || ('risk-' + risk.toLowerCase().replace(/[\s]+/g, ''));
       h += '<span class="pr-risk-pill ' + riskCls2 + '">' + risk + '</span>';
     });
     h += '</div>';
@@ -872,7 +873,7 @@ function _prRenderOneDevCard(dev) {
   /* ─── FOOTER METRICS ─── */
   h += '<div class="pr-card-footer">';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + dev.taskCount + '</div><div class="pr-footer-label">Задач</div></div>';
-  h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'h</div><div class="pr-footer-label">Ср/зад</div></div>';
+  h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'ч</div><div class="pr-footer-label">Ср/зад</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + weekendH.toFixed(0) + '</div><div class="pr-footer-label">Выходн</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + overtimeH.toFixed(0) + '</div><div class="pr-footer-label">Сверхур</div></div>';
   h += '</div>';
@@ -899,13 +900,13 @@ function _prCalcDevRisks(dev) {
   var marginPct = _prCalcMarginPct(dev);
   var rate = prGetRate(dev.developerId);
 
-  if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('OVERBURN');
+  if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('ПЕРЕРАБОТКА');
   /* Skip LOW LOAD for devs with no tasks but base salary */
-  if (dev.totalFactHours < 80 && dev.taskCount > 0) risks.push('LOW LOAD');
-  if (cutHours > 5) risks.push('CUT HOURS');
-  if (!rate || rate <= 0) risks.push('NO RATE');
-  if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('UNREVIEWED');
-  if (marginPct < 0) risks.push('NEGATIVE MARGIN');
+  if (dev.totalFactHours < 80 && dev.taskCount > 0) risks.push('МАЛО НАГРУЗКИ');
+  if (cutHours > 5) risks.push('СРЕЗ');
+  if (!rate || rate <= 0) risks.push('НЕТ СТАВКИ');
+  if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('НЕ ПРОВЕРЕН');
+  if (marginPct < 0) risks.push('УБЫТОК');
 
   return risks;
 }
@@ -1359,6 +1360,7 @@ function _prOnEdit(input) {
   _pr.dirty = true;
   _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   _prScheduleRender();
 }
 
@@ -1397,6 +1399,7 @@ function _prCycleStatus(idx) {
   _pr.dirty = true;
   _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   _prScheduleRender();
 }
 
@@ -1495,6 +1498,7 @@ function _prApproveAll() {
   _pr.dirty = true;
   _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   /* Stage 12: Invalidate data cache on review approve */
   if (typeof PayrollCache !== 'undefined') {
     var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
@@ -1658,6 +1662,7 @@ function _prSaveAdmin() {
       ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
     _pr.totals = typeof buildPeriodTotalsCached === 'function'
       ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+    _prEnsureAllDevsInProjection();
   }
 
   _prScheduleRender();
@@ -1749,6 +1754,7 @@ function _prSoftRefresh(freshData) {
     ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function'
     ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   _prScheduleRender();
   console.log('PR: soft refresh applied from background revalidation');
 }
