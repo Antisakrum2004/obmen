@@ -675,7 +675,8 @@ function _prEnsureAllDevsInProjection() {
     return activeSet[String(dev.developerId)];
   });
 
-  /* Step 2: Add missing active developers with 0 hours */
+  /* Step 2: Add missing active developers with 0 hours
+     Even devs with 0 tasks can have base/fine — their totalAmount includes those */
   var existingDevs = {};
   _pr.projection.forEach(function(dev) {
     existingDevs[String(dev.developerId)] = true;
@@ -685,15 +686,17 @@ function _prEnsureAllDevsInProjection() {
     var devId = String(id);
     if (!existingDevs[devId]) {
       /* This developer has no elapsed in the current period — add empty entry */
+      var baseSalary = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
+      var fine = (typeof prGetFine === 'function') ? prGetFine(devId) : 0;
       _pr.projection.push({
         developerId: devId,
         developerName: prGetDevName(devId),
         totalFactHours: 0,
         totalBillable: 0,
         totalPayroll: 0,
-        totalBase: 0,
-        totalFine: 0,
-        totalAmount: 0,
+        totalBase: baseSalary,
+        totalFine: fine,
+        totalAmount: baseSalary - fine,
         taskCount: 0,
         approvedCount: 0,
         pendingCount: 0,
@@ -733,6 +736,8 @@ function _prGetFilteredProjection() {
       if (!hasProject) return false;
     }
     if (f.status) {
+      /* Devs with base/fine but no tasks always show */
+      if (dev.taskCount === 0 && dev.totalAmount > 0) return true;
       /* Check if this developer has tasks with this status */
       var hasStatus = false;
       _pr.rows.forEach(function(r) {
@@ -778,24 +783,19 @@ function _prRenderOneDevCard(dev) {
   h += '<span class="pr-card-status ' + cardStatus.cls + '">' + cardStatus.label + '</span>';
   h += '</div>';
 
-  /* ─── PRIMARY KPI (L1) ─── */
-  h += '<div class="pr-card-kpi">';
-  h += '<div class="pr-kpi-primary">';
-  h += '<div class="pr-kpi-hours">' + dev.totalFactHours.toFixed(1) + '</div>';
-  h += '<div class="pr-kpi-hours-label">Факт часов</div>';
-  h += '</div>';
-  h += '<div class="pr-kpi-primary">';
-  h += '<div class="pr-kpi-money">' + _prFmtMoney(dev.totalAmount) + '</div>';
-  h += '<div class="pr-kpi-money-label">К выплате</div>';
-  /* Breakdown: задачи + базовая − штраф */
+  /* ─── PRIMARY KPI (L1) — только общая сумма и часы ─── */
   var taskSum = dev.totalAmount - (dev.totalBase || 0) + (dev.totalFine || 0);
   var baseVal = dev.totalBase || 0;
   var fineVal = dev.totalFine || 0;
-  h += '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px;line-height:1.4">';
-  h += _prFmtMoney(taskSum) + ' по задачам';
-  if (baseVal > 0) h += ' + <span style="color:var(--green)">' + _prFmtMoney(baseVal) + ' баз.</span>';
-  if (fineVal > 0) h += ' − <span style="color:var(--red)">' + _prFmtMoney(fineVal) + ' штраф</span>';
+
+  h += '<div class="pr-card-kpi">';
+  h += '<div class="pr-kpi-primary">';
+  h += '<div class="pr-kpi-money">' + _prFmtMoney(dev.totalAmount) + '</div>';
+  h += '<div class="pr-kpi-money-label">К выплате</div>';
   h += '</div>';
+  h += '<div class="pr-kpi-primary">';
+  h += '<div class="pr-kpi-hours">' + dev.totalFactHours.toFixed(1) + '</div>';
+  h += '<div class="pr-kpi-hours-label">Факт часов</div>';
   h += '</div>';
   h += '</div>';
 
@@ -857,17 +857,24 @@ function _prRenderOneDevCard(dev) {
 
   h += '</div>'; /* end .pr-card-inner */
 
+  /* ─── BREAKDOWN: по задачам + базовая − штраф (внизу карточки) ─── */
+  if (baseVal > 0 || fineVal > 0) {
+    h += '<div class="pr-card-breakdown">';
+    h += '<span class="pr-bd-item">' + _prFmtMoney(taskSum) + ' по задачам</span>';
+    if (baseVal > 0) h += ' <span class="pr-bd-sep">+</span> <span class="pr-bd-item pr-bd-green">' + _prFmtMoney(baseVal) + ' баз.</span>';
+    if (fineVal > 0) {
+      var fineComment = prGetFineComment(dev.developerId);
+      h += ' <span class="pr-bd-sep">−</span> <span class="pr-bd-item pr-bd-red">' + _prFmtMoney(fineVal) + ' штраф' + (fineComment ? ' (' + esc(truncate(fineComment, 20)) + ')' : '') + '</span>';
+    }
+    h += '</div>';
+  }
+
   /* ─── FOOTER METRICS ─── */
   h += '<div class="pr-card-footer">';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + dev.taskCount + '</div><div class="pr-footer-label">Задач</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'h</div><div class="pr-footer-label">Ср/зад</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + weekendH.toFixed(0) + '</div><div class="pr-footer-label">Выходн</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + overtimeH.toFixed(0) + '</div><div class="pr-footer-label">Сверхур</div></div>';
-  /* Штраф в футере, если есть */
-  if (fineVal > 0) {
-    var fineComment = prGetFineComment(dev.developerId);
-    h += '<div class="pr-footer-metric" style="color:var(--red)"><div class="pr-footer-val" style="color:var(--red)">-' + _prFmtMoney(fineVal) + '</div><div class="pr-footer-label" style="color:var(--red)">Штраф' + (fineComment ? ' (' + esc(truncate(fineComment, 15)) + ')' : '') + '</div></div>';
-  }
   h += '</div>';
 
   /* ─── EXPAND / TIMELINE ─── */
@@ -893,7 +900,8 @@ function _prCalcDevRisks(dev) {
   var rate = prGetRate(dev.developerId);
 
   if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('OVERBURN');
-  if (dev.totalFactHours < 80) risks.push('LOW LOAD');
+  /* Skip LOW LOAD for devs with no tasks but base salary */
+  if (dev.totalFactHours < 80 && dev.taskCount > 0) risks.push('LOW LOAD');
   if (cutHours > 5) risks.push('CUT HOURS');
   if (!rate || rate <= 0) risks.push('NO RATE');
   if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('UNREVIEWED');
@@ -912,6 +920,10 @@ function _prCalcMarginPct(dev) {
 }
 
 function _prCalcDevStatus(dev) {
+  if (dev.taskCount === 0) {
+    /* Dev with base/fine but no tasks */
+    return dev.totalAmount > 0 ? {label: 'БАЗОВАЯ', cls: 's-approved'} : {label: 'DRAFT', cls: 's-draft'};
+  }
   if (dev.approvedCount === dev.taskCount && dev.taskCount > 0) {
     return {label: 'APPROVED', cls: 's-approved'};
   }
@@ -1248,8 +1260,8 @@ function _prRenderAdminModal() {
 
     h += '<tr' + rowBg + '>';
     h += '<td class="c-num">' + id + '</td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name"></td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН" style="width:80px"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name" style="width:140px"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН" style="width:120px"></td>';
     h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:70px' + (greenBorder ? ';' + greenBorder : '') + '"></td>';
     h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:80px' + (greenBorder ? ';' + greenBorder : '') + '" title="Единовременная выплата (оклад/премия), добавляется 1 раз к сумме по задачам"></td>';
     h += '<td><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="width:80px;color:var(--red)" title="Штраф, вычитается из общей суммы"></td>';
@@ -1259,23 +1271,6 @@ function _prRenderAdminModal() {
 
   h += '</tbody></table>';
   h += '</div>';
-
-  /* ── Секция: Исключённые (не работают) ── */
-  if (typeof EXCLUDED_DEV_IDS !== 'undefined' && Object.keys(EXCLUDED_DEV_IDS).length > 0) {
-    h += '<div style="margin-top:12px">';
-    h += '<div style="font-family:var(--mono);font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">&#9888; Исключены из расчётов (не работают)</div>';
-    h += '<table class="pr-admin-table"><thead><tr>';
-    h += '<th>ID</th><th>ФИО</th>';
-    h += '</tr></thead><tbody>';
-    Object.keys(EXCLUDED_DEV_IDS).forEach(function(devId) {
-      h += '<tr style="opacity:0.5">';
-      h += '<td class="c-num">' + devId + '</td>';
-      h += '<td style="color:var(--text3);text-decoration:line-through">' + esc(prGetDevName(devId)) + '</td>';
-      h += '</tr>';
-    });
-    h += '</tbody></table>';
-    h += '</div>';
-  }
 
   h += '</div>'; /* end pr-modal-body */
 
@@ -1693,12 +1688,10 @@ function _prApplyRateToSavedReviews(devIds) {
     var review = savedReviews[reviewKey];
     if (!review || !devSet[String(review.developerId)]) return;
     var newRate = prGetRate(review.developerId);
-    var newBase = prGetBase(review.developerId);
-    if (review.rate !== newRate || review.base !== newBase) {
+    if (review.rate !== newRate) {
       review.rate = newRate;
-      review.base = newBase;
-      /* Recalculate payroll amount */
-      review.payrollAmount = Math.round((review.payrollHours || 0) * newRate) + newBase;
+      /* Recalculate payroll amount per task (base is NOT per-task, it's added once in projection) */
+      review.payrollAmount = Math.round((review.payrollHours || 0) * newRate);
       changed = true;
     }
   });

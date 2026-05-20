@@ -124,3 +124,26 @@ Stage Summary:
 - Admin panel has two visual sections
 - All totals (header/footer) correctly include base and fine
 - 8 active developers shown consistently
+---
+Task ID: 1
+Agent: main
+Task: UI card restructure + admin cleanup + dev with earnings visibility
+
+Work Log:
+- Fixed _prEnsureAllDevsInProjection: devs with 0 tasks now get totalAmount = base - fine (e.g., Предеин Андрей with base=20000 will show card with 20000 к выплате)
+- Restructured dev card: top = only total (К выплате) and Факт часов, breakdown moved to bottom section between card-inner and footer
+- Made font sizes equal: both К выплате and Факт часов now 22px (was 20px vs 28px)
+- Removed excluded developers section from admin modal (Сергей Приходько, Denius Coder, Марина Савчук no longer shown)
+- Shortened ФИО column from full width to 140px, expanded ИНН from 80px to 120px
+- Added pr-card-breakdown CSS class with green (pr-bd-green) and red (pr-bd-red) for base/fine
+- Fixed _prCalcDevStatus: devs with 0 tasks but totalAmount > 0 show "БАЗОВАЯ" status badge
+- Fixed _prCalcDevRisks: skip LOW LOAD risk for devs with 0 tasks but base salary
+- Fixed _prGetFilteredProjection: devs with base/fine but no tasks always show regardless of status filter
+- Fixed _prApplyRateToSavedReviews: removed incorrect per-task base addition (base is one-time, not per-task)
+- Deployed to obmen-atilab.vercel.app
+
+Stage Summary:
+- Cards now show К выплате + Факт часов at top with same font size
+- Breakdown line (142 680 по задачам + 20 000 баз. − 500 штраф) at bottom of card with green/red colors
+- Devs with only base salary (no tasks) now get cards with proper calculations
+- Admin modal cleaner: no excluded devs info, wider ИНН, narrower ФИО
