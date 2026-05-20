@@ -211,6 +211,14 @@ function buildPayrollProjection(rows) {
     /* totalAmount = сумма по задачам + базовая − штраф */
     d.totalAmount = d.totalAmount + baseSalary - fine;
 
+    /* Клиентская выручка и маржа */
+    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(uid) : (typeof prGetRate === 'function' ? prGetRate(uid) : 0);
+    d.clientRevenue = Math.round(d.totalBillable * clientRate);
+    d.clientRate = clientRate;
+    d.marginPct = d.clientRevenue > 0
+      ? Math.round((d.clientRevenue - d.totalAmount) / d.clientRevenue * 100)
+      : 0;
+
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
   });
 
@@ -269,6 +277,29 @@ function buildPeriodTotals(rows) {
   totals.totalBase = totalBaseAll;
   totals.totalFine = totalFineAll;
   totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
+
+  /* Клиентская выручка и общая маржа */
+  var totalClientRevenue = 0;
+  if (typeof prGetClientRate === 'function' || typeof prGetRate === 'function') {
+    var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
+                 (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
+    devIds.forEach(function(devId) {
+      var cr = (typeof prGetClientRate === 'function') ? prGetClientRate(devId) : (typeof prGetRate === 'function' ? prGetRate(devId) : 0);
+      /* Считаем billable часы этого разраба из rows */
+      var devBillable = 0;
+      rows.forEach(function(r) {
+        if (String(r.developerId) === String(devId) && r.reviewStatus !== 'excluded') {
+          devBillable += r.billableHours;
+        }
+      });
+      totalClientRevenue += Math.round(devBillable * cr);
+    });
+  }
+  totals.totalClientRevenue = totalClientRevenue;
+  totals.totalMargin = totalClientRevenue - totals.totalPayrollAmount;
+  totals.totalMarginPct = totalClientRevenue > 0
+    ? Math.round(totals.totalMargin / totalClientRevenue * 100)
+    : 0;
 
   return totals;
 }

@@ -147,3 +147,26 @@ Stage Summary:
 - Breakdown line (142 680 по задачам + 20 000 баз. − 500 штраф) at bottom of card with green/red colors
 - Devs with only base salary (no tasks) now get cards with proper calculations
 - Admin modal cleaner: no excluded devs info, wider ИНН, narrower ФИО
+---
+Task ID: 2
+Agent: main
+Task: Add client rate + margin KPI
+
+Work Log:
+- Added DEV_CLIENT_RATE dict and prGetClientRate() function to core.js (default=0, falls back to dev rate)
+- Added clientRate to _prRateProvider()
+- Updated buildPayrollProjection: added clientRevenue, clientRate, marginPct fields per developer
+- Updated buildPeriodTotals: added totalClientRevenue, totalMargin, totalMarginPct
+- Updated _prCalcMarginPct to use prGetClientRate instead of prGetRate
+- Added "Клиент. ставка" column to admin modal (cyan when different from dev rate)
+- Updated _prSaveAdmin to persist clientRate with audit trail
+- Added 4th KPI card "Маржа" showing % and rubles, color-coded (green/yellow/accent/red)
+- Updated fin-footer: "От клиента" row, margin with rubles
+- Card header shows "1500 р/ч / 2000 кл." when client rate differs
+- Admin modal widened to 1080px for new column
+
+Stage Summary:
+- Client rate is separate field per developer, 0 = same as dev rate (backward compatible)
+- Top KPI: Факт часы | Опл. клиенту (ч + р) | К выплате (р) | Маржа (% + р)
+- Fin-footer: Факт часы | Опл. клиенту | От клиента | К выплате | Маржа
+- Card: "1500 р/ч / 2000 кл." when rates differ

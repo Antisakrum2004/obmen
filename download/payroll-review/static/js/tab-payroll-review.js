@@ -342,6 +342,7 @@ function _prAppendAuditLog(periodKey, entries) {
 function _prRateProvider() {
   return {
     getRate: function(devId) { return prGetRate(devId); },
+    getClientRate: function(devId) { return prGetClientRate(devId); },
     getBase: function(devId) { return prGetBase(devId); },
     getName: function(devId) { return prGetDevName(devId); }
   };
@@ -537,11 +538,13 @@ function _prSetDensity(mode) {
 function _prRenderKPIs() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
+  var marginColor = t.totalMarginPct >= 30 ? 'var(--green)' : t.totalMarginPct >= 10 ? 'var(--yellow)' : t.totalMarginPct >= 0 ? 'var(--accent)' : 'var(--red)';
+  var marginSign = t.totalMarginPct >= 0 ? '+' : '';
   var h = '<div class="pr-kpi-grid">';
   h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Опл. клиенту', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
-  h += _prKpiCard('К выплате часы', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
-  h += _prKpiCard('Сумма выплат', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.disputedTasks + ' споров');
+  h += _prKpiCard('Опл. клиенту', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
+  h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
+  h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
   h += '</div>';
   return h;
 }
@@ -778,7 +781,10 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-card-avatar">' + esc(firstName.charAt(0)) + '</div>';
   h += '<div class="pr-card-identity">';
   h += '<div class="pr-card-name">' + esc(dev.developerName) + '</div>';
-  h += '<div class="pr-card-role">' + rate + ' р/ч</div>';
+  var clientRateVal = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : rate;
+  var rateLabel = rate + ' р/ч';
+  if (clientRateVal !== rate) rateLabel += ' / <span style="color:var(--cyan)">' + clientRateVal + ' кл.</span>';
+  h += '<div class="pr-card-role">' + rateLabel + '</div>';
   h += '</div>';
   h += '<span class="pr-card-status ' + cardStatus.cls + '">' + cardStatus.label + '</span>';
   h += '</div>';
@@ -913,8 +919,8 @@ function _prCalcDevRisks(dev) {
 
 function _prCalcMarginPct(dev) {
   if (dev.totalBillable <= 0) return 0;
-  var rate = prGetRate(dev.developerId) || 0;
-  var clientRevenue = dev.totalBillable * rate;
+  var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : prGetRate(dev.developerId);
+  var clientRevenue = dev.totalBillable * clientRate;
   var payrollCost = dev.totalAmount;
   if (clientRevenue <= 0) return 0;
   return safeRound((clientRevenue - payrollCost) / clientRevenue * 100, 0);
@@ -1043,18 +1049,16 @@ function _prFormatDate(dateStr) {
 function _prRenderFinFooter() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
-  var marginPct = t.totalBillable > 0
-    ? safeRound((t.totalBillable * (t.totalPayroll > 0 ? t.totalPayrollAmount / t.totalPayroll : 0) - t.totalPayrollAmount) / (t.totalBillable * (t.totalPayroll > 0 ? t.totalPayrollAmount / t.totalPayroll : 0) || 1) * 100, 0)
-    : 0;
+  var marginPct = t.totalMarginPct || 0;
   var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
 
   var h = '<div class="pr-fin-footer">';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">Факт часы</div><div class="pr-fin-val fact">' + t.totalFactHours.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Billable</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">К выплате</div><div class="pr-fin-val payroll">' + t.totalPayroll.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Сумма</div><div class="pr-fin-val" style="color:var(--orange)">' + _prFmtMoney(t.totalPayrollAmount) + '</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">Опл. клиенту</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + 'ч</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">От клиента</div><div class="pr-fin-val" style="color:var(--cyan)">' + _prFmtMoney(t.totalClientRevenue || 0) + ' р</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">К выплате</div><div class="pr-fin-val" style="color:var(--orange)">' + _prFmtMoney(t.totalPayrollAmount) + ' р</div></div>';
   h += '<div class="pr-fin-spacer"></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%  ' + _prFmtMoney(t.totalMargin || 0) + ' р</div></div>';
   h += '</div>';
   return h;
 }
@@ -1230,7 +1234,7 @@ function _prRenderDebug() {
 function _prRenderAdminModal() {
   if (!_pr.modalOpen) return '';
   var h = '<div class="pr-modal-overlay" onclick="_prCloseAdmin(event)">';
-  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:960px">';
+  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:1080px">';
 
   h += '<div class="pr-modal-header">';
   h += '<span class="pr-modal-title">&#9881; Админка — Данные разработчиков</span>';
@@ -1243,7 +1247,7 @@ function _prRenderAdminModal() {
   h += '<div style="margin-bottom:16px">';
   h += '<div style="font-family:var(--mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">Активные разработчики</div>';
   h += '<table class="pr-admin-table"><thead><tr>';
-  h += '<th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка<br>(р/ч)</th><th>Базовая /<br>Премия (р)</th><th style="color:var(--red)">Штраф<br>(р)</th><th>Коммент.<br>к штрафу</th>';
+  h += '<th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка<br>(р/ч)</th><th>Клиент.<br>ставка</th><th>Базовая /<br>Премия (р)</th><th style="color:var(--red)">Штраф<br>(р)</th><th>Коммент.<br>к штрафу</th>';
   h += '</tr></thead><tbody>';
 
   var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
@@ -1252,21 +1256,25 @@ function _prRenderAdminModal() {
     var name = prGetDevName(sid);
     var inn = prGetInn(sid);
     var rate = prGetRate(sid);
+    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(sid) : rate;
     var base = prGetBase(sid);
     var fine = prGetFine(sid);
     var fineComment = prGetFineComment(sid);
     var isChanged = _pr.adminChangedDevs[sid];
     var rowBg = isChanged ? ' style="background:rgba(34,212,126,.08)"' : '';
     var greenBorder = isChanged ? 'border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)' : '';
+    var isClientDiff = clientRate !== rate;
+    var clientRateStyle = isClientDiff ? ';color:var(--cyan);border-color:rgba(0,212,255,.3)' : '';
 
     h += '<tr' + rowBg + '>';
     h += '<td class="c-num">' + id + '</td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name" style="width:140px"></td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН" style="width:120px"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:70px' + (greenBorder ? ';' + greenBorder : '') + '"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:80px' + (greenBorder ? ';' + greenBorder : '') + '" title="Единовременная выплата (оклад/премия), добавляется 1 раз к сумме по задачам"></td>';
-    h += '<td><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="width:80px;color:var(--red)" title="Штраф, вычитается из общей суммы"></td>';
-    h += '<td><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" placeholder="Причина" style="width:100px"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(name) + '" data-devid="' + sid + '" data-field="name" style="width:130px"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + sid + '" data-field="inn" placeholder="ИНН" style="width:110px"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate" style="width:65px' + (greenBorder ? ';' + greenBorder : '') + '" title="Ставка разработчика (р/ч)"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="100" min="0" value="' + clientRate + '" data-devid="' + sid + '" data-field="clientRate" style="width:65px' + clientRateStyle + '" title="Ставка для клиента (р/ч). Если 0 = ставка разраба"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base" style="width:75px' + (greenBorder ? ';' + greenBorder : '') + '" title="Единовременная выплата (оклад/премия)"></td>';
+    h += '<td><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="width:75px;color:var(--red)" title="Штраф, вычитается из общей суммы"></td>';
+    h += '<td><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" placeholder="Причина" style="width:90px"></td>';
     h += '</tr>';
   });
 
@@ -1594,6 +1602,17 @@ function _prSaveAdmin() {
         changed = true;
       }
       settings.rate = newRate;
+    }
+    if (d.clientRate !== undefined) {
+      var newClientRate = parseInt(d.clientRate) || 0;
+      if (newClientRate !== (settings.clientRate || 0)) {
+        auditEntries.push(createAuditEntry('change_client_rate', 'developer', devId, {
+          oldClientRate: settings.clientRate || 0,
+          newClientRate: newClientRate
+        }));
+        changed = true;
+      }
+      settings.clientRate = newClientRate;
     }
     if (d.base !== undefined) {
       var newBase = parseInt(d.base) || 0;

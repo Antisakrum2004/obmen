@@ -60,6 +60,21 @@ var DEV_RATES = {
   '116': 1000
 };
 
+/* ─── Клиентская ставка (сколько клиент платит за час). Если 0 — берётся ставка разраба ─── */
+var DEV_CLIENT_RATE = {
+  '1':   0,
+  '18':  0,
+  '38':  0,
+  '54':  0,
+  '80':  0,
+  '82':  0,
+  '92':  0,
+  '94':  0,
+  '96':  0,
+  '98':  0,
+  '116': 0
+};
+
 /* ─── Базовая часть (оклад/премия) — единовременно, НЕ на задачу ─── */
 var DEV_BASE = {
   '1':   0,
@@ -264,6 +279,16 @@ function prGetRate(developerId) {
   return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
 }
 
+function prGetClientRate(developerId) {
+  /* Клиентская ставка. Если 0 или не задана — равна ставке разработчика */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.clientRate) return saved.clientRate;
+  }
+  var cr = DEV_CLIENT_RATE[String(developerId)] || 0;
+  return cr > 0 ? cr : prGetRate(developerId);
+}
+
 function prGetBase(developerId) {
   if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
     var saved = PayrollStorage.loadDevSettings(String(developerId));
@@ -462,6 +487,7 @@ function bxLoadDevelopers() {
         DEVELOPERS[uid] = fullName;
         if (!DEV_RATES[uid]) DEV_RATES[uid] = СТАВКА_ПО_УМОЛЧ;
         if (!DEV_BASE[uid]) DEV_BASE[uid] = 0;
+        if (!DEV_CLIENT_RATE[uid]) DEV_CLIENT_RATE[uid] = 0;
         updated = true;
       }
     });
