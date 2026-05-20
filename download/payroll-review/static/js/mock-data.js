@@ -543,32 +543,33 @@ function _prLoadRealDataFresh(year, month, fromStr, toStr, periodKey, cacheKey, 
 }
 
 /* ─── Load elapsed per developer (period-bounded, throttled) ───
-   Bitrix24's task.elapseditem.getlist requires TASK_ID as 1st param.
-   It does NOT accept FILTER[>=CREATED_DATE] as a named JSON param.
+   v5.1 — PERIOD-BOUNDED: Only load tasks created within period ± 14 day buffer.
    
-   Strategy: Load ALL tasks per developer (NO CREATED_DATE filter!),
-   then load elapsed for those tasks via batch, then filter elapsed
-   client-side by period.
+   Pipeline:
+   1) tasks.task.list per dev WITH CREATED_DATE filter (period ± buffer)
+   2) task.elapseditem.getlist per task ID
+   3) Filter elapsed client-side by exact period
    
-   CRITICAL: We do NOT filter tasks by CREATED_DATE because developers
-   often log elapsed on tasks created in PREVIOUS months. If we filter
-   by CREATED_DATE=current_month, we miss those tasks and their elapsed,
-   causing developers to disappear from the dashboard.
-   
-   Source of truth = elapsed entries, NOT task creation date. */
+   Buffer: 14 days before period start, to catch tasks created late
+   in previous month where developers log elapsed in current month. */
 function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
   var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
   var cb = progressCb || function() {};
-  var loadedDevs = 0;
+
+  /* Calculate buffer: 14 days before period start */
+  var periodStart = new Date(fromStr + 'T00:00:00');
+  var bufferDate = new Date(periodStart.getTime() - 14 * 24 * 60 * 60 * 1000);
+  var bufferFromStr = fmt(bufferDate);
+  
+  console.log('_prLoadElapsedByDev: period ' + fromStr + ' — ' + toStr + ', buffer from ' + bufferFromStr);
 
   /* Step 1: Load task IDs per developer using tasks.task.list
-     NO CREATED_DATE filter — load ALL tasks per dev, then filter
-     elapsed client-side by period. Order by ID DESC to get recent
-     tasks first (most likely to have current elapsed). */
-  cb('Загрузка задач', 'по каждому разработчику (все задачи)...');
+     WITH CREATED_DATE filter (buffered) — only recent tasks, NOT all historical */
+  cb('Загрузка задач', devIds.length + ' разраб. (период ± 14 дней)...');
   var cmdMap = {};
   devIds.forEach(function(devId, idx) {
     cmdMap['d' + idx] = 'tasks.task.list?filter[RESPONSIBLE_ID]=' + devId +
+      '&filter[>=CREATED_DATE]=' + bufferFromStr +
       '&order[ID]=DESC' +
       '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
   });
@@ -606,7 +607,8 @@ function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
     });
 
     loadedDevs = devIds.length;
-    cb('Задачи получены', taskIds.length + ' уникальных задач от ' + loadedDevs + ' разраб.');
+    cb('Задачи получены', taskIds.length + ' уникальных (период ± буфер) от ' + loadedDevs + ' разраб.');
+    console.log('_prLoadElapsedByDev: ' + taskIds.length + ' задач за период (буфер от ' + bufferFromStr + ')');
 
     if (!taskIds.length) {
       return { elapsed: [], tasks: allTasks };

@@ -32,10 +32,12 @@ var _pr = {
   /* v4.0: new UI state */
   densityMode: 'comfortable',    /* 'comfortable' | 'compact' */
   viewMode: 'cards',             /* 'cards' | 'table' */
+  roleMode: 'finance',           /* 'dev' | 'finance' | 'audit' */
   expandedCards: {},              /* devId -> true if expanded */
   _renderScheduled: false,
+  _cacheBadge: null,              /* 'cached' | 'stale' | null — shows cache origin */
   /* v5.0: performance tracking */
-  _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0 },
+  _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0, projectionRebuilds: 0, timelineDomCount: 0 },
   _taskDateCache: {},             /* taskId -> dateStr cache for timeline */
   adminSaveMsg: null,            /* green success message after admin save */
   adminSaveTime: null,           /* timestamp of admin save for auto-close */
@@ -68,7 +70,20 @@ function _prSaveViewMode(mode) {
   try { localStorage.setItem('pr_view_mode', mode); } catch(e) {}
 }
 
-/* Уничтожение */
+/* ─── Role mode persistence (dev/finance/audit) ─── */
+function _prLoadRoleMode() {
+  try {
+    var v = localStorage.getItem('pr_role_mode');
+    if (v === 'dev' || v === 'finance' || v === 'audit') return v;
+  } catch(e) {}
+  return 'finance';
+}
+
+function _prSaveRoleMode(mode) {
+  try { localStorage.setItem('pr_role_mode', mode); } catch(e) {}
+}
+
+/* Уничтожение — full memory cleanup */
 function _prDestroy() {
   _pr.intervals.forEach(function(id) { clearInterval(id); });
   _pr.intervals = [];
@@ -82,6 +97,7 @@ function _prDestroy() {
   if (typeof PayrollEvents !== 'undefined') {
     PayrollEvents.off();
   }
+  /* Full cleanup: clear all state references to free memory */
   _pr.container = null;
   _pr.rows = [];
   _pr.projection = [];
@@ -91,6 +107,13 @@ function _prDestroy() {
   _pr.auditLog = [];
   _pr.qualityReport = null;
   _pr.expandedCards = {};
+  _pr._taskDateCache = {};
+  _pr._cacheBadge = null;
+  _pr._renderScheduled = false;
+  /* Clear stale cache entries on destroy */
+  if (typeof PayrollCache !== 'undefined') {
+    PayrollCache.clearExpired();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -103,6 +126,7 @@ window.TabPayrollReview = {
     _pr.container = container;
     _pr.densityMode = _prLoadDensity();
     _pr.viewMode = _prLoadViewMode();
+    _pr.roleMode = _prLoadRoleMode();
 
     _pr.styleEl = document.createElement('style');
     _pr.styleEl.textContent = PR_CSS;
@@ -201,6 +225,7 @@ function _prLoadData() {
     }
 
     _prAddLoadStep('\u25B6', 'Построение прогнозов...');
+    _pr._perf.projectionRebuilds++;
     _pr.projection = typeof buildMonthlyProjectionCached === 'function'
       ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
     _pr.totals = typeof buildPeriodTotalsCached === 'function'
@@ -243,6 +268,39 @@ function _prScheduleRender() {
     _pr._renderScheduled = false;
     _prRenderAll();
   });
+}
+
+/* ─── Soft refresh: update UI with fresh data without full reload ─── */
+function _prSoftRefresh(freshData) {
+  if (!freshData || _pr.loading) return;
+  console.log('_prSoftRefresh: applying fresh data from background refresh');
+  _pr.data = freshData;
+  _pr._taskDateCache = {};
+
+  var savedReviews = _prLoadReviews(prCurrentPeriod.year, prCurrentPeriod.month);
+  if (typeof buildNormalizedModel === 'function') {
+    var model = buildNormalizedModel({
+      periodKey: prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month),
+      periodStatus: _pr.periodStatus,
+      rawData: freshData,
+      savedReviews: savedReviews,
+      rateProvider: _prRateProvider()
+    });
+    _pr.rows = model.rows;
+  } else {
+    var result = buildReviewRows(freshData, savedReviews, _prRateProvider());
+    _pr.rows = result.rows;
+  }
+
+  if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+    ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function'
+    ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+
+  _pr._cacheBadge = null; /* data is now fresh */
+  _prScheduleRender();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -469,6 +527,10 @@ function _prRenderHeader() {
     ? '<span class="pr-badge pr-badge-mock">МОК</span>'
     : '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
 
+  var cacheBadge = '';
+  if (_pr._cacheBadge === 'cached') cacheBadge = ' <span style="font-size:9px;color:var(--green);font-family:var(--mono)">(кэш)</span>';
+  else if (_pr._cacheBadge === 'stale') cacheBadge = ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">(обновление...)</span>';
+
   var devCount = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS.length : Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
 
@@ -477,7 +539,7 @@ function _prRenderHeader() {
     : _pr.periodStatus;
 
   var h = '<div class="pr-header">';
-  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
+  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + cacheBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
   h += '<div class="pr-header-info">';
   h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
   h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
@@ -497,6 +559,13 @@ function _prRenderHeader() {
   h += '</select>';
 
   h += '<button class="pr-btn pr-btn-ghost" onclick="window.TabPayrollReview.refresh()" title="Обновить данные">&#8635;</button>';
+
+  /* Role mode toggle: DEV | FINANCE | AUDIT */
+  h += '<div class="pr-view-toggle">';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'dev' ? ' active' : '') + '" onclick="_prSetRoleMode(\'dev\')" title="Часы, выплаты, загрузка">Разраб</button>';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'finance' ? ' active' : '') + '" onclick="_prSetRoleMode(\'finance\')" title="Маржа, выручка, рентабельность">Фин.</button>';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'audit' ? ' active' : '') + '" onclick="_prSetRoleMode(\'audit\')" title="Снимки, версия, аудит">Аудит</button>';
+  h += '</div>';
 
   /* View toggle: Cards / Table */
   h += '<div class="pr-view-toggle">';
@@ -519,7 +588,7 @@ function _prRenderHeader() {
   return h;
 }
 
-/* ─── View/Density handlers ─── */
+/* ─── View/Density/Role handlers ─── */
 function _prSetViewMode(mode) {
   _pr.viewMode = mode;
   _prSaveViewMode(mode);
@@ -532,6 +601,12 @@ function _prSetDensity(mode) {
   _prRenderAll();
 }
 
+function _prSetRoleMode(mode) {
+  _pr.roleMode = mode;
+  _prSaveRoleMode(mode);
+  _prRenderAll();
+}
+
 /* ═══════════════════════════════════════════════════════════════
    KPI КАРТОЧКИ (top overview)
    ═══════════════════════════════════════════════════════════════ */
@@ -540,11 +615,26 @@ function _prRenderKPIs() {
   var t = _pr.totals;
   var marginColor = t.totalMarginPct >= 30 ? 'var(--green)' : t.totalMarginPct >= 10 ? 'var(--yellow)' : t.totalMarginPct >= 0 ? 'var(--accent)' : 'var(--red)';
   var marginSign = t.totalMarginPct >= 0 ? '+' : '';
+  var role = _pr.roleMode;
   var h = '<div class="pr-kpi-grid">';
-  h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-  h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
-  h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
-  h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
+  /* DEV view: hours, payout, workload */
+  if (role === 'dev') {
+    h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
+    h += _prKpiCard('Базовых', _prFmtMoney(t.totalBase || 0), 'var(--green)', (t.totalFine || 0) > 0 ? _prFmtMoney(t.totalFine) + ' штраф' : 'без штрафов');
+  /* FINANCE view: margin, client revenue, payout */
+  } else if (role === 'finance') {
+    h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
+    h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
+    h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
+  /* AUDIT view: snapshot, version, data source */
+  } else {
+    h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', _pr.modelSource);
+    h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
+    h += _prKpiCard('Снимок', _pr.snapshotId ? _pr.snapshotId.substring(0, 8) : 'нет', 'var(--text3)', _pr.snapshotChecksum ? _pr.snapshotChecksum.substring(0, 8) : '—');
+  }
   h += '</div>';
   return h;
 }
@@ -563,25 +653,33 @@ function _prKpiCard(label, value, color, sub) {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderHeatmap() {
   if (!_pr.projection.length) return '';
+  var role = _pr.roleMode;
   var h = '<div class="pr-heatmap">';
   h += '<div class="pr-heatmap-title">Команда</div>';
   h += '<div class="pr-heatmap-row">';
 
   _pr.projection.forEach(function(dev) {
     var risks = _prCalcDevRisks(dev);
-    var riskLevel = risks.length > 0 ? (risks.indexOf('OVERBURN') >= 0 || risks.indexOf('NEGATIVE MARGIN') >= 0 ? 'red' : 'yellow') : 'green';
+    var riskLevel = risks.length > 0 ? (risks.indexOf('ПЕРЕРАБОТКА') >= 0 || risks.indexOf('УБЫТОК') >= 0 ? 'red' : 'yellow') : 'green';
     var marginPct = _prCalcMarginPct(dev);
     var marginCls = marginPct >= 0 ? 'pos' : 'neg';
     var marginTxt = marginPct >= 0 ? ('+' + marginPct + '%') : (marginPct + '%');
     var firstName = getFirstName(dev.developerName);
+    /* Hover tooltip with extra details */
+    var cutHours = safeRound(dev.totalFactHours - dev.totalBillable, 1);
+    var tipParts = [dev.totalFactHours.toFixed(0) + 'ч факт', _prFmtMoney(dev.totalAmount) + ' к выплате'];
+    if (role !== 'dev') tipParts.push('Маржа ' + marginTxt);
+    if (cutHours > 0) tipParts.push('Срез ' + cutHours.toFixed(1) + 'ч');
+    if (risks.length > 0) tipParts.push(risks.join(', '));
+    var tip = esc(tipParts.join(' | '));
 
-    h += '<div class="pr-heatmap-chip" onclick="_prScrollToDev(\'' + esc(dev.developerId) + '\')">';
+    h += '<div class="pr-heatmap-chip" onclick="_prScrollToDev(\'' + esc(dev.developerId) + '\')" title="' + tip + '">';
     h += '<span class="pr-heatmap-dot ' + riskLevel + '"></span>';
     h += '<span class="pr-heatmap-name">' + esc(firstName) + '</span>';
     h += '<span class="pr-heatmap-hours">' + dev.totalFactHours.toFixed(0) + 'ч</span>';
-    h += '<span class="pr-heatmap-margin ' + marginCls + '">' + marginTxt + '</span>';
-    if (risks.length > 0) {
-      h += '<span class="pr-heatmap-risk">' + risks[0] + '</span>';
+    /* Margin only shown in finance/audit mode */
+    if (role !== 'dev') {
+      h += '<span class="pr-heatmap-margin ' + marginCls + '">' + marginTxt + '</span>';
     }
     h += '</div>';
   });
@@ -783,7 +881,8 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-card-name">' + esc(dev.developerName) + '</div>';
   var clientRateVal = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : rate;
   var rateLabel = rate + ' р/ч';
-  if (clientRateVal !== rate) rateLabel += ' / <span style="color:var(--cyan)">' + clientRateVal + ' кл.</span>';
+  /* Show client rate only in finance/audit mode */
+  if (_pr.roleMode !== 'dev' && clientRateVal !== rate) rateLabel += ' / <span style="color:var(--cyan)">' + clientRateVal + ' кл.</span>';
   h += '<div class="pr-card-role">' + rateLabel + '</div>';
   h += '</div>';
   h += '<span class="pr-card-status ' + cardStatus.cls + '">' + cardStatus.label + '</span>';
@@ -805,24 +904,32 @@ function _prRenderOneDevCard(dev) {
   h += '</div>';
   h += '</div>';
 
-  /* ─── SECONDARY METRICS (L2) ─── */
+  /* ─── SECONDARY METRICS (L2) — role-dependent ─── */
   h += '<div class="pr-card-secondary">';
-  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
-  h += '<div class="pr-sec-divider"></div>';
-  if (cutHours > 0) {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'ч</span></div>';
+  if (_pr.roleMode === 'dev') {
+    /* DEV: hours + workload only */
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
+    h += '<div class="pr-sec-divider"></div>';
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Загрузка</span><span class="pr-sec-val">' + Math.round(dev.totalFactHours / 160 * 100) + '%</span></div>';
   } else {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val" style="color:var(--text3)">0ч</span></div>';
+    /* FINANCE/AUDIT: billable, cut, margin */
+    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
+    h += '<div class="pr-sec-divider"></div>';
+    if (cutHours > 0) {
+      h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'ч</span></div>';
+    } else {
+      h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val" style="color:var(--text3)">0ч</span></div>';
+    }
+    h += '<div class="pr-sec-divider"></div>';
+    var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Маржа</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
   }
-  h += '<div class="pr-sec-divider"></div>';
-  var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
-  h += '<div class="pr-sec-item"><span class="pr-sec-label">Маржа</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
   h += '</div>';
 
-  /* ─── PROGRESS BARS (L3) ─── */
+  /* ─── PROGRESS BARS (L3) — role-dependent ─── */
   h += '<div class="pr-card-progress">';
 
-  /* Workload: fact / 160 */
+  /* Workload: always shown */
   var workloadPct = Math.min(safeRound(dev.totalFactHours / 160 * 100, 0), 100);
   var workloadColor = workloadPct > 100 ? 'red' : workloadPct > 80 ? 'green' : workloadPct > 50 ? 'yellow' : 'red';
   h += '<div class="pr-progress-row">';
@@ -831,23 +938,24 @@ function _prRenderOneDevCard(dev) {
   h += '<span class="pr-progress-val">' + dev.totalFactHours.toFixed(0) + '/160ч</span>';
   h += '</div>';
 
-  /* Billable efficiency: billable / fact */
-  var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
-  var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
-  h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Опл. клиента</span>';
-  h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
-  h += '<span class="pr-progress-val">' + billPct + '%</span>';
-  h += '</div>';
+  /* Billable + Margin only in finance/audit mode */
+  if (_pr.roleMode !== 'dev') {
+    var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
+    var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
+    h += '<div class="pr-progress-row">';
+    h += '<span class="pr-progress-label">Опл. клиента</span>';
+    h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
+    h += '<span class="pr-progress-val">' + billPct + '%</span>';
+    h += '</div>';
 
-  /* Margin quality */
-  var marginBarPct = Math.min(Math.abs(marginPct), 100);
-  var marginBarColor = marginPct >= 30 ? 'green' : marginPct >= 10 ? 'yellow' : marginPct >= 0 ? 'accent' : 'red';
-  h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Маржа</span>';  /* already Russian */
-  h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + marginBarColor + '" style="width:' + marginBarPct + '%"></div></div>';
-  h += '<span class="pr-progress-val">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span>';
-  h += '</div>';
+    var marginBarPct = Math.min(Math.abs(marginPct), 100);
+    var marginBarColor = marginPct >= 30 ? 'green' : marginPct >= 10 ? 'yellow' : marginPct >= 0 ? 'accent' : 'red';
+    h += '<div class="pr-progress-row">';
+    h += '<span class="pr-progress-label">Маржа</span>';
+    h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + marginBarColor + '" style="width:' + marginBarPct + '%"></div></div>';
+    h += '<span class="pr-progress-val">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span>';
+    h += '</div>';
+  }
 
   h += '</div>';
 
@@ -1147,9 +1255,8 @@ function _prRenderSaveBar() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderDebug() {
   var h = '<div class="pr-debug">';
-  h += '<div class="pr-debug-title">ОТЛАДКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
-  h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: elapsed-first v5.0</div>';
+  h += '<div class="pr-debug-title">ДИАГНОСТИКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
+  h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + ' | Pipeline: elapsed-first v5.1</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
@@ -1161,21 +1268,17 @@ function _prRenderDebug() {
   /* Cache stats */
   if (typeof PayrollCache !== 'undefined') {
     var cs = PayrollCache.stats();
-    h += '<div class="pr-debug-row">Cache: hits=' + cs.hits + ' misses=' + cs.misses + ' stale=' + cs.staleHits + ' rate=' + cs.hitRate + '</div>';
+    h += '<div class="pr-debug-row">Cache: hits=' + cs.hits + ' misses=' + cs.misses + ' stale=' + cs.staleHits + ' rate=' + cs.hitRate + ' | keys=' + cs.memoryKeys + '</div>';
   }
 
-  h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
-  h += '<div class="pr-debug-row">Строк обзора: ' + _pr.rows.length + '</div>';
-  h += '<div class="pr-debug-row">Task date cache: ' + Object.keys(_pr._taskDateCache).length + ' entries</div>';
-  h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
-  h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
-  h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
-  h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + '</div>';
-  h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
-  h += '<div class="pr-debug-row">Статус периода: ' + esc(_pr.periodStatus) + '</div>';
-  h += '<div class="pr-debug-row">Источник данных: ' + esc(_pr.modelSource || 'live') + '</div>';
-  h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
-  h += '<div class="pr-debug-row">Вид: ' + _pr.viewMode + ' | Плотность: ' + _pr.densityMode + '</div>';
+  /* Timeline DOM count */
+  var tlCount = document.querySelectorAll('.pr-tl-day').length;
+  _pr._perf.timelineDomCount = tlCount;
+
+  h += '<div class="pr-debug-row">Elapsed: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + ' | Rows: ' + _pr.rows.length + ' | Timeline DOM: ' + tlCount + '</div>';
+  h += '<div class="pr-debug-row">Projection rebuilds: ' + _pr._perf.projectionRebuilds + ' | Task date cache: ' + Object.keys(_pr._taskDateCache).length + '</div>';
+  h += '<div class="pr-debug-row">Режим: ' + _pr.roleMode + '/' + _pr.viewMode + '/' + _pr.densityMode + ' | Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
+  h += '<div class="pr-debug-row">Источник: ' + esc(_pr.modelSource || 'live') + ' | Статус: ' + esc(_pr.periodStatus) + ' | Кэш: ' + (_pr._cacheBadge || 'live') + '</div>';
 
   /* Safety warnings */
   if (_pr.rows.length > 300) {
