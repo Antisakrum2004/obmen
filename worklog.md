@@ -189,3 +189,27 @@ Stage Summary:
 - 404 fixed: site loads at https://obmen-atilab.vercel.app/
 - buildReviewRows error fixed: source files properly synced
 - Version ПР-5.5.0 deployed to production
+---
+Task ID: 4
+Agent: main
+Task: Fix 404 + restore v5.5 UI + fix live mode (ЖИВОЙ)
+
+Work Log:
+- Diagnosed: `tab-payroll-review.js` was overwritten with old 659-line version (v5.5 has 2347 lines)
+- Restored v5.5 version from git commit d0fc0d2
+- Fixed Vercel 404: renamed `static/` → `public/` (Vercel auto-serves `public/`)
+- Fixed `vercel.json`: removed broken `builds`+`routes`, used `cleanUrls`+`rewrites`
+- Fixed live mode: `PR_loadRealData` was calling `task.elapseditem.getlist` without TASK_ID (Bitrix24 requires it)
+- Rewrote `PR_loadRealData` to use 3-step approach:
+  Step 1: Load tasks per developer via `tasks.task.list` with RESPONSIBLE_ID filter
+  Step 2: Load elapsed per task via `batch` API with TASK_ID parameter
+  Step 3: Filter by period client-side, load projects via `sonet_group.get`
+- Fixed Bitrix24 batch API format: `cmd` values must be strings like `"method?PARAM=VALUE"`, NOT objects
+- Deployed to https://obmen-atilab.vercel.app/ — version ПР-5.5.0
+
+Stage Summary:
+- Site loads at https://obmen-atilab.vercel.app/ (200 OK)
+- v5.5 admin panel with all features restored (2347-line tab-payroll-review.js)
+- Live mode (ЖИВОЙ) now works: tasks.task.list → batch elapsed → projects
+- Mock mode works with full v5.5 UI
+- API proxy works for all Bitrix24 endpoints
