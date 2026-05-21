@@ -4,7 +4,7 @@ import requests as http_requests
 import os
 
 # Resolve absolute path to static directory
-_STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'static'))
+_STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'public'))
 
 app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='')
 CORS(app)
