@@ -137,7 +137,7 @@ function PR_loadRealData(year, month) {
   var lookbackDate = new Date(year, month - 1 - 12, 1);
   var lookbackStr = fmt(lookbackDate);
 
-  console.log('[DL] PR_loadRealData v6.5.1: ' + fromStr + ' — ' + toStr +
+  console.log('[DL] PR_loadRealData v6.5.2: ' + fromStr + ' — ' + toStr +
     ', devs=' + devIds.length);
 
   /* ═══ Phase 1: Поиск задач по разработчикам ═══
@@ -267,6 +267,14 @@ function PR_loadRealData(year, month) {
     return Promise.all(batchProms).then(function() {
       console.log('[DL] Elapsed загружено: ' + allElapsed.length + ' записей (до фильтрации)');
 
+      /* ─── Диагностика: сколько elapsed у Предеина (user=116) ─── */
+      var predeinBefore = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
+      console.log('[DL] Предеин (116): ' + predeinBefore.length + ' записей до фильтрации по периоду');
+      predeinBefore.forEach(function(e) {
+        console.log('[DL]   Предеин elapsed: TASK=' + e.TASK_ID + ' DATE=' + (e.CREATED_DATE || '').substring(0,10) +
+          ' MIN=' + e.MINUTES + ' SEC=' + e.SECONDS);
+      });
+
       /* ─── Фильтрация: период + наши разработчики ─── */
       var devIdSet = {};
       DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
@@ -276,6 +284,10 @@ function PR_loadRealData(year, month) {
         if (d < fromStr || d > toStr) return false;
         return devIdSet[String(e.USER_ID)];
       });
+
+      /* Диагностика: Предеин после фильтрации */
+      var predeinAfter = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
+      console.log('[DL] Предеин (116): ' + predeinAfter.length + ' записей после фильтрации (' + fromStr + ' — ' + toStr + ')');
 
       /* Создать плейсхолдеры для задач без метаданных */
       var orphanTaskIds = [];

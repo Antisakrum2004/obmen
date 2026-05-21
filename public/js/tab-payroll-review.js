@@ -437,7 +437,7 @@ function _prRenderLoading() {
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-direct v6.5.1</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-direct v6.5.2</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -791,6 +791,7 @@ function _prEnsureAllDevsInProjection() {
       /* This developer has no elapsed in the current period — add empty entry */
       var baseSalary = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
       var fine = (typeof prGetFine === 'function') ? prGetFine(devId) : 0;
+      var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(devId) : 0;
       _pr.projection.push({
         developerId: devId,
         developerName: prGetDevName(devId),
@@ -799,14 +800,17 @@ function _prEnsureAllDevsInProjection() {
         totalPayroll: 0,
         totalBase: baseSalary,
         totalFine: fine,
-        totalAmount: baseSalary,
+        totalAmount: baseSalary - fine,
         taskCount: 0,
         approvedCount: 0,
         pendingCount: 0,
         disputedCount: 0,
         excludedCount: 0,
         approvalRate: 0,
-        margin: 0,
+        clientRate: clientRate,
+        clientRevenue: 0,
+        margin: -baseSalary + fine,
+        marginPct: 0,
         projectCount: 0,
         projectNames: '',
         projects: {}
@@ -815,7 +819,15 @@ function _prEnsureAllDevsInProjection() {
     }
   });
   if (missingCount > 0) {
-    console.log('_prEnsureAllDevsInProjection: добавлено ' + missingCount + ' разработчиков с 0 часов');
+    console.log('[PR] _prEnsureAllDevsInProjection: добавлено ' + missingCount + ' разработчиков с 0 часов');
+    /* Лог добавленных разработчиков */
+    activeIds.forEach(function(id) {
+      var devId = String(id);
+      if (!existingDevs[devId]) {
+        var base = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
+        console.log('[PR]   Добавлен: ' + prGetDevName(devId) + ' (id=' + devId + ', base=' + base + ')');
+      }
+    });
     /* Re-sort: by totalAmount desc, then by name */
     _pr.projection.sort(function(a, b) {
       if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
@@ -1324,7 +1336,7 @@ function _prRenderDebug() {
   var h = '<div class="pr-debug">';
   h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: elapsed-direct v6.5.1</div>';
+  h += '<div class="pr-debug-row">Pipeline: elapsed-direct v6.5.2</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
