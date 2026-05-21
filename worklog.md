@@ -170,3 +170,22 @@ Stage Summary:
 - Top KPI: Факт часы | Опл. клиенту (ч + р) | К выплате (р) | Маржа (% + р)
 - Fin-footer: Факт часы | Опл. клиенту | От клиента | К выплате | Маржа
 - Card: "1500 р/ч / 2000 кл." when rates differ
+---
+Task ID: 3
+Agent: main
+Task: Fix 404 error on Vercel + fix buildReviewRows ReferenceError
+
+Work Log:
+- Diagnosed 404 root cause: Vercel was deploying from git root `/home/z/my-project/` not from `download/payroll-review/`
+- Old `vercel.json` had `builds` + `routes` config that pointed to `static/` directory, but Vercel only auto-serves from `public/` or root
+- Renamed `static/` to `public/` at git root so Vercel auto-discovers and serves the files
+- Updated `api/index.py` to reference `public/` instead of `static/`
+- Updated root `vercel.json` to use `cleanUrls: true` + `rewrites` (removed broken `builds` + `routes` config)
+- Synced `tab-payroll-review.js` from source to public/js/ (fixes `buildReviewRows is not defined` — source uses `buildTaskReviewRows` which is properly defined in `payroll-review-calc.js`)
+- Committed, pushed to GitHub, deployed via Vercel CLI
+- Verified: https://obmen-atilab.vercel.app/ returns 200, all JS files load, version = ПР-5.5.0
+
+Stage Summary:
+- 404 fixed: site loads at https://obmen-atilab.vercel.app/
+- buildReviewRows error fixed: source files properly synced
+- Version ПР-5.5.0 deployed to production
