@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-6.4.0';
+var APP_VERSION = 'ПР-6.5.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -165,13 +165,12 @@ var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
 try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
-/* ─── Режим мок ───
-   PR_FORCE_MOCK = true  → всегда мок (тест без API)
-   PR_FORCE_MOCK = false → живые данные через Bitrix24 API
-   Переключатель в UI: кнопка МОК/ЖИВОЙ в топбаре
+/* ─── Режим данных ───
+   Моковые данные УДАЛЕНЫ (v6.5.0) — всегда живые данные из Bitrix24.
+   PR_MOCK_MODE оставлен для совместимости, всегда false.
 */
-var PR_FORCE_MOCK = true;
-var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
+var PR_FORCE_MOCK = false;
+var PR_MOCK_MODE = false;
 
 /* ─── Утилиты ─── */
 function fmt(d) {

@@ -430,14 +430,14 @@ function _prRenderLoadingSteps() {
 function _prRenderLoading() {
   if (!_pr.container) return;
   _prLoadSteps = [];
-  var modeLabel = PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ';
+  var modeLabel = 'ЖИВОЙ';
   _pr.container.innerHTML =
     '<div class="pr-loading" style="gap:14px;align-items:flex-start;max-width:500px;margin:0 auto;padding:32px 24px">' +
     '<div style="display:flex;align-items:center;gap:10px;width:100%">' +
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-first v5.0</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-direct v6.5.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -515,9 +515,7 @@ function _prRenderSafetyBanner() {
    ШАПКА
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderHeader() {
-  var modeBadge = PR_MOCK_MODE
-    ? '<span class="pr-badge pr-badge-mock">МОК</span>'
-    : '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
+  var modeBadge = '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
 
   var devCount = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS.length : Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
@@ -1324,9 +1322,9 @@ function _prRenderSaveBar() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderDebug() {
   var h = '<div class="pr-debug">';
-  h += '<div class="pr-debug-title">ОТЛАДКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
+  h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: elapsed-first v5.0</div>';
+  h += '<div class="pr-debug-row">Pipeline: elapsed-direct v6.5.0</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
@@ -1347,7 +1345,7 @@ function _prRenderDebug() {
   h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
   h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
   h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
-  h += '<div class="pr-debug-row">Режим: ' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + '</div>';
+  h += '<div class="pr-debug-row">Режим: ЖИВОЙ (Bitrix24 API)</div>';
   h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
   h += '<div class="pr-debug-row">Статус периода: ' + esc(_pr.periodStatus) + '</div>';
   h += '<div class="pr-debug-row">Источник данных: ' + esc(_pr.modelSource || 'live') + '</div>';
@@ -2305,7 +2303,7 @@ window.__PAYROLL_PERF = function() {
   var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
   var result = {
     version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'unknown',
-    pipeline: 'elapsed-first v5.0',
+    pipeline: 'elapsed-direct v6.5.0',
     timing: {
       loadData: loadMs + 'ms',
       normalization: normMs + 'ms',

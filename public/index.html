@@ -20,10 +20,8 @@ body>*{position:relative;z-index:1}
 .bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:glow 2s infinite}
 @keyframes glow{0%,100%{box-shadow:0 0 8px var(--accent)}50%{box-shadow:0 0 20px var(--accent)}}
 .topbar-r{display:flex;align-items:center;gap:8px}
-.mode-toggle{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg2);transition:all .15s;user-select:none}
-.mode-toggle:hover{border-color:var(--border2)}
-.mode-toggle.mock{color:var(--yellow);border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.08)}
-.mode-toggle.live{color:var(--green);border-color:rgba(34,212,126,.3);background:rgba(34,212,126,.08)}
+.refresh-btn{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;border:1px solid rgba(34,212,126,.3);background:rgba(34,212,126,.08);color:var(--green);transition:all .15s;user-select:none}
+.refresh-btn:hover{background:rgba(34,212,126,.15);border-color:rgba(34,212,126,.5)}
 .tabs{display:flex;gap:4px}
 .tab-btn{padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text3);background:rgba(18,21,31,.6);border:1px solid var(--glass-border);border-radius:8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
 .tab-btn:hover{color:var(--text2);border-color:var(--border2);transform:translateY(-1px)}
@@ -53,13 +51,11 @@ body>*{position:relative;z-index:1}
     <span class="version" id="appVersion"></span>
   </div>
   <div class="topbar-r">
-    <div class="mode-toggle" id="modeToggle" onclick="toggleMockMode()">
-      <span id="modeLabel">МОК</span>
-    </div>
+    <div class="refresh-btn" onclick="refreshData()">&#8635; Данные</div>
     <div class="tabs">
       <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Обзор</button>
     </div>
-    <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot" id="gd"></span></button>
+    <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot hide" id="gd"></span></button>
   </div>
 </div>
 
@@ -73,8 +69,7 @@ body>*{position:relative;z-index:1}
     <button class="bsave" onclick="saveH()">Сохранить</button>
   </div>
   <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text3)">
-    Вебхук зашит по умолчанию. Нажмите МОК/ЖИВОЙ для переключения режима данных.
-    В режиме МОК — тестовые данные, в ЖИВОЙ — реальные из Bitrix24.
+    Вебхук зашит по умолчанию. Данные загружаются напрямую из Bitrix24.
   </div>
 </div>
 
@@ -85,21 +80,21 @@ body>*{position:relative;z-index:1}
   </div>
 </div>
 
-<!-- Скрипты (v=6.4.0 cache bust) -->
-<script src="js/core.js?v=6.4.0"></script>
-<script src="js/mock-data.js?v=6.4.0"></script>
+<!-- Скрипты (v=6.5.0 cache bust) -->
+<script src="js/core.js?v=6.5.0"></script>
+<script src="js/data-loader.js?v=6.5.0"></script>
 <!-- Domain layer (must load before engine/projection) -->
-<script src="js/payroll/payroll-domain.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-normalizer.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-cache.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-storage.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-projection.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-review-engine.js?v=6.4.0"></script>
-<script src="js/payroll/payroll-export.js?v=6.4.0"></script>
-<!-- Legacy root files (storage provides prLoadDevSettings/prLoadFilters for core.js; styles provides PR_CSS) -->
-<script src="js/payroll-review-storage.js?v=6.4.0"></script>
-<script src="js/payroll-review-styles.js?v=6.4.0"></script>
-<script src="js/tab-payroll-review.js?v=6.4.0"></script>
+<script src="js/payroll/payroll-domain.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-normalizer.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-cache.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-storage.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-projection.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-review-engine.js?v=6.5.0"></script>
+<script src="js/payroll/payroll-export.js?v=6.5.0"></script>
+<!-- Legacy root files -->
+<script src="js/payroll-review-storage.js?v=6.5.0"></script>
+<script src="js/payroll-review-styles.js?v=6.5.0"></script>
+<script src="js/tab-payroll-review.js?v=6.5.0"></script>
 
 <script>
 function switchTab(t) {
@@ -115,23 +110,8 @@ function toggleS() {
   gear.classList.toggle('active');
 }
 
-function toggleMockMode() {
-  PR_MOCK_MODE = !PR_MOCK_MODE;
-  PR_FORCE_MOCK = PR_MOCK_MODE;
-  updateModeUI();
+function refreshData() {
   if (window.TabPayrollReview) window.TabPayrollReview.refresh();
-}
-
-function updateModeUI() {
-  var toggle = document.getElementById('modeToggle');
-  var label = document.getElementById('modeLabel');
-  if (PR_MOCK_MODE) {
-    toggle.className = 'mode-toggle mock';
-    label.textContent = 'МОК';
-  } else {
-    toggle.className = 'mode-toggle live';
-    label.textContent = 'ЖИВОЙ';
-  }
 }
 
 function saveH() {
@@ -142,9 +122,6 @@ function saveH() {
   }
   HOOK = v.endsWith('/') ? v : v + '/';
   try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
-  PR_MOCK_MODE = false;
-  PR_FORCE_MOCK = false;
-  updateModeUI();
   toggleS();
   if (window.TabPayrollReview) window.TabPayrollReview.refresh();
 }
@@ -156,8 +133,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (HOOK) {
     document.getElementById('hi').value = HOOK;
   }
-
-  updateModeUI();
 
   if (window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));
