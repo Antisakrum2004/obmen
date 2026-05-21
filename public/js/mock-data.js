@@ -388,19 +388,40 @@ function PR_loadRealData(year, month) {
   var lookbackDate = new Date(year, month - 1 - 6, 1);
   var lookbackStr = fmt(lookbackDate);
 
-  /* ─── Step 1: Load tasks for each developer (wide date range) ─── */
-  var taskProms = devIds.map(function(devId) {
-    return fetchTasksPaginated({
-      filter: {
-        RESPONSIBLE_ID: devId,
-        '>=CREATED_DATE': lookbackStr
-      },
-      select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
-      order: {ID: 'DESC'}
-    }, 10).then(function(tasks) {
-      if (!Array.isArray(tasks)) tasks = [];
-      return { devId: devId, tasks: tasks };
-    });
+  /* ─── Step 1: Load tasks for each developer ───
+     Search by RESPONSIBLE_ID AND ACCOMPLICE (co-executor).
+     Many developers log time on tasks where they are accomplice, not responsible.
+     Two parallel searches per developer, then merge & deduplicate. */
+  var taskProms = [];
+  devIds.forEach(function(devId) {
+    /* Search 1: developer is RESPONSIBLE */
+    taskProms.push(
+      fetchTasksPaginated({
+        filter: {
+          RESPONSIBLE_ID: devId,
+          '>=CREATED_DATE': lookbackStr
+        },
+        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
+        order: {ID: 'DESC'}
+      }, 10).then(function(tasks) {
+        if (!Array.isArray(tasks)) tasks = [];
+        return { devId: devId, tasks: tasks };
+      })
+    );
+    /* Search 2: developer is ACCOMPLICE (co-executor) */
+    taskProms.push(
+      fetchTasksPaginated({
+        filter: {
+          ACCOMPLICE: devId,
+          '>=CREATED_DATE': lookbackStr
+        },
+        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
+        order: {ID: 'DESC'}
+      }, 10).then(function(tasks) {
+        if (!Array.isArray(tasks)) tasks = [];
+        return { devId: devId, tasks: tasks };
+      })
+    );
   });
 
   return Promise.all(taskProms).then(function(devResults) {
@@ -475,13 +496,35 @@ function PR_loadRealData(year, month) {
     }
 
     return Promise.all(batchProms).then(function() {
-      /* Filter elapsed by period and known developers */
+      /* Filter elapsed by period and known developers.
+         Allow elapsed from active developers even on tasks not found in Step 1
+         (e.g. they log time on tasks assigned to excluded/unknown users). */
+      var activeDevSet = {};
+      devIds.forEach(function(id) { activeDevSet[String(id)] = true; });
       allElapsed = allElapsed.filter(function(e) {
         var d = (e.CREATED_DATE || '').substring(0, 10);
         if (d < fromStr || d > toStr) return false;
+        /* Must be a known developer (active or excluded, but in DEV_IDS) */
         if (DEV_IDS.indexOf(Number(e.USER_ID)) < 0) return false;
-        if (!validTaskIds[String(e.TASK_ID)]) return false;
-        return true;
+        /* If the task is in validTaskIds — great. If not but the USER is active,
+           still include it (we'll create a placeholder task entry). */
+        if (validTaskIds[String(e.TASK_ID)]) return true;
+        if (activeDevSet[String(e.USER_ID)]) {
+          /* Add orphan task to tasksMeta so it gets a review row */
+          var orphanTid = String(e.TASK_ID);
+          if (!tasksMeta[orphanTid]) {
+            tasksMeta[orphanTid] = {
+              groupId: '0',
+              groupName: '',
+              title: 'Задача #' + orphanTid,
+              status: '0',
+              responsibleId: String(e.USER_ID)
+            };
+          }
+          validTaskIds[orphanTid] = true;
+          return true;
+        }
+        return false;
       });
 
       /* ─── Step 3: Load projects ─── */
