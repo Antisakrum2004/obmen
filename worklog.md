@@ -213,3 +213,20 @@ Stage Summary:
 - Live mode (ЖИВОЙ) now works: tasks.task.list → batch elapsed → projects
 - Mock mode works with full v5.5 UI
 - API proxy works for all Bitrix24 endpoints
+---
+Task ID: 5
+Agent: main
+Task: Rollback to working version from git (d0fc0d2) + fix live mode
+
+Work Log:
+- Found commit d0fc0d2 with full 2347-line tab-payroll-review.js (v5.5 with admin panel)
+- Restored ALL JS files from d0fc0d2 to public/js/
+- Kept the fixed PR_loadRealData (tasks.task.list + batch elapsed) since original was broken
+- Bumped version to ПР-5.6.0
+- Deployed to https://obmen-atilab.vercel.app/
+
+Stage Summary:
+- Site restored to v5.5 UI with full admin panel (devs/projects tabs, sub-modal, etc.)
+- Live mode fixed with Bitrix24-compatible data loading pipeline
+- Version: ПР-5.6.0
+- 200 OK, all JS files load, admin panel with 12 references present
