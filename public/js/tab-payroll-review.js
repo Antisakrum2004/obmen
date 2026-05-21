@@ -1069,8 +1069,8 @@ function _prCalcDevStatus(dev) {
 
 function _prToggleCard(devId) {
   _pr.expandedCards[devId] = !_pr.expandedCards[devId];
-  /* Stage 7: Partial render — only re-render the affected card, not the whole dashboard */
-  _prRenderCardPartial(devId);
+  /* STABILIZATION: Full deterministic render instead of partial card patching */
+  _prRenderAll();
 }
 
 /* ═══════════════════════════════════════════════════════════════
