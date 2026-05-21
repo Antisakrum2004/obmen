@@ -371,96 +371,120 @@ function PR_MOCK_buildMockData(year, month) {
   };
 }
 
-/* ─── Real data loader ─── */
+/* ─── Real data loader (Bitrix24-compatible) ───
+   Step 1: Load tasks per developer via tasks.task.list
+   Step 2: Load elapsed per task via task.elapseditem.getlist?TASK_ID=X
+   Step 3: Filter by period client-side, load projects
+   ═══════════════════════════════════════════════════ */
 function PR_loadRealData(year, month) {
   var range = prGetMonthRange(year, month);
   var fromStr = fmt(range.from);
   var toStr = fmt(range.to);
-  var hook = HOOK.trim();
+  var devIds = ACTIVE_DEV_IDS;
 
-  /* Load elapsed by day (Bitrix24 max 50 per request) */
-  var dates = [];
-  var cur = new Date(range.from);
-  while (cur <= range.to) {
-    dates.push(fmt(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-
-  var elapsedProms = dates.map(function(ds) {
-    var u = '/api/task.elapseditem.getlist?hook=' + encodeURIComponent(hook);
-    var b = JSON.stringify({
-      '>=CREATED_DATE': ds,
-      '<=CREATED_DATE': ds + ' 23:59:59'
+  /* ─── Step 1: Load tasks for each developer ─── */
+  var taskProms = devIds.map(function(devId) {
+    return fetchTasksPaginated({
+      filter: {
+        RESPONSIBLE_ID: devId,
+        '>=CREATED_DATE': fromStr,
+        '<=CREATED_DATE': toStr + ' 23:59:59'
+      },
+      select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
+      order: {ID: 'DESC'}
+    }, 5).then(function(tasks) {
+      if (!Array.isArray(tasks)) tasks = [];
+      return { devId: devId, tasks: tasks };
     });
-    return fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body:b})
-      .then(function(r) { return r.json(); });
   });
 
-  return Promise.all(elapsedProms).then(function(results) {
-    var allElapsed = [];
-    results.forEach(function(r) {
-      if (!r.error && Array.isArray(r.result)) {
-        allElapsed = allElapsed.concat(r.result);
+  return Promise.all(taskProms).then(function(devResults) {
+    /* Merge all tasks, deduplicate by ID */
+    var allTasks = [];
+    var seenIds = {};
+    devResults.forEach(function(dr) {
+      dr.tasks.forEach(function(t) {
+        var id = String(t.id || t.ID);
+        if (!seenIds[id]) { seenIds[id] = true; allTasks.push(t); }
+      });
+    });
+
+    /* Build tasksMeta */
+    var tasksMeta = {};
+    var validTaskIds = {};
+    var taskIdList = [];
+    allTasks.forEach(function(t) {
+      var id = String(t.id || t.ID);
+      var gid = String(t.groupId || t.GROUP_ID || '0');
+      var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
+      tasksMeta[id] = {
+        groupId: gid,
+        groupName: pname,
+        title: t.title || t.TITLE || '',
+        status: t.status || t.STATUS || '0',
+        responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
+      };
+      if (!EXCLUDE_GROUPS[gid]) {
+        validTaskIds[id] = true;
+        taskIdList.push(id);
       }
     });
 
-    /* Filter only known developers */
-    allElapsed = allElapsed.filter(function(e) {
-      return DEV_IDS.indexOf(Number(e.USER_ID)) >= 0;
-    });
-
-    /* Collect unique task IDs */
-    var taskIds = [];
-    var seen = {};
-    allElapsed.forEach(function(e) {
-      var tid = e.TASK_ID;
-      if (tid && !seen[tid]) { seen[tid] = true; taskIds.push(tid); }
-    });
-
-    if (!taskIds.length) {
+    if (!taskIdList.length) {
       return {
         elapsed: [],
-        tasks: [],
+        tasks: allTasks,
         projects: {},
-        tasksMeta: {},
+        tasksMeta: tasksMeta,
         from: range.from,
         to: range.to,
         days: range.days
       };
     }
 
-    /* Load task metadata in batches */
-    return fetchTasksPaginated({
-      filter: {ID: taskIds},
-      select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE']
-    }).then(function(tasks) {
-      if (!Array.isArray(tasks)) tasks = [];
-
-      var tasksMeta = {};
-      var validTaskIds = {};
-      tasks.forEach(function(t) {
-        var id = String(t.id || t.ID);
-        var gid = String(t.groupId || t.GROUP_ID || '0');
-        var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
-        tasksMeta[id] = {
-          groupId: gid,
-          groupName: pname,
-          title: t.title || t.TITLE || '',
-          status: t.status || t.STATUS || '0',
-          responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
+    /* ─── Step 2: Load elapsed for each task via batch ─── */
+    /* Bitrix24 batch supports max 50 commands per call */
+    var allElapsed = [];
+    var batchProms = [];
+    for (var i = 0; i < taskIdList.length; i += 50) {
+      var chunk = taskIdList.slice(i, i + 50);
+      var batchCmd = {};
+      chunk.forEach(function(tid, idx) {
+        batchCmd['e' + idx] = {
+          method: 'task.elapseditem.getlist',
+          params: { TASK_ID: parseInt(tid) }
         };
-        if (!EXCLUDE_GROUPS[gid]) {
-          validTaskIds[id] = true;
-        }
       });
+      batchProms.push(
+        bxPost('batch', { halt: 0, cmd: batchCmd }).then(function(r) {
+          if (r && r.result && r.result.result) {
+            var results = r.result.result;
+            Object.keys(results).forEach(function(key) {
+              var items = results[key];
+              if (Array.isArray(items)) {
+                allElapsed = allElapsed.concat(items);
+              }
+            });
+          }
+        })
+      );
+    }
 
-      /* Filter elapsed for non-excluded projects */
+    return Promise.all(batchProms).then(function() {
+      /* Filter elapsed by period and known developers */
       allElapsed = allElapsed.filter(function(e) {
-        return validTaskIds[String(e.TASK_ID)];
+        /* Period filter */
+        var d = (e.CREATED_DATE || '').substring(0, 10);
+        if (d < fromStr || d > toStr) return false;
+        /* Developer filter */
+        if (DEV_IDS.indexOf(Number(e.USER_ID)) < 0) return false;
+        /* Valid task filter */
+        if (!validTaskIds[String(e.TASK_ID)]) return false;
+        return true;
       });
 
-      /* Load all projects */
-      return bxPost('sonet_group.get', {select: ['ID','NAME']}).then(function(r) {
+      /* ─── Step 3: Load projects ─── */
+      return bxPost('sonet_group.get', { select: ['ID','NAME'] }).then(function(r) {
         var projects = {};
         if (r && r.result) {
           var groups = r.result;
@@ -469,14 +493,14 @@ function PR_loadRealData(year, month) {
             var id = String(g.ID || g.id);
             var nm = g.NAME || g.name || ('Группа ' + id);
             if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
-              projects[id] = {id: id, name: nm};
+              projects[id] = { id: id, name: nm };
             }
           });
         }
 
         return {
           elapsed: allElapsed,
-          tasks: tasks,
+          tasks: allTasks,
           projects: projects,
           tasksMeta: tasksMeta,
           from: range.from,
