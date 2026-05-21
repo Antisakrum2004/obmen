@@ -1,15 +1,50 @@
 /* ═══════════════════════════════════════════════════════════════
-   data-loader.js — Загрузчик данных из Bitrix24 (v6.5.1)
-   Моковые данные УДАЛЕНЫ — всегда живые данные.
+   data-loader.js — Загрузчик данных из Bitrix24 (v6.6.0)
 
-   Алгоритм загрузки (надёжный, проверенный):
-   1. Загрузка задач по RESPONSIBLE / ACCOMPLICE / AUDITOR (по каждому разработчику)
-   2. Загрузка задач по GROUP_ID всех известных проектов (гарантированно находит все задачи)
+   Ключевые изменения v6.6.0:
+   - Убран EXCLUDE_GROUPS из загрузки данных (Предеин списывает
+     время в группе 26 «Текущие задачи 1с», которая была исключена)
+   - Последовательная загрузка с задержками (anti-502)
+   - Retry с backoff для неуспешных API-вызовов
+   - Fallback: прямой поиск elapsed по USER_ID для Предеина
+   - EXCLUDE_GROUPS влияет ТОЛЬКО на UI (какие проекты показывать),
+     но НЕ на загрузку данных
+
+   Алгоритм загрузки:
+   1. Загрузка задач по RESPONSIBLE (по каждому разработчику)
+   2. Загрузка задач по GROUP_ID ВСЕХ проектов (включая исключённые!)
    3. Batch-загрузка elapsed для ВСЕХ найденных задач
-   4. Фильтрация elapsed по периоду + нашим разработчикам
-   5. Загрузка потерянных задач (batch tasks.task.list)
+   4. Fallback: прямой поиск elapsed по USER_ID=116 (Предеин)
+   5. Фильтрация elapsed по периоду + нашим разработчикам
    6. Загрузка проектов (sonet_group.get)
    ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Утилита: задержка ─── */
+function _dlDelay(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+/* ─── Утилита: bxPost с retry ─── */
+function _dlBxPost(method, body, retries) {
+  retries = retries || 1;
+  return bxPost(method, body).then(function(r) {
+    if (r && r.error && retries > 0) {
+      console.warn('[DL] Retry ' + method + ' (' + retries + ' left): ' + r.error);
+      return _dlDelay(2000).then(function() {
+        return _dlBxPost(method, body, retries - 1);
+      });
+    }
+    return r;
+  }).catch(function(e) {
+    if (retries > 0) {
+      console.warn('[DL] Retry ' + method + ' (' + retries + ' left): ' + e);
+      return _dlDelay(2000).then(function() {
+        return _dlBxPost(method, body, retries - 1);
+      });
+    }
+    return { error: String(e) };
+  });
+}
 
 /* ─── Загрузка данных за период ─── */
 function prLoadPeriodData(year, month) {
@@ -17,37 +52,37 @@ function prLoadPeriodData(year, month) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Загрузка задач по GROUP_ID (главный способ найти ВСЕ задачи)
-   Для каждого известного проекта загружает недавние задачи.
-   Это находит задачи, где разработчик не RESPONSIBLE/ACCOMPLICE/AUDITOR,
-   но списывает на них время (случай Предеина).
+   Загрузка задач по GROUP_ID (ВСЕХ проектов, включая исключённые!)
+   v6.6.0: EXCLUDE_GROUPS убран из загрузки данных.
+   Предеин списывает время в группе 26 «Текущие задачи 1с».
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadTasksByGroups(lookbackStr) {
-  var groupIds = Object.keys(PROJECTS).filter(function(gid) {
-    return !EXCLUDE_GROUPS[gid];
-  });
+  var groupIds = Object.keys(PROJECTS); /* ВСЕ группы, без EXCLUDE_GROUPS! */
 
   var allTasks = [];
   var seenIds = {};
 
-  /* Загружаем по 5 групп параллельно */
+  /* Загружаем по 3 группы параллельно (было 5 — снижаем для anti-502) */
   var proms = [];
-  for (var i = 0; i < groupIds.length; i += 5) {
-    var chunk = groupIds.slice(i, i + 5);
-    (function(groupChunk) {
+  for (var i = 0; i < groupIds.length; i += 3) {
+    var chunk = groupIds.slice(i, i + 3);
+    (function(groupChunk, chunkIdx) {
       proms.push(
-        Promise.all(groupChunk.map(function(gid) {
-          return fetchTasksPaginated({
-            filter: {
-              GROUP_ID: gid,
-              '>=CREATED_DATE': lookbackStr
-            },
-            select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE'],
-            order: {ID: 'DESC'}
-          }, 5).then(function(tasks) {
-            return Array.isArray(tasks) ? tasks : [];
-          }).catch(function() { return []; });
-        })).then(function(results) {
+        /* Небольшая задержка между батчами для снижения нагрузки */
+        _dlDelay(chunkIdx * 300).then(function() {
+          return Promise.all(groupChunk.map(function(gid) {
+            return fetchTasksPaginated({
+              filter: {
+                GROUP_ID: gid,
+                '>=CREATED_DATE': lookbackStr
+              },
+              select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE'],
+              order: {ID: 'DESC'}
+            }, 5).then(function(tasks) {
+              return Array.isArray(tasks) ? tasks : [];
+            }).catch(function() { return []; });
+          }));
+        }).then(function(results) {
           results.forEach(function(tasks) {
             tasks.forEach(function(t) {
               var id = String(t.id || t.ID);
@@ -56,12 +91,45 @@ function _prLoadTasksByGroups(lookbackStr) {
           });
         })
       );
-    })(chunk);
+    })(chunk, Math.floor(i / 3));
   }
 
   return Promise.all(proms).then(function() {
-    console.log('[DL] Задачи по группам: ' + allTasks.length + ' из ' + groupIds.length + ' групп');
+    console.log('[DL] Задачи по группам: ' + allTasks.length + ' из ' + groupIds.length + ' групп (все, вкл. исключённые)');
     return allTasks;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Прямой поиск elapsed по USER_ID (fallback для Предеина)
+   Используем tasks.elapseditem.list с фильтром по USER_ID.
+   Если этот API не работает на данном Bitrix24 — просто пропускаем.
+   ═══════════════════════════════════════════════════════════════ */
+function _prLoadElapsedByUser(userId, fromStr, toStr) {
+  console.log('[DL] Прямой поиск elapsed для USER_ID=' + userId + '...');
+  return _dlBxPost('tasks.elapseditem.list', {
+    filter: {
+      USER_ID: userId,
+      '>=CREATED_DATE': fromStr,
+      '<=CREATED_DATE': toStr + ' 23:59:59'
+    },
+    order: { ID: 'ASC' },
+    start: 0
+  }, 1).then(function(r) {
+    var items = [];
+    if (r && r.result && Array.isArray(r.result)) {
+      items = r.result;
+    } else if (r && r.result && r.result.items && Array.isArray(r.result.items)) {
+      items = r.result.items;
+    } else {
+      console.log('[DL] tasks.elapseditem.list для USER_ID=' + userId + ': нет данных или метод недоступен');
+      return [];
+    }
+    console.log('[DL] tasks.elapseditem.list для USER_ID=' + userId + ': ' + items.length + ' записей');
+    return items;
+  }).catch(function(e) {
+    console.warn('[DL] tasks.elapseditem.list для USER_ID=' + userId + ': ошибка', e);
+    return [];
   });
 }
 
@@ -90,7 +158,7 @@ function _prLoadOrphanTasks(orphanTaskIds, tasksMeta, allTasks) {
         '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID';
     });
     batchProms.push(
-      bxPost('batch', { halt: 0, cmd: batchCmd }).then(function(r) {
+      _dlBxPost('batch', { halt: 0, cmd: batchCmd }, 1).then(function(r) {
         if (r && r.result && r.result.result) {
           Object.keys(r.result.result).forEach(function(key) {
             var taskResult = r.result.result[key];
@@ -133,46 +201,32 @@ function PR_loadRealData(year, month) {
   var toStr = fmt(range.to);
   var devIds = ACTIVE_DEV_IDS;
 
-  /* Look back 12 месяцев — задачи могут быть старые, а списания текущие */
-  var lookbackDate = new Date(year, month - 1 - 12, 1);
+  /* Look back 6 месяцев — компромисс между охватом и скоростью */
+  var lookbackDate = new Date(year, month - 1 - 6, 1);
   var lookbackStr = fmt(lookbackDate);
 
-  console.log('[DL] PR_loadRealData v6.5.2: ' + fromStr + ' — ' + toStr +
+  console.log('[DL] PR_loadRealData v6.6.0: ' + fromStr + ' — ' + toStr +
     ', devs=' + devIds.length);
 
-  /* ═══ Phase 1: Поиск задач по разработчикам ═══
-     RESPONSIBLE + ACCOMPLICE + AUDITOR — для метаданных задач. */
+  /* ═══ Phase 1: Поиск задач по RESPONSIBLE (убраны ACCOMPLICE/AUDITOR — 
+     они дублируют то, что уже находится через группы, но добавляют API-вызовы) ═══ */
   var taskProms = [];
-  devIds.forEach(function(devId) {
+  devIds.forEach(function(devId, idx) {
     taskProms.push(
-      fetchTasksPaginated({
-        filter: { RESPONSIBLE_ID: devId, '>=CREATED_DATE': lookbackStr },
-        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
-        order: {ID: 'DESC'}
-      }, 5).then(function(tasks) { return Array.isArray(tasks) ? tasks : []; })
-        .catch(function() { return []; })
-    );
-    taskProms.push(
-      fetchTasksPaginated({
-        filter: { ACCOMPLICE: devId, '>=CREATED_DATE': lookbackStr },
-        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
-        order: {ID: 'DESC'}
-      }, 5).then(function(tasks) { return Array.isArray(tasks) ? tasks : []; })
-        .catch(function() { return []; })
-    );
-    taskProms.push(
-      fetchTasksPaginated({
-        filter: { AUDITOR: devId, '>=CREATED_DATE': lookbackStr },
-        select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
-        order: {ID: 'DESC'}
-      }, 5).then(function(tasks) { return Array.isArray(tasks) ? tasks : []; })
+      /* Небольшая задержка между запросами для снижения нагрузки */
+      _dlDelay(idx * 200).then(function() {
+        return fetchTasksPaginated({
+          filter: { RESPONSIBLE_ID: devId, '>=CREATED_DATE': lookbackStr },
+          select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
+          order: {ID: 'DESC'}
+        }, 5);
+      }).then(function(tasks) { return Array.isArray(tasks) ? tasks : []; })
         .catch(function() { return []; })
     );
   });
 
-  /* ═══ Phase 2: Загрузка задач по группам проектов ═══
-     Находит задачи в известных проектах, где разработчик не имеет роли.
-     Это самый надёжный способ найти задачи Предеина. */
+  /* ═══ Phase 2: Загрузка задач по ВСЕМ группам проектов ═══
+     Включая исключённые группы! Предеин списывает время в группе 26. */
   var groupTaskProm = _prLoadTasksByGroups(lookbackStr);
 
   /* ═══ Запуск обеих фаз параллельно ═══ */
@@ -180,8 +234,8 @@ function PR_loadRealData(year, month) {
     Promise.all(taskProms),
     groupTaskProm
   ]).then(function(phases) {
-    var taskArrays = phases[0];      /* [task[], task[], ...] */
-    var groupTasks = phases[1];      /* task[] */
+    var taskArrays = phases[0];
+    var groupTasks = phases[1];
 
     /* ─── Собрать задачи, дедупликация по ID ─── */
     var allTasks = [];
@@ -216,9 +270,9 @@ function PR_loadRealData(year, month) {
         status: t.status || t.STATUS || '0',
         responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
       };
-      if (!EXCLUDE_GROUPS[gid]) {
-        taskIdList.push(id);
-      }
+      /* v6.6.0: Загружаем elapsed для ВСЕХ задач, 
+         EXCLUDE_GROUPS больше не влияет на загрузку данных! */
+      taskIdList.push(id);
     });
 
     if (!taskIdList.length) {
@@ -229,39 +283,47 @@ function PR_loadRealData(year, month) {
       };
     }
 
-    /* ═══ Phase 3: Batch-загрузка elapsed для ВСЕХ задач ═══ */
+    /* ═══ Phase 3: Batch-загрузка elapsed для ВСЕХ задач ═══
+       v6.6.0: батчи по 25 задач (было 50), с задержками и retry */
     console.log('[DL] Batch-загрузка elapsed для ' + taskIdList.length + ' задач...');
 
     var allElapsed = [];
     var seenElapsedIds = {};
     var batchProms = [];
-    for (var i = 0; i < taskIdList.length; i += 50) {
-      var chunk = taskIdList.slice(i, i + 50);
+    var BATCH_SIZE = 25; /* уменьшено с 50 для снижения риска 502 */
+
+    for (var i = 0; i < taskIdList.length; i += BATCH_SIZE) {
+      var chunk = taskIdList.slice(i, i + BATCH_SIZE);
       var batchCmd = {};
       chunk.forEach(function(tid, idx) {
         batchCmd['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
       });
-      batchProms.push(
-        bxPost('batch', { halt: 0, cmd: batchCmd }).then(function(r) {
-          if (r && r.result && r.result.result) {
-            var results = r.result.result;
-            if (typeof results === 'object' && !Array.isArray(results)) {
-              Object.keys(results).forEach(function(key) {
-                var items = results[key];
-                if (Array.isArray(items)) {
-                  items.forEach(function(e) {
-                    var eid = String(e.ID || '');
-                    if (eid && !seenElapsedIds[eid]) {
-                      seenElapsedIds[eid] = true;
-                      allElapsed.push(e);
-                    }
-                  });
-                }
-              });
+      (function(batchIdx) {
+        batchProms.push(
+          /* Задержка между батчами: 300мс × номер батча */
+          _dlDelay(batchIdx * 300).then(function() {
+            return _dlBxPost('batch', { halt: 0, cmd: batchCmd }, 1);
+          }).then(function(r) {
+            if (r && r.result && r.result.result) {
+              var results = r.result.result;
+              if (typeof results === 'object' && !Array.isArray(results)) {
+                Object.keys(results).forEach(function(key) {
+                  var items = results[key];
+                  if (Array.isArray(items)) {
+                    items.forEach(function(e) {
+                      var eid = String(e.ID || '');
+                      if (eid && !seenElapsedIds[eid]) {
+                        seenElapsedIds[eid] = true;
+                        allElapsed.push(e);
+                      }
+                    });
+                  }
+                });
+              }
             }
-          }
-        }).catch(function() {})
-      );
+          }).catch(function() {})
+        );
+      })(Math.floor(i / BATCH_SIZE));
     }
 
     return Promise.all(batchProms).then(function() {
@@ -275,56 +337,80 @@ function PR_loadRealData(year, month) {
           ' MIN=' + e.MINUTES + ' SEC=' + e.SECONDS);
       });
 
-      /* ─── Фильтрация: период + наши разработчики ─── */
-      var devIdSet = {};
-      DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
+      /* ═══ Phase 4: Fallback — прямой поиск elapsed для Предеина ═══
+         Если Предеин не найден через batch, пробуем tasks.elapseditem.list */
+      var predeinFallbackNeeded = predeinBefore.length === 0;
 
-      allElapsed = allElapsed.filter(function(e) {
-        var d = (e.CREATED_DATE || '').substring(0, 10);
-        if (d < fromStr || d > toStr) return false;
-        return devIdSet[String(e.USER_ID)];
-      });
+      var fallbackProm = predeinFallbackNeeded
+        ? _prLoadElapsedByUser('116', fromStr, toStr)
+        : Promise.resolve([]);
 
-      /* Диагностика: Предеин после фильтрации */
-      var predeinAfter = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
-      console.log('[DL] Предеин (116): ' + predeinAfter.length + ' записей после фильтрации (' + fromStr + ' — ' + toStr + ')');
-
-      /* Создать плейсхолдеры для задач без метаданных */
-      var orphanTaskIds = [];
-      allElapsed.forEach(function(e) {
-        var tid = String(e.TASK_ID || '');
-        if (tid && !tasksMeta[tid]) {
-          orphanTaskIds.push(tid);
-          tasksMeta[tid] = {
-            groupId: '0', groupName: '', title: 'Задача #' + tid,
-            status: '0', responsibleId: String(e.USER_ID || '0')
-          };
+      return fallbackProm.then(function(fallbackElapsed) {
+        if (fallbackElapsed.length > 0) {
+          console.log('[DL] Fallback: добавлено ' + fallbackElapsed.length + ' записей Предеина через tasks.elapseditem.list');
+          fallbackElapsed.forEach(function(e) {
+            var eid = String(e.ID || '');
+            if (eid && !seenElapsedIds[eid]) {
+              seenElapsedIds[eid] = true;
+              allElapsed.push(e);
+            }
+          });
+          /* Обновить диагноз */
+          predeinBefore = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
+          console.log('[DL] Предеин (116): ' + predeinBefore.length + ' записей ПОСЛЕ fallback');
         }
-      });
 
-      console.log('[DL] После фильтрации: ' + allElapsed.length + ' elapsed записей');
+        /* ─── Фильтрация: период + наши разработчики ─── */
+        var devIdSet = {};
+        DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
 
-      /* Статистика по разработчикам */
-      var devMinutes = {};
-      var devTaskCount = {};
-      allElapsed.forEach(function(e) {
-        var uid = String(e.USER_ID);
-        var mins = parseInt(e.MINUTES || Math.floor(parseInt(e.SECONDS || '0', 10) / 60), 10);
-        devMinutes[uid] = (devMinutes[uid] || 0) + mins;
-        var tid = String(e.TASK_ID);
-        if (!devTaskCount[uid]) devTaskCount[uid] = {};
-        devTaskCount[uid][tid] = true;
-      });
-      devIds.forEach(function(id) {
-        var uid = String(id);
-        var mins = devMinutes[uid] || 0;
-        var tasks = devTaskCount[uid] ? Object.keys(devTaskCount[uid]).length : 0;
-        console.log('[DL]   ' + (DEVELOPERS[uid] || uid) + ': ' + mhm(mins) + ' ч, ' + tasks + ' задач');
-      });
+        allElapsed = allElapsed.filter(function(e) {
+          var d = (e.CREATED_DATE || '').substring(0, 10);
+          if (d < fromStr || d > toStr) return false;
+          return devIdSet[String(e.USER_ID)];
+        });
 
-      /* ─── Загрузка потерянных задач + проекты ─── */
-      return _prLoadOrphanTasks(orphanTaskIds, tasksMeta, allTasks).then(function() {
-        return _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range);
+        /* Диагностика: Предеин после фильтрации */
+        var predeinAfter = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
+        console.log('[DL] Предеин (116): ' + predeinAfter.length + ' записей после фильтрации (' + fromStr + ' — ' + toStr + ')');
+
+        /* Создать плейсхолдеры для задач без метаданных */
+        var orphanTaskIds = [];
+        allElapsed.forEach(function(e) {
+          var tid = String(e.TASK_ID || '');
+          if (tid && !tasksMeta[tid]) {
+            orphanTaskIds.push(tid);
+            tasksMeta[tid] = {
+              groupId: '0', groupName: '', title: 'Задача #' + tid,
+              status: '0', responsibleId: String(e.USER_ID || '0')
+            };
+          }
+        });
+
+        console.log('[DL] После фильтрации: ' + allElapsed.length + ' elapsed записей');
+
+        /* Статистика по разработчикам */
+        var devMinutes = {};
+        var devTaskCount = {};
+        allElapsed.forEach(function(e) {
+          var uid = String(e.USER_ID);
+          var mins = parseInt(e.MINUTES || Math.floor(parseInt(e.SECONDS || '0', 10) / 60), 10);
+          devMinutes[uid] = (devMinutes[uid] || 0) + mins;
+          var tid = String(e.TASK_ID);
+          if (!devTaskCount[uid]) devTaskCount[uid] = {};
+          devTaskCount[uid][tid] = true;
+        });
+        devIds.forEach(function(id) {
+          var uid = String(id);
+          var mins = devMinutes[uid] || 0;
+          var tasks = devTaskCount[uid] ? Object.keys(devTaskCount[uid]).length : 0;
+          console.log('[DL]   ' + (DEVELOPERS[uid] || uid) + ': ' + mhm(mins) + ' ч, ' + tasks + ' задач');
+        });
+
+        /* ─── Загрузка потерянных задач + проекты ─── */
+        return _prLoadOrphanTasks(orphanTaskIds, tasksMeta, allTasks).then(function() {
+          return _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range);
+        });
       });
     });
   });
@@ -334,7 +420,7 @@ function PR_loadRealData(year, month) {
    Загрузка проектов + финальная сборка результата
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range) {
-  return bxPost('sonet_group.get', { select: ['ID','NAME'] }).then(function(r) {
+  return _dlBxPost('sonet_group.get', { select: ['ID','NAME'] }, 1).then(function(r) {
     var projects = {};
     if (r && r.result) {
       var groups = r.result;
@@ -342,7 +428,8 @@ function _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range) {
       groups.forEach(function(g) {
         var id = String(g.ID || g.id);
         var nm = g.NAME || g.name || ('Группа ' + id);
-        if (id && id !== '0' && !EXCLUDE_GROUPS[id]) {
+        /* v6.6.0: НЕ фильтруем по EXCLUDE_GROUPS — загружаем ВСЕ проекты */
+        if (id && id !== '0') {
           projects[id] = { id: id, name: nm };
         }
       });

@@ -42,8 +42,13 @@ function _normGetDevIds() {
  * @returns {Object}
  */
 function _normGetExcludeGroups() {
+  /* v6.6.0: Приоритет — override из core.js (пустой = не исключать) */
+  if (typeof PR_NORM_CONFIG_OVERRIDE !== 'undefined' && PR_NORM_CONFIG_OVERRIDE.excludeGroups) {
+    return PR_NORM_CONFIG_OVERRIDE.excludeGroups;
+  }
   if (PR_NORM_CONFIG.excludeGroups) return PR_NORM_CONFIG.excludeGroups;
-  if (typeof EXCLUDE_GROUPS !== 'undefined') return EXCLUDE_GROUPS;
+  /* ⚠️ Внимание: даже если EXCLUDE_GROUPS задан, НЕ используем его
+     для фильтрации данных — только для UI. Возвращаем пустой объект. */
   return {};
 }
 

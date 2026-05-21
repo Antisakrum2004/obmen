@@ -31,10 +31,10 @@ def proxy_api(method):
     try:
         if request.method == 'POST':
             json_data = request.get_json(silent=True) or {}
-            resp = http_requests.post(url, json=json_data, timeout=30)
+            resp = http_requests.post(url, json=json_data, timeout=45)
         else:
             params = {k: v for k, v in request.args.items() if k != 'hook'}
-            resp = http_requests.get(url, params=params, timeout=30)
+            resp = http_requests.get(url, params=params, timeout=45)
 
         return jsonify(resp.json())
     except Exception as e:
