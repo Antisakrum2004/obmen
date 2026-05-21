@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-6.1.0';
+var APP_VERSION = 'ПР-6.2.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -211,19 +211,19 @@ function parseBitrixDate(s) {
 function prGetRate(developerId) {
   /* Сначала из сохранённых настроек, потом из конфига */
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.rate) return saved.rate;
-  return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
+  if (saved && saved.rate !== undefined && saved.rate !== null) return saved.rate;
+  return DEV_RATES[String(developerId)] !== undefined ? DEV_RATES[String(developerId)] : СТАВКА_ПО_УМОЛЧ;
 }
 
 function prGetBase(developerId) {
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.base) return saved.base;
-  return DEV_BASE[String(developerId)] || 0;
+  if (saved && saved.base !== undefined && saved.base !== null) return saved.base;
+  return DEV_BASE[String(developerId)] !== undefined ? DEV_BASE[String(developerId)] : 0;
 }
 
 function prGetInn(developerId) {
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.inn) return saved.inn;
+  if (saved && saved.inn !== undefined && saved.inn !== null) return saved.inn;
   return DEV_INN[String(developerId)] || '';
 }
 
@@ -351,19 +351,19 @@ var PR_WHITELIST_PROJECTS = {
 /* ─── Помощники для ставок/штрафов ─── */
 function prGetClientRate(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.clientRate) return saved.clientRate;
-  return DEV_CLIENT_RATES[String(devId)] || prGetRate(devId);
+  if (saved && saved.clientRate !== undefined && saved.clientRate !== null) return saved.clientRate;
+  return DEV_CLIENT_RATES[String(devId)] !== undefined ? DEV_CLIENT_RATES[String(devId)] : prGetRate(devId);
 }
 
 function prGetFine(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.fine) return saved.fine;
+  if (saved && saved.fine !== undefined && saved.fine !== null) return saved.fine;
   return DEV_FINES[String(devId)] || 0;
 }
 
 function prGetFineComment(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.fineComment) return saved.fineComment;
+  if (saved && saved.fineComment !== undefined && saved.fineComment !== null) return saved.fineComment;
   return DEV_FINE_COMMENTS[String(devId)] || '';
 }
 

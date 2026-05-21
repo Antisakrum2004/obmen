@@ -1028,7 +1028,7 @@ function _prCalcDevRisks(dev) {
   if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('OVERBURN');
   if (dev.totalFactHours < 80) risks.push('LOW LOAD');
   if (cutHours > 5) risks.push('CUT HOURS');
-  if (!rate || rate <= 0) risks.push('NO RATE');
+  if (!rate || rate <= 0) risks.push('RATE=0');
   if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('UNREVIEWED');
   if (marginPct < 0) risks.push('NEGATIVE MARGIN');
 
@@ -1449,10 +1449,11 @@ function _prRenderAdminModal() {
       h += '</div>';
       h += '<div class="pr-admin-card-fields">';
       h += '<div class="pr-admin-field"><label>Ставка</label><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate"></div>';
+      h += '<div class="pr-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="pr-admin-input" type="number" step="100" min="0" value="' + clientRate + '" data-devid="' + sid + '" data-field="clientRate" style="color:var(--cyan)"></div>';
       var fineComment = (typeof prGetFineComment === 'function') ? prGetFineComment(sid) : '';
-      h += '<div class="pr-admin-field"><label style="color:var(--yellow)">Коммент. штрафа</label><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" style="color:var(--yellow)" placeholder="Причина штрафа"></div>';
       h += '<div class="pr-admin-field"><label>ЗП/Бонус</label><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base"></div>';
       h += '<div class="pr-admin-field"><label style="color:var(--red)">Штраф</label><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="color:var(--red)"></div>';
+      h += '<div class="pr-admin-field" style="grid-column:1/-1"><label style="color:var(--yellow)">Коммент. штрафа</label><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" style="color:var(--yellow)" placeholder="Причина штрафа"></div>';
       h += '</div>';
       h += '</div>';
     });
@@ -1976,10 +1977,11 @@ function _prSaveAdmin() {
     if (d.name) settings.name = d.name;
     if (d.inn !== undefined) settings.inn = d.inn;
     if (d.rate !== undefined) {
-      var newRate = parseInt(d.rate) || СТАВКА_ПО_УМОЛЧ;
+      var newRate = (d.rate !== '' && d.rate !== undefined && d.rate !== null) ? parseInt(d.rate) : СТАВКА_ПО_УМОЛЧ;
+      if (isNaN(newRate)) newRate = СТАВКА_ПО_УМОЛЧ;
       if (newRate !== settings.rate) {
         auditEntries.push(createAuditEntry('change_rate', 'developer', devId, {
-          oldRate: settings.rate || СТАВКА_ПО_УМОЛЧ,
+          oldRate: settings.rate !== undefined ? settings.rate : СТАВКА_ПО_УМОЛЧ,
           newRate: newRate
         }));
         changed = true;
@@ -2013,10 +2015,11 @@ function _prSaveAdmin() {
       settings.fineComment = d.fineComment;
     }
     if (d.clientRate !== undefined) {
-      var newClientRate = parseInt(d.clientRate) || (typeof СТАВКА_КЛИЕНТА_ПО_УМОЛЧ !== 'undefined' ? СТАВКА_КЛИЕНТА_ПО_УМОЛЧ : 2500);
-      if (newClientRate !== (settings.clientRate || 0)) {
+      var newClientRate = (d.clientRate !== '' && d.clientRate !== undefined && d.clientRate !== null) ? parseInt(d.clientRate) : 0;
+      if (isNaN(newClientRate)) newClientRate = 0;
+      if (newClientRate !== (settings.clientRate !== undefined ? settings.clientRate : 0)) {
         auditEntries.push(createAuditEntry('change_client_rate', 'developer', devId, {
-          oldClientRate: settings.clientRate || 0,
+          oldClientRate: settings.clientRate !== undefined ? settings.clientRate : 0,
           newClientRate: newClientRate
         }));
         changed = true;
