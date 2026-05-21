@@ -383,17 +383,21 @@ function PR_loadRealData(year, month) {
   var toStr = fmt(range.to);
   var devIds = ACTIVE_DEV_IDS;
 
-  /* ─── Step 1: Load tasks for each developer ─── */
+  /* Look back 6 months for tasks — developers often work on tasks created in prior months.
+     Elapsed is still filtered to current period, so only current-month hours appear. */
+  var lookbackDate = new Date(year, month - 1 - 6, 1);
+  var lookbackStr = fmt(lookbackDate);
+
+  /* ─── Step 1: Load tasks for each developer (wide date range) ─── */
   var taskProms = devIds.map(function(devId) {
     return fetchTasksPaginated({
       filter: {
         RESPONSIBLE_ID: devId,
-        '>=CREATED_DATE': fromStr,
-        '<=CREATED_DATE': toStr + ' 23:59:59'
+        '>=CREATED_DATE': lookbackStr
       },
       select: ['ID','TITLE','GROUP_ID','STAGE_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','CLOSED_DATE'],
       order: {ID: 'DESC'}
-    }, 5).then(function(tasks) {
+    }, 10).then(function(tasks) {
       if (!Array.isArray(tasks)) tasks = [];
       return { devId: devId, tasks: tasks };
     });
