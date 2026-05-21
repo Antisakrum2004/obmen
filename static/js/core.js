@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-5.4.0';
+var APP_VERSION = 'ПР-5.5.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -294,6 +294,89 @@ function prGetMonthRange(year, month) {
 
 function prGetPeriodKey(year, month) {
   return year + '-' + String(month).padStart(2, '0');
+}
+
+/* ─── Исключённые разработчики (не участвуют в расчётах) ─── */
+var EXCLUDED_DEV_IDS = { '80': true, '94': true, '96': true };
+
+/* ─── Активные разработчики (все кроме исключённых) ─── */
+var ACTIVE_DEV_IDS = DEV_IDS.filter(function(id) { return !EXCLUDED_DEV_IDS[String(id)]; });
+
+/* ─── Клиентские ставки (р/ч) — доход от клиента за час работы разработчика ─── */
+var DEV_CLIENT_RATES = {
+  '1':   1500,
+  '18':  1500,
+  '38':  1500,
+  '54':  1500,
+  '82':  1500,
+  '92':  1500,
+  '98':  1500,
+  '116': 1500
+};
+
+/* ─── Штрафы разработчиков ─── */
+var DEV_FINES = {};
+
+/* ─── Комментарии к штрафам ─── */
+var DEV_FINE_COMMENTS = {};
+
+/* ─── Доп. доход проектов (сервисное обслуживание) ─── */
+var PROJECT_SERVICE_INCOME = {};
+
+/* ─── Заметки к доп. доходу проектов ─── */
+var PROJECT_SERVICE_NOTES = {};
+
+/* ─── Клиентские ставки по проектам (переопределение) ─── */
+var PROJECT_CLIENT_RATES = {};
+
+/* ─── Whitelist проектов (только эти показывать в Projects tab) ─── */
+var PR_WHITELIST_PROJECTS = {
+  '6':  'Бигап',
+  '20': 'ВДЛ',
+  '32': 'Дакар',
+  '36': 'Медицина КЗ',
+  '78': 'Backlog',
+  '82': 'ЮРИСТЫ БИГАП',
+  '66': 'ИП Иванов',
+  '4':  'Живое пиво',
+  '50': 'ИП Белолапотко',
+  '62': 'Нейс-Юг',
+  '72': 'Керамика Фабрика',
+  '18': 'Самокаты центр',
+  '70': 'МАРКДЖЕТ',
+  '76': '1с Разработка',
+  '80': 'Все проекты'
+};
+
+/* ─── Помощники для ставок/штрафов ─── */
+function prGetClientRate(devId) {
+  var saved = prLoadDevSettings(devId);
+  if (saved && saved.clientRate) return saved.clientRate;
+  return DEV_CLIENT_RATES[String(devId)] || prGetRate(devId);
+}
+
+function prGetFine(devId) {
+  var saved = prLoadDevSettings(devId);
+  if (saved && saved.fine) return saved.fine;
+  return DEV_FINES[String(devId)] || 0;
+}
+
+function prGetFineComment(devId) {
+  var saved = prLoadDevSettings(devId);
+  if (saved && saved.fineComment) return saved.fineComment;
+  return DEV_FINE_COMMENTS[String(devId)] || '';
+}
+
+function prGetProjectServiceIncome(pid) {
+  return PROJECT_SERVICE_INCOME[String(pid)] || 0;
+}
+
+function prGetProjectServiceNote(pid) {
+  return PROJECT_SERVICE_NOTES[String(pid)] || '';
+}
+
+function prGetProjectClientRate(pid) {
+  return PROJECT_CLIENT_RATES[String(pid)] || 0;
 }
 
 /* ─── Глобальное состояние ─── */

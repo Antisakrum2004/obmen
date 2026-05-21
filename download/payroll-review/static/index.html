@@ -88,6 +88,15 @@ body>*{position:relative;z-index:1}
 <!-- Скрипты -->
 <script src="js/core.js"></script>
 <script src="js/mock-data.js"></script>
+<!-- Domain layer (must load before engine/projection) -->
+<script src="js/payroll/payroll-domain.js"></script>
+<script src="js/payroll/payroll-normalizer.js"></script>
+<script src="js/payroll/payroll-cache.js"></script>
+<script src="js/payroll/payroll-storage.js"></script>
+<script src="js/payroll/payroll-projection.js"></script>
+<script src="js/payroll/payroll-review-engine.js"></script>
+<script src="js/payroll/payroll-export.js"></script>
+<!-- Legacy root files (provide fallbacks) -->
 <script src="js/payroll-review-calc.js"></script>
 <script src="js/payroll-review-storage.js"></script>
 <script src="js/payroll-review-export.js"></script>
