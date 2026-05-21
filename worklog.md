@@ -230,3 +230,24 @@ Stage Summary:
 - Live mode fixed with Bitrix24-compatible data loading pipeline
 - Version: ПР-5.6.0
 - 200 OK, all JS files load, admin panel with 12 references present
+---
+Task ID: 1
+Agent: main
+Task: STABILIZATION ROLLBACK — fix completely broken layout on obmen-atilab.vercel.app
+
+Work Log:
+- Diagnosed root cause: payroll-review-styles.js had only 114 lines (skeleton CSS) — missing ALL styles for dev cards, heatmap, timeline, financial footer, admin modal, hours editor, diagnostics panel, toggle groups, risk badges, progress bars
+- The CSS file had been 114 lines since initial commit — it was NEVER expanded to match the 2347-line tab-payroll-review.js UI code
+- Rewrote payroll-review-styles.js: 114 → 322 lines with complete CSS for ALL components
+- Replaced _prRenderCardPartial (partial DOM patching) with full _prRenderAll() for deterministic render
+- Updated version: ПР-5.6.0 → ПР-6.0.0
+- Updated cache buster: ?v=6.0.0 in index.html
+- Committed and deployed to Vercel
+- Verified: all files served correctly with 200 OK
+
+Stage Summary:
+- ROOT CAUSE: Missing CSS — the UI code used CSS classes that had no corresponding rules
+- FIX: Complete CSS stylesheet covering all 30+ missing component classes
+- Version: ПР-6.0.0 deployed at https://obmen-atilab.vercel.app/
+- Stabilization: Replaced partial card rendering with full deterministic render
+- All previous git history preserved for rollbacks
