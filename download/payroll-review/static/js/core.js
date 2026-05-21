@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-5.1.0';
+var APP_VERSION = 'ПР-5.4.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -32,16 +32,6 @@ var DEVELOPERS = {
 };
 var DEV_IDS = Object.keys(DEVELOPERS).map(Number);
 
-/* ─── Исключённые разработчики (не работают, убраны из расчётов) ─── */
-var EXCLUDED_DEV_IDS = {
-  '80': true,  /* Сергей Приходько */
-  '94': true,  /* Denius Coder */
-  '96': true   /* Марина Савчук */
-};
-
-/* Активные разработчики (все, кроме исключённых) */
-var ACTIVE_DEV_IDS = DEV_IDS.filter(function(id) { return !EXCLUDED_DEV_IDS[String(id)]; });
-
 /* ─── Ставка по умолчанию (1000 р/час) ─── */
 var СТАВКА_ПО_УМОЛЧ = 1000;
 
@@ -60,22 +50,7 @@ var DEV_RATES = {
   '116': 1000
 };
 
-/* ─── Клиентская ставка (сколько клиент платит за час). Если 0 — берётся ставка разраба ─── */
-var DEV_CLIENT_RATE = {
-  '1':   0,
-  '18':  0,
-  '38':  0,
-  '54':  0,
-  '80':  0,
-  '82':  0,
-  '92':  0,
-  '94':  0,
-  '96':  0,
-  '98':  0,
-  '116': 0
-};
-
-/* ─── Базовая часть (оклад/премия) — единовременно, НЕ на задачу ─── */
+/* ─── Базовая часть (оклад/премия) — можно менять в админке ─── */
 var DEV_BASE = {
   '1':   0,
   '18':  0,
@@ -88,36 +63,6 @@ var DEV_BASE = {
   '96':  0,
   '98':  0,
   '116': 0
-};
-
-/* ─── Штрафы (вычитаются из общей суммы) ─── */
-var DEV_FINE = {
-  '1':   0,
-  '18':  0,
-  '38':  0,
-  '54':  0,
-  '80':  0,
-  '82':  0,
-  '92':  0,
-  '94':  0,
-  '96':  0,
-  '98':  0,
-  '116': 0
-};
-
-/* ─── Комментарии к штрафам ─── */
-var DEV_FINE_COMMENT = {
-  '1':   '',
-  '18':  '',
-  '38':  '',
-  '54':  '',
-  '80':  '',
-  '82':  '',
-  '92':  '',
-  '94':  '',
-  '96':  '',
-  '98':  '',
-  '116': ''
 };
 
 /* ─── ИНН разработчиков ─── */
@@ -218,21 +163,14 @@ var EXCLUDE_GROUPS = {
 /* ─── Вебхук (зашит прямо в код) ─── */
 var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
-/* Чтение хука через PayrollStorage (единственная точка доступа) */
-try {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadHook) {
-    HOOK = PayrollStorage.loadHook() || PR_DEFAULT_HOOK;
-  } else {
-    HOOK = PR_DEFAULT_HOOK;
-  }
-} catch(e) { HOOK = PR_DEFAULT_HOOK; }
+try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
 /* ─── Режим мок ───
    PR_FORCE_MOCK = true  → всегда мок (тест без API)
    PR_FORCE_MOCK = false → живые данные через Bitrix24 API
    Переключатель в UI: кнопка МОК/ЖИВОЙ в топбаре
 */
-var PR_FORCE_MOCK = false;
+var PR_FORCE_MOCK = true;
 var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
 
 /* ─── Утилиты ─── */
@@ -271,95 +209,42 @@ function parseBitrixDate(s) {
 }
 
 function prGetRate(developerId) {
-  /* Единственная точка доступа — PayrollStorage */
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.rate) return saved.rate;
-  }
+  /* Сначала из сохранённых настроек, потом из конфига */
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.rate) return saved.rate;
   return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
 }
 
-function prGetClientRate(developerId) {
-  /* Клиентская ставка. Если 0 или не задана — равна ставке разработчика */
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.clientRate) return saved.clientRate;
-  }
-  var cr = DEV_CLIENT_RATE[String(developerId)] || 0;
-  return cr > 0 ? cr : prGetRate(developerId);
-}
-
 function prGetBase(developerId) {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.base) return saved.base;
-  }
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.base) return saved.base;
   return DEV_BASE[String(developerId)] || 0;
 }
 
 function prGetInn(developerId) {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.inn) return saved.inn;
-  }
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.inn) return saved.inn;
   return DEV_INN[String(developerId)] || '';
 }
 
 function prGetDevName(developerId) {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.name) return saved.name;
-  }
+  var saved = prLoadDevSettings(developerId);
+  if (saved && saved.name) return saved.name;
   return DEVELOPERS[String(developerId)] || ('ID ' + developerId);
 }
 
-function prGetFine(developerId) {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.fine !== undefined) return saved.fine;
-  }
-  return DEV_FINE[String(developerId)] || 0;
-}
-
-function prGetFineComment(developerId) {
-  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
-    var saved = PayrollStorage.loadDevSettings(String(developerId));
-    if (saved && saved.fineComment) return saved.fineComment;
-  }
-  return DEV_FINE_COMMENT[String(developerId)] || '';
-}
-
-function prIsExcludedDev(developerId) {
-  return !!EXCLUDED_DEV_IDS[String(developerId)];
-}
-
 /* ─── API ─── */
-var _bxAbortControllers = {};
-
-function bxPost(method, body, timeoutMs) {
+function bxPost(method, body) {
   body = body || {};
   if (!HOOK) return Promise.resolve(null);
   var u = '/api/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
-  var tMs = timeoutMs || 30000;
-  var controller = new AbortController();
-  var timer = setTimeout(function() { controller.abort(); }, tMs);
   return fetch(u, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body),
-    signal: controller.signal
-  }).then(function(r) {
-    clearTimeout(timer);
-    return r.json();
-  }).then(function(d) {
-    if (d && d.error) { console.error('BX', method, d.error, d.error_description || ''); }
-    return d;
-  }).catch(function(e) {
-    clearTimeout(timer);
-    var msg = (e && e.name === 'AbortError') ? 'timeout ' + tMs + 'ms' : (e && e.message || String(e));
-    console.error('СЕТЬ', method, msg);
-    return {error: msg};
-  });
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); })
+    .then(function(d) { if (d.error) { console.error('BX', method, d.error); return d; } return d; })
+    .catch(function(e) { console.error('СЕТЬ', method, e); return {error: e.message}; });
 }
 
 function bxPostAsDev(method, body, devId) {
@@ -386,7 +271,6 @@ function fetchTasksPaginated(body, maxPages) {
       return all;
     }
     return bxPost('tasks.task.list', Object.assign({start: start}, body)).then(function(r) {
-      if (r && r.error) { console.error('fetchTasksPaginated ERROR', r.error); return all; }
       var tasks = (r && r.result && r.result.tasks) || [];
       all = all.concat(tasks);
       if (r && r.next && tasks.length >= 50) { start = r.next; return step(); }
@@ -394,302 +278,6 @@ function fetchTasksPaginated(body, maxPages) {
     });
   }
   return step();
-}
-
-/* ─── Batch API helper — группирует вызовы по 50, с задержкой и таймаутом ─── */
-function bxBatchCall(cmdMap, options) {
-  if (!cmdMap || !Object.keys(cmdMap).length) return Promise.resolve({});
-  var opts = options || {};
-  var chunkSize = opts.chunkSize || 50;
-  var delayMs = opts.delayMs !== undefined ? opts.delayMs : 500;
-  var timeoutMs = opts.timeoutMs || 60000;
-  var onProgress = opts.onProgress || null;
-  var keys = Object.keys(cmdMap);
-  var chunks = [];
-  for (var i = 0; i < keys.length; i += chunkSize) {
-    var chunk = {};
-    for (var j = i; j < Math.min(i + chunkSize, keys.length); j++) {
-      chunk[keys[j]] = cmdMap[keys[j]];
-    }
-    chunks.push(chunk);
-  }
-  var results = {};
-  var resultErrors = 0;
-  var chain = Promise.resolve();
-  chunks.forEach(function(chunk, chunkIdx) {
-    chain = chain.then(function() {
-      if (onProgress) onProgress(chunkIdx, chunks.length, Object.keys(results).length);
-      return bxPost('batch', {halt: 0, cmd: chunk}, timeoutMs).then(function(r) {
-        if (r && r.result && r.result.result) {
-          Object.keys(r.result.result).forEach(function(k) {
-            results[k] = r.result.result[k];
-          });
-        }
-        if (r && r.result && r.result.result_error) {
-          Object.keys(r.result.result_error).forEach(function(k) {
-            resultErrors++;
-            if (resultErrors <= 5) {
-              console.warn('batch error for', k, r.result.result_error[k]);
-            }
-          });
-        }
-        if (r && r.error && !r.result) {
-          console.warn('bxBatchCall: chunk ' + chunkIdx + ' failed:', r.error);
-        }
-      });
-    }).then(function() {
-      /* Задержка между чанками чтобы не упереться в rate limit */
-      if (delayMs > 0 && chunkIdx < chunks.length - 1) {
-        return new Promise(function(resolve) { setTimeout(resolve, delayMs); });
-      }
-    });
-  });
-  return chain.then(function() {
-    console.log('bxBatchCall: завершено, ' + Object.keys(results).length + ' результатов, ' + resultErrors + ' ошибок');
-    return results;
-  });
-}
-
-/* ─── Загрузка разработчиков из Bitrix24 (с пагинацией) ─── */
-function bxLoadDevelopers() {
-  var allUsers = [];
-  var start = 0;
-
-  function loadPage() {
-    return bxPost('user.get', {
-      FILTER: {ACTIVE: true},
-      SELECT: ['ID', 'NAME', 'LAST_NAME', 'SECOND_NAME'],
-      start: start
-    }).then(function(r) {
-      var users = (r && r.result) || [];
-      if (!Array.isArray(users)) users = [];
-      allUsers = allUsers.concat(users);
-      /* Пагинация: если есть next и вернулась полная страница */
-      if (r && r.next && users.length >= 50) {
-        start = r.next;
-        return loadPage();
-      }
-      return allUsers;
-    });
-  }
-
-  return loadPage().then(function(allUsers) {
-    var updated = false;
-    allUsers.forEach(function(u) {
-      var uid = String(u.ID);
-      var fullName = ((u.LAST_NAME || '') + ' ' + (u.NAME || '')).trim();
-      if (u.SECOND_NAME) fullName = ((u.LAST_NAME || '') + ' ' + (u.SECOND_NAME || '')).trim();
-      if (!fullName) fullName = 'Пользователь ' + uid;
-      if (DEVELOPERS[uid] && DEVELOPERS[uid] !== fullName) {
-        DEVELOPERS[uid] = fullName;
-        updated = true;
-      } else if (!DEVELOPERS[uid]) {
-        DEVELOPERS[uid] = fullName;
-        if (!DEV_RATES[uid]) DEV_RATES[uid] = СТАВКА_ПО_УМОЛЧ;
-        if (!DEV_BASE[uid]) DEV_BASE[uid] = 0;
-        if (!DEV_CLIENT_RATE[uid]) DEV_CLIENT_RATE[uid] = 0;
-        updated = true;
-      }
-    });
-    if (updated) {
-      DEV_IDS = Object.keys(DEVELOPERS).map(Number);
-      console.log('bxLoadDevelopers: загружено ' + allUsers.length + ' пользователей, ' + DEV_IDS.length + ' разработчиков');
-    } else {
-      console.log('bxLoadDevelopers: использованы кэшированные разработчики (' + DEV_IDS.length + ')');
-    }
-    return DEVELOPERS;
-  }).catch(function(e) {
-    console.warn('bxLoadDevelopers: не удалось загрузить пользователей', e);
-    return DEVELOPERS;
-  });
-}
-
-/* ─── Загрузка elapsed через batch API (улучшенная v3.2) ─── */
-function bxLoadElapsedBatch(taskIds, fromStr, toStr) {
-  if (!taskIds || !taskIds.length) return Promise.resolve([]);
-  console.log('bxLoadElapsedBatch: загрузка elapsed для ' + taskIds.length + ' задач через batch');
-
-  /* Стратегия 1: batch через task.elapseditem.getlist */
-  var cmdMap = {};
-  taskIds.forEach(function(tid, idx) {
-    cmdMap['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
-  });
-
-  return bxBatchCall(cmdMap, {
-    delayMs: 500,
-    timeoutMs: 60000,
-    onProgress: function(chunkIdx, totalChunks, elapsedSoFar) {
-      console.log('bxLoadElapsedBatch: чанк ' + (chunkIdx + 1) + '/' + totalChunks + ', накоплено ' + elapsedSoFar + ' результатов');
-    }
-  }).then(function(results) {
-    var allElapsed = [];
-    var batchErrors = 0;
-    Object.keys(results).forEach(function(key) {
-      var items = results[key];
-      if (Array.isArray(items)) {
-        allElapsed = allElapsed.concat(items);
-      } else if (items && items.result && Array.isArray(items.result)) {
-        allElapsed = allElapsed.concat(items.result);
-      } else if (items && !items.error) {
-        if (typeof items === 'object') {
-          var vals = Object.values(items);
-          if (vals.length && vals[0] && vals[0].TASK_ID) {
-            allElapsed = allElapsed.concat(vals);
-          }
-        }
-      } else {
-        batchErrors++;
-      }
-    });
-
-    if (batchErrors > 0) {
-      console.warn('bxLoadElapsedBatch: ' + batchErrors + '/' + taskIds.length + ' вызовов вернули ошибки');
-    }
-
-    if (allElapsed.length > 0) {
-      console.log('bxLoadElapsedBatch: получено ' + allElapsed.length + ' elapsed записей через batch');
-      return allElapsed;
-    }
-
-    /* Стратегия 2: fallback — прямые запросы с throttling */
-    console.log('bxLoadElapsedBatch: batch вернул 0 записей, пробуем прямые запросы с throttling...');
-    return bxLoadElapsedThrottled(taskIds);
-  });
-}
-
-/* ─── Загрузка elapsed с throttling (fallback v3.2) ───
-   Вызывает task.elapseditem.getlist напрямую с пагинацией.
-   Надёжнее batch, но медленнее. 
-   Использует группы по 5 параллельных запросов с задержкой между группами. */
-function bxLoadElapsedThrottled(taskIds) {
-  if (!taskIds || !taskIds.length) return Promise.resolve([]);
-  console.log('bxLoadElapsedThrottled: загрузка elapsed для ' + taskIds.length + ' задач (группы по 5)');
-
-  var allElapsed = [];
-  var groupSize = 5;
-  var chain = Promise.resolve();
-
-  for (var g = 0; g < taskIds.length; g += groupSize) {
-    (function(groupStart) {
-      var group = taskIds.slice(groupStart, groupStart + groupSize);
-      chain = chain.then(function() {
-        var proms = group.map(function(tid) {
-          return bxPost('task.elapseditem.getlist', {
-            TASK_ID: parseInt(tid)
-          }, 15000).then(function(r) {
-            if (r && r.error) return [];
-            var items = [];
-            if (r && r.result) {
-              if (Array.isArray(r.result)) items = r.result;
-              else if (r.result.items && Array.isArray(r.result.items)) items = r.result.items;
-              else if (r.result.list && Array.isArray(r.result.list)) items = r.result.list;
-            }
-            if (r && r.next && items.length >= 50) {
-              return _paginateElapsedDirect(tid, r.next, items);
-            }
-            return items;
-          }).catch(function() { return []; });
-        });
-        return Promise.all(proms).then(function(batches) {
-          batches.forEach(function(b) { allElapsed = allElapsed.concat(b); });
-        });
-      }).then(function() {
-        /* Задержка 300ms между группами */
-        return new Promise(function(resolve) { setTimeout(resolve, 300); });
-      });
-    })(g);
-  }
-
-  return chain.then(function() {
-    console.log('bxLoadElapsedThrottled: получено ' + allElapsed.length + ' elapsed записей');
-    return allElapsed;
-  });
-}
-
-/* ─── Legacy: bxLoadElapsedDirect — все запросы параллельно (ОПАСНО для 700+ задач) ─── */
-function bxLoadElapsedDirect(taskIds) {
-  if (!taskIds || !taskIds.length) return Promise.resolve([]);
-  console.log('bxLoadElapsedDirect: ВНИМАНИЕ — параллельные запросы для ' + taskIds.length + ' задач');
-  if (taskIds.length > 100) {
-    console.warn('bxLoadElapsedDirect: слишком много задач, используем throttled fallback');
-    return bxLoadElapsedThrottled(taskIds);
-  }
-  var proms = taskIds.map(function(tid) {
-    return bxPost('task.elapseditem.getlist', {
-      TASK_ID: parseInt(tid)
-    }, 15000).then(function(r) {
-      if (r && r.error) return [];
-      var items = [];
-      if (r && r.result) {
-        if (Array.isArray(r.result)) items = r.result;
-        else if (r.result.items && Array.isArray(r.result.items)) items = r.result.items;
-        else if (r.result.list && Array.isArray(r.result.list)) items = r.result.list;
-      }
-      if (r && r.next && items.length >= 50) {
-        return _paginateElapsedDirect(tid, r.next, items);
-      }
-      return items;
-    }).catch(function() { return []; });
-  });
-  return Promise.all(proms).then(function(batches) {
-    var all = [];
-    batches.forEach(function(b) { all = all.concat(b); });
-    console.log('bxLoadElapsedDirect: получено ' + all.length + ' elapsed записей');
-    return all;
-  });
-}
-
-function _paginateElapsedDirect(tid, start, accumulated) {
-  return bxPost('task.elapseditem.getlist', {
-    TASK_ID: parseInt(tid),
-    start: start
-  }).then(function(r) {
-    var items = [];
-    if (r && r.result) {
-      if (Array.isArray(r.result)) items = r.result;
-      else if (r.result.items) items = r.result.items;
-      else if (r.result.list) items = r.result.list;
-    }
-    accumulated = accumulated.concat(items);
-    if (r && r.next && items.length >= 50) {
-      return _paginateElapsedDirect(tid, r.next, accumulated);
-    }
-    return accumulated;
-  }).catch(function() {
-    return accumulated;
-  });
-}
-
-/* ─── Загрузка задач по списку ID (batch) ───
-   Используется для догрузки задач, ID которых найдены в elapsed,
-   но сами задачи не попали в основной запрос по CREATED_DATE. */
-function bxLoadTasksByIds(taskIds) {
-  if (!taskIds || !taskIds.length) return Promise.resolve([]);
-  console.log('bxLoadTasksByIds: загрузка ' + taskIds.length + ' задач по ID');
-
-  /* Используем batch для эффективности: до 50 задач за один запрос */
-  var cmdMap = {};
-  taskIds.forEach(function(tid, idx) {
-    cmdMap['t' + idx] = 'tasks.task.list?filter[ID]=' + tid + '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
-  });
-
-  return bxBatchCall(cmdMap).then(function(results) {
-    var allTasks = [];
-    Object.keys(results).forEach(function(key) {
-      var data = results[key];
-      var tasks = [];
-      if (data && data.tasks && Array.isArray(data.tasks)) {
-        tasks = data.tasks;
-      } else if (data && data.result && data.result.tasks && Array.isArray(data.result.tasks)) {
-        tasks = data.result.tasks;
-      } else if (Array.isArray(data)) {
-        tasks = data;
-      }
-      allTasks = allTasks.concat(tasks);
-    });
-    console.log('bxLoadTasksByIds: загружено ' + allTasks.length + ' задач');
-    return allTasks;
-  });
 }
 
 /* ─── Помощники периода ─── */

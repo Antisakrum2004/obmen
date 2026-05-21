@@ -16,9 +16,8 @@ function normalizeElapsed(entry) {
   var userId = String(entry.USER_ID || '');
   if (!taskId || !userId) return null;
 
-  /* Фильтр неизвестных и исключённых разработчиков */
+  /* Фильтр неизвестных разработчиков */
   if (DEV_IDS.indexOf(Number(userId)) < 0) return null;
-  if (typeof EXCLUDED_DEV_IDS !== 'undefined' && EXCLUDED_DEV_IDS[userId]) return null;
 
   /* MINUTES — тоже строка ("190"), пересчитываем из SECONDS для точности */
   var minutes = Math.round(seconds / 60);
@@ -131,8 +130,8 @@ function buildTaskReviewRows(data, savedReviews) {
       factMinutes: agg.factMinutes,
       billableHours: saved ? saved.billableHours : agg.factHours,
       payrollHours: saved ? saved.payrollHours : agg.factHours,
-      rate: rate,  /* always use live rate from prGetRate() — admin changes apply to all tasks */
-      base: base,  /* always use live base from prGetBase() */
+      rate: saved ? saved.rate : rate,
+      base: saved ? saved.base : base,
       payrollAmount: 0, /* вычисляется ниже */
       reviewStatus: saved ? saved.reviewStatus : 'pending',
       managerComment: saved ? saved.managerComment : '',
@@ -142,9 +141,9 @@ function buildTaskReviewRows(data, savedReviews) {
     });
   });
 
-  /* Вычислить payrollAmount = часы × ставка (БЕЗ base — базовая выплата добавляется один раз по разрабу) */
+  /* Вычислить payrollAmount = часы × ставка + базовая */
   rows.forEach(function(r) {
-    r.payrollAmount = Math.round(r.payrollHours * r.rate);
+    r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base;
   });
 
   /* Сортировка: ожидает первой, потом по имени разработчика, потом по задаче */
@@ -173,7 +172,6 @@ function buildPayrollProjection(rows) {
         totalBillable: 0,
         totalPayroll: 0,
         totalBase: 0,
-        totalFine: 0,
         totalAmount: 0,
         taskCount: 0,
         approvedCount: 0,
@@ -193,32 +191,12 @@ function buildPayrollProjection(rows) {
     if (r.reviewStatus === 'disputed') d.disputedCount++;
   });
 
-  /* Округление + base/fine per developer */
+  /* Округление */
   Object.keys(byDev).forEach(function(uid) {
     var d = byDev[uid];
     d.totalFactHours = Math.round(d.totalFactHours * 10) / 10;
     d.totalBillable = Math.round(d.totalBillable * 10) / 10;
     d.totalPayroll = Math.round(d.totalPayroll * 10) / 10;
-
-    /* Базовая выплата добавляется ОДИН раз */
-    var baseSalary = (typeof prGetBase === 'function') ? prGetBase(uid) : 0;
-    d.totalBase = baseSalary;
-
-    /* Штраф вычитается ОДИН раз */
-    var fine = (typeof prGetFine === 'function') ? prGetFine(uid) : 0;
-    d.totalFine = fine;
-
-    /* totalAmount = сумма по задачам + базовая − штраф */
-    d.totalAmount = d.totalAmount + baseSalary - fine;
-
-    /* Клиентская выручка и маржа (клиент платит только за задачи по часам) */
-    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(uid) : (typeof prGetRate === 'function' ? prGetRate(uid) : 0);
-    d.clientRevenue = Math.round(d.totalBillable * clientRate);
-    d.clientRate = clientRate;
-    d.marginPct = d.clientRevenue > 0
-      ? Math.round((d.clientRevenue - d.totalAmount) / d.clientRevenue * 100)
-      : 0;
-
     d.approvalRate = d.taskCount > 0 ? Math.round(d.approvedCount / d.taskCount * 100) : 0;
   });
 
@@ -234,7 +212,6 @@ function buildPeriodTotals(rows) {
     totalBillable: 0,
     totalPayroll: 0,
     totalBase: 0,
-    totalFine: 0,
     totalPayrollAmount: 0,
     totalTasks: 0,
     approvedTasks: 0,
@@ -254,6 +231,7 @@ function buildPeriodTotals(rows) {
       totals.totalFactHours += r.factHours;
       totals.totalBillable += r.billableHours;
       totals.totalPayroll += r.payrollHours;
+      totals.totalBase += r.base;
       totals.totalPayrollAmount += r.payrollAmount;
     }
   });
@@ -262,44 +240,6 @@ function buildPeriodTotals(rows) {
   totals.totalBillable = Math.round(totals.totalBillable * 10) / 10;
   totals.totalPayroll = Math.round(totals.totalPayroll * 10) / 10;
   totals.totalPayrollAmount = Math.round(totals.totalPayrollAmount);
-
-  /* Add base salary and fines per developer (not per task) */
-  var totalBaseAll = 0;
-  var totalFineAll = 0;
-  if (typeof prGetBase === 'function') {
-    var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
-                 (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
-    devIds.forEach(function(devId) {
-      totalBaseAll += prGetBase(devId);
-      if (typeof prGetFine === 'function') totalFineAll += prGetFine(devId);
-    });
-  }
-  totals.totalBase = totalBaseAll;
-  totals.totalFine = totalFineAll;
-  totals.totalPayrollAmount = totals.totalPayrollAmount + totalBaseAll - totalFineAll;
-
-  /* Клиентская выручка и общая маржа (клиент платит только за задачи по часам) */
-  var totalClientRevenue = 0;
-  if (typeof prGetClientRate === 'function' || typeof prGetRate === 'function') {
-    var devIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS :
-                 (typeof DEV_IDS !== 'undefined') ? DEV_IDS : [];
-    devIds.forEach(function(devId) {
-      var cr = (typeof prGetClientRate === 'function') ? prGetClientRate(devId) : (typeof prGetRate === 'function' ? prGetRate(devId) : 0);
-      /* Считаем billable часы этого разраба из rows */
-      var devBillable = 0;
-      rows.forEach(function(r) {
-        if (String(r.developerId) === String(devId) && r.reviewStatus !== 'excluded') {
-          devBillable += r.billableHours;
-        }
-      });
-      totalClientRevenue += Math.round(devBillable * cr);
-    });
-  }
-  totals.totalClientRevenue = totalClientRevenue;
-  totals.totalMargin = totalClientRevenue - totals.totalPayrollAmount;
-  totals.totalMarginPct = totalClientRevenue > 0
-    ? Math.round(totals.totalMargin / totalClientRevenue * 100)
-    : 0;
 
   return totals;
 }
