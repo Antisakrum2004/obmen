@@ -443,28 +443,27 @@ function PR_loadRealData(year, month) {
     }
 
     /* ─── Step 2: Load elapsed for each task via batch ─── */
-    /* Bitrix24 batch supports max 50 commands per call */
+    /* Bitrix24 batch: cmd values are strings like "method?PARAM=VALUE" */
     var allElapsed = [];
     var batchProms = [];
     for (var i = 0; i < taskIdList.length; i += 50) {
       var chunk = taskIdList.slice(i, i + 50);
       var batchCmd = {};
       chunk.forEach(function(tid, idx) {
-        batchCmd['e' + idx] = {
-          method: 'task.elapseditem.getlist',
-          params: { TASK_ID: parseInt(tid) }
-        };
+        batchCmd['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
       });
       batchProms.push(
         bxPost('batch', { halt: 0, cmd: batchCmd }).then(function(r) {
           if (r && r.result && r.result.result) {
             var results = r.result.result;
-            Object.keys(results).forEach(function(key) {
-              var items = results[key];
-              if (Array.isArray(items)) {
-                allElapsed = allElapsed.concat(items);
-              }
-            });
+            if (typeof results === 'object' && !Array.isArray(results)) {
+              Object.keys(results).forEach(function(key) {
+                var items = results[key];
+                if (Array.isArray(items)) {
+                  allElapsed = allElapsed.concat(items);
+                }
+              });
+            }
           }
         })
       );
