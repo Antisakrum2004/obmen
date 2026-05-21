@@ -372,8 +372,9 @@ function PR_MOCK_buildMockData(year, month) {
 }
 
 /* ─── Real data loader (Bitrix24-compatible) ───
+   task.elapseditem.getlist REQUIRES TASK_ID — cannot filter by date alone.
    Step 1: Load tasks per developer via tasks.task.list
-   Step 2: Load elapsed per task via task.elapseditem.getlist?TASK_ID=X
+   Step 2: Load elapsed per task via batch API (cmd strings)
    Step 3: Filter by period client-side, load projects
    ═══════════════════════════════════════════════════ */
 function PR_loadRealData(year, month) {
@@ -443,7 +444,7 @@ function PR_loadRealData(year, month) {
     }
 
     /* ─── Step 2: Load elapsed for each task via batch ─── */
-    /* Bitrix24 batch: cmd values are strings like "method?PARAM=VALUE" */
+    /* Bitrix24 batch: cmd values are strings "method?PARAM=VALUE" */
     var allElapsed = [];
     var batchProms = [];
     for (var i = 0; i < taskIdList.length; i += 50) {
@@ -472,12 +473,9 @@ function PR_loadRealData(year, month) {
     return Promise.all(batchProms).then(function() {
       /* Filter elapsed by period and known developers */
       allElapsed = allElapsed.filter(function(e) {
-        /* Period filter */
         var d = (e.CREATED_DATE || '').substring(0, 10);
         if (d < fromStr || d > toStr) return false;
-        /* Developer filter */
         if (DEV_IDS.indexOf(Number(e.USER_ID)) < 0) return false;
-        /* Valid task filter */
         if (!validTaskIds[String(e.TASK_ID)]) return false;
         return true;
       });
