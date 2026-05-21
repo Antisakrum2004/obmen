@@ -1,13 +1,15 @@
 {
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" },
-    { "src": "static", "use": "@vercel/static" }
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": ["static/**"]
+      }
+    }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.py" },
-    { "src": "/js/(.*)", "dest": "/static/js/$1" },
-    { "src": "/css/(.*)", "dest": "/static/css/$1" },
-    { "src": "/favicon.svg", "dest": "/static/favicon.svg" },
-    { "src": "/", "dest": "/static/index.html" }
+    { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "src": "/(.*)", "dest": "api/index.py" }
   ]
 }
