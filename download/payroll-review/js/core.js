@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-5.5.0';
+var APP_VERSION = 'ПР-7.2.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -47,7 +47,7 @@ var DEV_RATES = {
   '94':  1000,
   '96':  1000,
   '98':  1000,
-  '116': 1000
+  '116': 0   /* Предеин: ставка по задачам = 0, оклад 200к */
 };
 
 /* ─── Базовая часть (оклад/премия) — можно менять в админке ─── */
@@ -62,7 +62,7 @@ var DEV_BASE = {
   '94':  0,
   '96':  0,
   '98':  0,
-  '116': 0
+  '116': 200000   /* Предеин: оклад 200к (3П) */
 };
 
 /* ─── ИНН разработчиков ─── */
@@ -148,12 +148,17 @@ var STAGE_MAP = {
 };
 /* ⚠️ Проекты БЕЗ STAGE_MAP (нет пайплайнов): 8,10,12,14,16,26,30,34,38,40,44,54,58,68 */
 
-/* ─── Исключённые проекты (служебные группы) ─── */
+/* ─── Исключённые проекты (служебные группы)
+   ⚠️ v6.6.0: EXCLUDE_GROUPS влияет ТОЛЬКО на UI-отображение
+   (какие проекты показывать в Projects tab).
+   На загрузку данных НЕ влияет — задачи из этих групп
+   загружаются и обрабатываются полностью, т.к. Предеин
+   списывает время в группе 26 «Текущие задачи 1с». ─── */
 var EXCLUDE_GROUPS = {
   '2':1,  /* Обучение 1с */
   '22':1, /* Тацинка */
   '24':1, /* Обучение 1с скрам */
-  '26':1, /* Текущие задачи 1с */
+  '26':1, /* Текущие задачи 1с — Предеин списывает время здесь! */
   '42':1, /* ИТ Контроль */
   '48':1, /* [APP GBL] Просроченные */
   '78':1, /* Backlog */
@@ -165,13 +170,18 @@ var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
 try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
-/* ─── Режим мок ───
-   PR_FORCE_MOCK = true  → всегда мок (тест без API)
-   PR_FORCE_MOCK = false → живые данные через Bitrix24 API
-   Переключатель в UI: кнопка МОК/ЖИВОЙ в топбаре
+/* ─── Режим данных ───
+   Моковые данные УДАЛЕНЫ (v6.5.0) — всегда живые данные из Bitrix24.
+   PR_MOCK_MODE оставлен для совместимости, всегда false.
 */
-var PR_FORCE_MOCK = true;
-var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
+/* ─── Конфигурация нормализации ───
+   v6.6.0: excludeGroups = {} — НЕ исключаем группы из расчётов!
+   Предеин списывает время в группе 26 «Текущие задачи 1с».
+   EXCLUDE_GROUPS влияет только на UI, не на данные. ─── */
+var PR_NORM_CONFIG_OVERRIDE = {
+  excludeGroups: {}   /* Пустой объект = не исключать никакие группы из расчётов */
+};
+var PR_MOCK_MODE = false;
 
 /* ─── Утилиты ─── */
 function fmt(d) {
@@ -211,19 +221,19 @@ function parseBitrixDate(s) {
 function prGetRate(developerId) {
   /* Сначала из сохранённых настроек, потом из конфига */
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.rate) return saved.rate;
-  return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
+  if (saved && saved.rate !== undefined && saved.rate !== null) return saved.rate;
+  return DEV_RATES[String(developerId)] !== undefined ? DEV_RATES[String(developerId)] : СТАВКА_ПО_УМОЛЧ;
 }
 
 function prGetBase(developerId) {
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.base) return saved.base;
-  return DEV_BASE[String(developerId)] || 0;
+  if (saved && saved.base !== undefined && saved.base !== null) return saved.base;
+  return DEV_BASE[String(developerId)] !== undefined ? DEV_BASE[String(developerId)] : 0;
 }
 
 function prGetInn(developerId) {
   var saved = prLoadDevSettings(developerId);
-  if (saved && saved.inn) return saved.inn;
+  if (saved && saved.inn !== undefined && saved.inn !== null) return saved.inn;
   return DEV_INN[String(developerId)] || '';
 }
 
@@ -311,7 +321,7 @@ var DEV_CLIENT_RATES = {
   '82':  1500,
   '92':  1500,
   '98':  1500,
-  '116': 1500
+  '116': 0   /* Предеин: клиентская ставка 0 (ставка по задачам = 0) */
 };
 
 /* ─── Штрафы разработчиков ─── */
@@ -351,19 +361,19 @@ var PR_WHITELIST_PROJECTS = {
 /* ─── Помощники для ставок/штрафов ─── */
 function prGetClientRate(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.clientRate) return saved.clientRate;
-  return DEV_CLIENT_RATES[String(devId)] || prGetRate(devId);
+  if (saved && saved.clientRate !== undefined && saved.clientRate !== null) return saved.clientRate;
+  return DEV_CLIENT_RATES[String(devId)] !== undefined ? DEV_CLIENT_RATES[String(devId)] : prGetRate(devId);
 }
 
 function prGetFine(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.fine) return saved.fine;
+  if (saved && saved.fine !== undefined && saved.fine !== null) return saved.fine;
   return DEV_FINES[String(devId)] || 0;
 }
 
 function prGetFineComment(devId) {
   var saved = prLoadDevSettings(devId);
-  if (saved && saved.fineComment) return saved.fineComment;
+  if (saved && saved.fineComment !== undefined && saved.fineComment !== null) return saved.fineComment;
   return DEV_FINE_COMMENTS[String(devId)] || '';
 }
 
