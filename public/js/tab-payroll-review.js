@@ -173,11 +173,14 @@ window.TabPayrollReview = {
    ЗАГРУЗКА ДАННЫХ
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadData() {
+  /* Мьютекс: если загрузка уже идёт — пропускаем */
+  if (_pr.loading) {
+    console.log('[PR] _prLoadData: загрузка уже идёт, пропускаем');
+    return;
+  }
   _pr.loading = true;
   _pr._perf.loadStart = Date.now();
   _prLoadSteps = []; /* Reset step log */
-  /* Hide body scrollbar during loading to prevent ugly scrollbar flash */
-  document.body.style.overflow = 'hidden';
   _prRenderLoading();
 
   var year = prCurrentPeriod.year;
@@ -266,14 +269,12 @@ function _prLoadData() {
     var totalMs = _pr._perf.loadEnd - _pr._perf.loadStart + normMs;
     _prAddLoadStep('\u2713', 'Готово! Общее время: ' + totalMs + 'мс');
 
-    /* Restore body scrollbar after loading completes */
-    document.body.style.overflow = '';
+
     _prScheduleRender();
   }).catch(function(e) {
     console.error('Ошибка загрузки', e);
     _pr.loading = false;
-    /* Restore body scrollbar on error too */
-    document.body.style.overflow = '';
+
     _prAddLoadStep('\u2717', 'ОШИБКА: ' + (e.message || 'Неизвестная ошибка'));
     _prRenderError(e.message || 'Ошибка загрузки данных. Проверьте подключение и режим (МОК/ЖИВОЙ).');
   });
@@ -437,7 +438,7 @@ function _prRenderLoading() {
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-direct v6.5.2</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: concurrent-POST v6.11.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -1336,7 +1337,7 @@ function _prRenderDebug() {
   var h = '<div class="pr-debug">';
   h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: elapsed-direct v6.5.2</div>';
+  h += '<div class="pr-debug-row">Pipeline: concurrent-POST v6.11.0</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
@@ -2315,7 +2316,7 @@ window.__PAYROLL_PERF = function() {
   var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
   var result = {
     version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'unknown',
-    pipeline: 'elapsed-direct v6.5.0',
+    pipeline: 'concurrent-POST v6.11.0',
     timing: {
       loadData: loadMs + 'ms',
       normalization: normMs + 'ms',
