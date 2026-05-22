@@ -438,7 +438,7 @@ function _prRenderLoading() {
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: activity-filtered v6.12.0</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: activity-filtered v7.0.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -1337,7 +1337,21 @@ function _prRenderDebug() {
   var h = '<div class="pr-debug">';
   h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: activity-filtered v6.12.0</div>';
+  h += '<div class="pr-debug-row">Pipeline: activity-filtered v7.0.0 (DATE_ACTIVITY)</div>';
+
+  /* v7.0.0: Before/After pipeline metrics */
+  if (_pr.data && _pr.data._metrics) {
+    var m = _pr.data._metrics;
+    var loadTimeSec = m.loadEndMs > 0 ? ((m.loadEndMs - m.loadStartMs) / 1000).toFixed(1) : '?';
+    h += '<div class="pr-debug-row" style="color:var(--cyan);font-weight:600">PIPELINE v7.0.0 METRICS:</div>';
+    h += '<div class="pr-debug-row">Задачи: ДО=' + m.oldTasksLoaded + ' → ПОСЛЕ=' + m.newTasksLoaded +
+      ' (-' + Math.round((1 - m.newTasksLoaded / m.oldTasksLoaded) * 100) + '%)</div>';
+    h += '<div class="pr-debug-row">Elapsed checks: ДО=' + m.oldElapsedChecks + ' → ПОСЛЕ=' + m.newElapsedChecks +
+      ' (-' + Math.round((1 - m.newElapsedChecks / m.oldElapsedChecks) * 100) + '%)</div>';
+    h += '<div class="pr-debug-row">API calls: ДО=' + m.oldApiCalls + ' → ПОСЛЕ=' + m.newApiCalls +
+      ' (-' + Math.round((1 - m.newApiCalls / m.oldApiCalls) * 100) + '%)</div>';
+    h += '<div class="pr-debug-row">Load time: ДО=минуты → ПОСЛЕ=' + loadTimeSec + 'с</div>';
+  }
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
