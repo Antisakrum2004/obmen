@@ -61,3 +61,28 @@ Stage Summary:
 - Expected v7.1.0 results: ~100-200 tasks, 15-40 API calls, 5-15s load
 - Predein visibility: now protected by hasVisiblePayroll check in filter
 - Vercel auto-deploys from GitHub push
+
+---
+Task ID: 1
+Agent: Super Z (main)
+Task: Implement v7.2.0 ELAPSED-FIRST DAY-BY-DAY pipeline
+
+Work Log:
+- Analyzed reference repo (github.com/Antisakrum2004/bitrix-dashboard/docs) — found that they use `task.elapseditem.getlist` with DATE filter (no taskId) day-by-day
+- Key insight: they use CREATED_DATE not DATE_ACTIVITY; elapsed-first approach guarantees no tasks lost
+- Designed v7.2.0 pipeline: elapsed-first day-by-day with fallback to tasks-first day-by-day
+- Implemented data-loader.js v7.2.0:
+  - Primary: 31 parallel `task.elapseditem.getlist` calls with date filter per day
+  - Auto-detects if API supports date-filtered elapsed format
+  - Falls back to tasks-first day-by-day (CREATED_DATE, no RESPONSIBLE_ID)
+  - Batch metadata loading for task IDs found in elapsed
+  - Orphan task handling
+- Updated core.js version to ПР-7.2.0
+- Updated tab-payroll-review.js pipeline label
+- Updated PROJECT_BRAIN.md with v7.2.0 architecture
+
+Stage Summary:
+- v7.2.0 ELAPSED-FIRST DAY-BY-DAY pipeline implemented
+- If elapsed date API works: ~35 API calls, 5-15s, COMPLETE data
+- If not: fallback to tasks-first day-by-day (still better than v7.1.0)
+- Files changed: data-loader.js, core.js, tab-payroll-review.js, PROJECT_BRAIN.md

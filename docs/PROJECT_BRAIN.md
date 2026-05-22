@@ -61,34 +61,65 @@
 - Предеин добавлялся в projection, но фильтровался в UI
 - Только 120 из 578 elapsed записей были за май (79% мусор)
 
-### ПР-7.1.0 — Pipeline fix (текущая)
+### ПР-7.1.0 — Pipeline fix
 
 Критические исправления по результатам v7.0.0:
 
 1. **Убран buffer 14 дней** — теперь ТОЧНЫЙ период (2026-05-01 — 2026-05-31)
-   - Буфер давал 58-дневное окно → 1020 задач
-   - Без буфера: ожидается ~100-200 задач
-
 2. **Убраны ACCOMPLICE запросы** — 111 лишних задач
-   - Elapsed соучастников находится через задачи RESPONSIBLE_ID
-   - `task.elapseditem.getlist(taskId)` возвращает ВСЕ записи для задачи
-
 3. **Пагинация 3→2 страницы** (150→100 задач на разработчика)
-
 4. **Снижены лимиты**: tasks 400→250, elapsed 500→350
-
 5. **Увеличена конкурентность**: 6→10 параллельных, delay 200→100ms
-
 6. **Исправлена видимость Предеина** — разработчики с baseSalary>0
-   теперь проходят проектные и статусные фильтры
-
 7. **Добавлен fromStr/toStr** в объект данных для нормализатора
-
 8. **ACTIVE_DEV_IDS вместо DEV_IDS** при фильтрации elapsed
 
-## Архитектура v7.1.0
+Результаты: 711:39 часов, 137 задач — лучше чем v7.0.0, но НЕ ВСЕ задачи за май
 
-### Pipeline
+### ПР-7.2.0 — ELAPSED-FIRST DAY-BY-DAY (текущая)
+
+Архитектурный сдвиг: от tasks-first к elapsed-first pipeline.
+
+**Проблема v7.1.0**: RESPONSIBLE_ID + DATE_ACTIVITY фильтр терял задачи:
+- Задачи где разработчик ACCOMPLICE (не RESPONSIBLE_ID)
+- Задачи с May elapsed но старой DATE_ACTIVITY
+- 711:39 часов вместо полного объёма
+
+**Решение v7.2.0** (по мотивам bitrix-dashboard reference repo):
+
+1. **ELAPSED-FIRST DAY-BY-DAY** — сначала ВСЕ записи времени за месяц
+   - `task.elapseditem.getlist([0, {}, {>=CREATED_DATE, <=CREATED_DATE}, select])`
+   - 31 параллельный запрос — по одному на каждый день
+   - Фильтруем по USER_ID наших разработчиков
+
+2. **Извлечение TASK_ID** из elapsed записей
+   - Уникальные ID задач → загружаем метаданные batch
+
+3. **Batch метаданных** — `tasks.task.list` с `filter: {ID: [batch]}`
+   - По 50 ID за запрос
+   - Заголовки, группы, статусы
+
+4. **Orphan tasks** — задачи без метаданных (batch загрузка)
+
+5. **Проекты** — `sonet_group.get` как прежде
+
+**FALLBACK**: Если elapsed date API не работает:
+- Переключаемся на TASKS-FIRST DAY-BY-DAY
+- `tasks.task.list` с CREATED_DATE фильтром по дням (без RESPONSIBLE_ID!)
+- Per-task elapsed как в v7.1.0
+
+**Почему elapsed-first лучше**:
+- Elapsed записи = источник истины для зарплатного обзора
+- Если есть elapsed за май → задача ТОЧНО была в мае
+- Не зависит от RESPONSIBLE_ID / ACCOMPLICE
+- Не зависит от DATE_ACTIVITY (ненадёжный фильтр)
+- Гарантированно находим ВСЕ часы за период
+
+**Масштаб**: ~35 API вызовов, 5-15 секунд
+
+## Архитектура v7.2.0
+
+### Pipeline (ELAPSED-FIRST DAY-BY-DAY)
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -96,40 +127,44 @@
 │    → Если кэш валидный (TTL 5 мин): мгновенный  │
 │      возврат, без API запросов                   │
 ├─────────────────────────────────────────────────┤
-│ 2. tasks.task.list (per developer)              │
-│    FILTER:                                       │
-│      RESPONSIBLE_ID = devId                      │
-│      >=DATE_ACTIVITY = periodStart (ТОЧНО)       │
-│      <=DATE_ACTIVITY = periodEnd (ТОЧНО)         │
-│    АССОЦИАТЫ НЕ ЗАГРУЖАЮТСЯ (v7.1.0)           │
-│    МАКС 2 страницы = 100 задач/разработчик       │
+│ 2. task.elapseditem.getlist (DAY-BY-DAY)        │
+│    Для КАЖДОГО дня месяца (31 параллельно):      │
+│    [0, {}, {>=CREATED_DATE, <=CREATED_DATE},     │
+│     select: ID,TASK_ID,USER_ID,MINUTES,etc]     │
+│    Пагинация: до 3 страниц на день               │
+│    Фильтрация по ACTIVE_DEV_IDS клиент-сайд      │
 ├─────────────────────────────────────────────────┤
-│ 3. Дедупликация TASK_ID                          │
-│    Hard limit: 250 задач                         │
+│ 3. Извлечение уникальных TASK_ID                 │
+│    Из всех elapsed записей за месяц               │
 ├─────────────────────────────────────────────────┤
-│ 4. task.elapseditem.getlist (POST)              │
-│    ТОЛЬКО для найденных taskIds                  │
-│    Формат: [taskId, {ID:'DESC'}, {}]             │
-│    Параллельно: 10 concurrent                    │
-│    Таймаут: 8с на запрос                         │
-│    Hard limit: 350 elapsed записей               │
+│ 4. tasks.task.list (batch по 50 ID)             │
+│    filter: { ID: [taskId1, taskId2, ...] }       │
+│    select: ID,TITLE,GROUP_ID,STATUS,etc          │
 ├─────────────────────────────────────────────────┤
-│ 5. Фильтрация по выбранному месяцу              │
-│    CREATED_DATE >= fromStr AND <= toStr          │
-│    Только ACTIVE_DEV_IDS разработчики            │
+│ 5. Orphan tasks (без метаданных)                 │
+│    batch загрузка, max 100                        │
 ├─────────────────────────────────────────────────┤
 │ 6. Загрузка проектов (sonet_group.get)           │
-│    + orphan tasks (batch, max 50)                │
 ├─────────────────────────────────────────────────┤
 │ 7. PayrollCache.set(key, data, 5 мин)           │
 │    + fromStr/toStr для нормализатора             │
 └─────────────────────────────────────────────────┘
+
+   FALLBACK (если elapsed date API не работает):
+┌─────────────────────────────────────────────────┐
+│ 2'. tasks.task.list (DAY-BY-DAY)                │
+│     CREATED_DATE фильтр, без RESPONSIBLE_ID      │
+│     1 страница = 50 задач на день                │
+├─────────────────────────────────────────────────┤
+│ 3'. Per-task elapsed (как v7.1.0)               │
+│     task.elapseditem.getlist(taskId)             │
+└─────────────────────────────────────────────────┘
 ```
 
 ### Ожидаемый масштаб
-- 100-200 задач на месяц (vs 1020 в v7.0.0)
-- 15-40 API вызовов (vs 67 в v7.0.0)
-- 5-15 секунд загрузка (vs 86.2с в v7.0.0)
+- 31 + 2-5 + 1 = ~35 API вызовов
+- 5-15 секунд загрузка
+- ПОЛНЫЕ данные за месяц (без потерь)
 
 ### СТАРОГО масштаб (до v7.0.0)
 - 3260 задач
@@ -147,21 +182,20 @@
 ### Ключевые правила
 
 #### Запрещено
-- Load all tasks by developer (без DATE_ACTIVITY фильтра)
+- Load all tasks by developer (без даты фильтра)
 - Recursive group scans
 - All historical tasks
-- No-date task loading
 - Unbounded pagination
-- Tasks without activity filter
-- ACCOMPLICE queries (v7.1.0 — удалено, слишком много задач)
-- Activity buffer > 0 дней (v7.1.0 — удалено, 58-дневное окно)
+- RESPONSIBLE_ID фильтр (v7.2.0 — удалено, терялись ACCOMPLICE задачи)
+- DATE_ACTIVITY фильтр (v7.2.0 — удалено, ненадёжный)
 
 #### Обязательно
-- DATE_ACTIVITY фильтр ТОЧНО за месяц (без буфера)
-- Hard limits: 250 задач, 350 elapsed
+- ELAPSED-FIRST подход (v7.2.0) — сначала elapsed, потом задачи
+- CREATED_DATE фильтр для elapsed (точный, надёжный)
+- День за днём — 31 параллельный запрос
+- Фильтрация по ACTIVE_DEV_IDS клиент-сайд
 - Кэш PayrollCache с TTL 5 мин
 - Partial data rendering (если часть API упала)
-- ACTIVE_DEV_IDS при фильтрации elapsed
 
 ### Видимость разработчиков
 
@@ -194,7 +228,8 @@ tasks.length > 0
 | Метод | Статус | Примечание |
 |-------|--------|------------|
 | `tasks.task.list` | Работает | Загрузка задач с фильтрами |
-| `task.elapseditem.getlist` | Работает | Только прямой POST, `[taskId, {ID:'DESC'}, {}]` |
+| `task.elapseditem.getlist` (per-task) | Работает | `[taskId, {ID:'DESC'}, {}]` |
+| `task.elapseditem.getlist` (date filter) | ПРОВЕРЯЕТСЯ | `[0, {}, {>=CREATED_DATE, <=CREATED_DATE}, select]` — используется в bitrix-dashboard reference |
 | `task.elapseditem.list` | НЕ СУЩЕСТВУЕТ | `ERROR_METHOD_NOT_FOUND` |
 | `tasks.elapseditem.list` | НЕ СУЩЕСТВУЕТ | `ERROR_METHOD_NOT_FOUND` |
 | `task.elapseditem.getlist` (batch URL) | СЛОМАН | URL format не передаёт positional array params |
@@ -205,8 +240,8 @@ tasks.length > 0
 ```
 public/js/
 ├── core.js                      — Константы, API, утилиты (ПР-7.0.0)
-├── data-loader.js                — Pipeline загрузки данных (v7.1.0)
-├── tab-payroll-review.js         — UI модуль (v5.0.0+, Predein fix v7.1.0)
+├── data-loader.js                — Pipeline загрузки данных (v7.2.0 — elapsed-first day-by-day)
+├── tab-payroll-review.js         — UI модуль (v5.0.0+, Predein fix v7.1.0, pipeline v7.2.0)
 ├── payroll-review-styles.js      — CSS стили
 ├── payroll-review-export.js      — CSV экспорт
 ├── payroll-review-storage.js     — localStorage обёртка
