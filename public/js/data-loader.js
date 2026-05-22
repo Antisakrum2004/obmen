@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   data-loader.js — Загрузчик данных из Bitrix24 (v7.0.0)
+   data-loader.js — Загрузчик данных из Bitrix24 (v7.1.0)
 
    ═══ ACTIVITY-FILTERED TASKS-FIRST PIPELINE ═══
 
@@ -10,8 +10,17 @@
      → проверить elapsed каждой → фильтр по периоду
      = 3260 задач, 273 чанка, минуты ожидания, 502 таймауты
 
-   ТЕПЕРЬ (activity-filtered tasks-first):
-     1. tasks.task.list с DATE_ACTIVITY фильтром ЗА ПЕРИОД + buffer 14 дней
+   v7.1.0 ИСПРАВЛЕНИЯ (по результатам v7.0.0):
+     - Убран буфер 14 дней (58-дневное окно → точный месяц)
+       Буфер давал 1020 задач вместо ожидаемых 80-250
+     - Убраны ACCOMPLICE-запросы (111 лишних задач)
+       elapsed у ACCOMPLICE находится через RESPONSIBLE_ID задач
+     - Пагинация 3→2 страницы (150→100 задач на разработчика)
+     - Лимиты снижены: tasks 400→250, elapsed 500→350
+     - Конкурентность увеличена: 6→10 параллельных запросов
+
+   ТЕПЕРЬ (activity-filtered tasks-first v7.1.0):
+     1. tasks.task.list с DATE_ACTIVITY фильтром ТОЧНО ЗА МЕСЯЦ (без буфера)
      2. Дедупликация TASK_ID
      3. task.elapseditem.getlist ТОЛЬКО для найденных taskIds
      4. Фильтрация elapsed по выбранному месяцу
@@ -19,16 +28,17 @@
 
    Ожидаемый масштаб:
      80-250 задач на месяц
-     20-60 API calls
-     3-10 сек загрузка
+     15-40 API calls
+     5-15 сек загрузка
 
    КРИТИЧЕСКИЕ ПРАВИЛА:
-   - МАКСИМУМ 400 задач для проверки elapsed
-   - МАКСИМУМ 500 elapsed записей
+   - МАКСИМУМ 250 задач для проверки elapsed
+   - МАКСИМУМ 350 elapsed записей
    - Таймаут 8с на каждый запрос
    - Если часть упала — продолжать с тем что есть
    - ЗАПРЕЩЕНО: load all tasks, recursive group scans, no-date loading,
-     unbounded pagination, tasks without activity filter
+     unbounded pagination, tasks without activity filter, ACCOMPLICE queries,
+     activity buffer > 0 days
    - КЭШ: TTL 5 мин, PayrollCache
 
    ═══════════════════════════════════════════════════════════════ */
@@ -37,14 +47,16 @@
 var _dlLoadGeneration = 0;
 
 /* ─── Hard limits ─── */
-var _DL_MAX_TASKS = 400;
-var _DL_MAX_ELAPSED = 500;
+var _DL_MAX_TASKS = 250;
+var _DL_MAX_ELAPSED = 350;
 var _DL_REQUEST_TIMEOUT = 8000;
-var _DL_CONCURRENT = 6;
-var _DL_CHUNK_DELAY = 200;
+var _DL_CONCURRENT = 10;
+var _DL_CHUNK_DELAY = 100;
 
-/* ─── Activity buffer (days before/after period) ─── */
-var _DL_ACTIVITY_BUFFER_DAYS = 14;
+/* ─── Activity buffer (days before/after period) ───
+   v7.1.0: Установлен в 0. Буфер 14 дней давал 58-дневное окно
+   и 1020 задач вместо 80-250. Без буфера — точный месяц. */
+var _DL_ACTIVITY_BUFFER_DAYS = 0;
 
 /* ─── Невосстановимые ошибки API ─── */
 var _DL_NON_RETRYABLE = [
@@ -221,14 +233,16 @@ function _prLoadElapsedConcurrent(taskIds) {
 /* ═══════════════════════════════════════════════════════════════
    Загрузка АКТИВНЫХ задач за период
 
-   ТОЛЬКО задачи с DATE_ACTIVITY в периоде + buffer 14 дней:
+   v7.1.0: ТОЛЬКО RESPONSIBLE_ID + точный период (без буфера):
    - RESPONSIBLE_ID = devId + >=DATE_ACTIVITY / <=DATE_ACTIVITY
-   - ACCOMPLICE = devId + >=DATE_ACTIVITY / <=DATE_ACTIVITY
+   - ACCOMPLICE запросы УДАЛЕНЫ — давали 111 лишних задач,
+     а elapsed соучастников находится через задачи ответственных
 
    НЕ загружаем:
    - Все задачи по группам (было 3260!)
    - Все исторические задачи
    - Задачи без activity filter
+   - ACCOMPLICE задачи (v7.1.0 — удалено)
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadActiveTasks(devIds, fromStr, toStr) {
   var allTasks = [];
@@ -244,9 +258,9 @@ function _prLoadActiveTasks(devIds, fromStr, toStr) {
   devIds.forEach(function(devId, idx) {
     var uid = String(devId);
 
-    /* RESPONSIBLE_ID с DATE_ACTIVITY фильтром */
+    /* RESPONSIBLE_ID с DATE_ACTIVITY фильтром — ЕДИНСТВЕННЫЙ источник задач */
     proms.push(
-      _dlDelay(idx * 150).then(function() {
+      _dlDelay(idx * 120).then(function() {
         return _dlWithTimeout(
           fetchTasksPaginated({
             filter: {
@@ -256,7 +270,7 @@ function _prLoadActiveTasks(devIds, fromStr, toStr) {
             },
             select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','DATE_ACTIVITY'],
             order: {ID: 'DESC'}
-          }, 3), /* МАКС 3 страницы = 150 задач на разработчика */
+          }, 2), /* МАКС 2 страницы = 100 задач на разработчика */
           15000
         );
       }).then(function(tasks) {
@@ -269,34 +283,6 @@ function _prLoadActiveTasks(devIds, fromStr, toStr) {
         return { tasks: arr, devId: uid, source: 'responsible' };
       }).catch(function() { return { tasks: [], devId: uid, source: 'responsible' }; })
     );
-
-    /* ACCOMPLICE с DATE_ACTIVITY фильтром */
-    proms.push(
-      _dlDelay(idx * 150 + 75).then(function() {
-        return _dlWithTimeout(
-          fetchTasksPaginated({
-            filter: {
-              ACCOMPLICE: devId,
-              '>=DATE_ACTIVITY': fromStr,
-              '<=DATE_ACTIVITY': toStr
-            },
-            select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','DATE_ACTIVITY'],
-            order: {ID: 'DESC'}
-          }, 2), /* МАКС 2 страницы = 100 задач */
-          15000
-        );
-      }).then(function(tasks) {
-        if (tasks && tasks._timeout) {
-          console.log('[DL] Таймаут загрузки задач ACCOMPLICE=' + uid);
-          return [];
-        }
-        var arr = Array.isArray(tasks) ? tasks : [];
-        if (arr.length > 0) {
-          console.log('[DL] ACCOMPLICE=' + uid + ' (' + (DEVELOPERS[uid]||'?') + '): ' + arr.length + ' задач');
-        }
-        return { tasks: arr, devId: uid, source: 'accomplice' };
-      }).catch(function() { return { tasks: [], devId: uid, source: 'accomplice' }; })
-    );
   });
 
   return Promise.all(proms).then(function(results) {
@@ -307,12 +293,12 @@ function _prLoadActiveTasks(devIds, fromStr, toStr) {
         if (!seenIds[id]) {
           seenIds[id] = true;
           allTasks.push(t);
-          if (r.source === 'responsible' || r.source === 'accomplice') {
+          if (r.source === 'responsible') {
             devTaskIds[r.devId].push(id);
           }
         } else {
-          /* Задача уже есть, но добавляем devId если RESPONSIBLE/ACCOMPLICE */
-          if (r.source === 'responsible' || r.source === 'accomplice') {
+          /* Задача уже есть, но добавляем devId если RESPONSIBLE */
+          if (r.source === 'responsible') {
             if (devTaskIds[r.devId].indexOf(id) < 0) {
               devTaskIds[r.devId].push(id);
             }
@@ -408,16 +394,14 @@ function PR_loadRealData(year, month, progressCb) {
   var toStr = fmt(range.to);
   var devIds = ACTIVE_DEV_IDS;
 
-  /* Activity buffer: период + 14 дней до и после */
-  var bufferMs = _DL_ACTIVITY_BUFFER_DAYS * 24 * 60 * 60 * 1000;
-  var activityFrom = new Date(range.from.getTime() - bufferMs);
-  var activityTo = new Date(range.to.getTime() + bufferMs);
-  var activityFromStr = fmt(activityFrom);
-  var activityToStr = fmt(activityTo);
+  /* v7.1.0: Activity buffer = 0. Используем ТОЧНЫЙ период.
+     Буфер 14 дней давал 58-дневное окно → 1020 задач вместо 80-250. */
+  var activityFromStr = fromStr;
+  var activityToStr = toStr;
 
   /* Метрики ДО/ПОСЛЕ */
   var metrics = {
-    pipelineVersion: '7.0.0',
+    pipelineVersion: '7.1.0',
     periodKey: prGetPeriodKey(year, month),
     oldTasksLoaded: 3260,    /* Старый пайплайн: 3260 задач */
     oldElapsedChecks: 2182,  /* Старый: 2182 проверки */
@@ -430,12 +414,12 @@ function PR_loadRealData(year, month, progressCb) {
     cacheHit: false
   };
 
-  console.log('[DL] ═══ PR_loadRealData v7.0.0 (gen=' + gen + ') ═══');
+  console.log('[DL] ═══ PR_loadRealData v7.1.0 (gen=' + gen + ') ═══');
   console.log('[DL] Период: ' + fromStr + ' — ' + toStr);
-  console.log('[DL] Activity filter: ' + activityFromStr + ' — ' + activityToStr +
-    ' (buffer ' + _DL_ACTIVITY_BUFFER_DAYS + ' дн.)');
+  console.log('[DL] Activity filter: ТОЧНЫЙ ПЕРИОД (без буфера)');
   console.log('[DL] Разработчиков: ' + devIds.length +
-    ', лимиты: tasks=' + _DL_MAX_TASKS + ', elapsed=' + _DL_MAX_ELAPSED);
+    ', лимиты: tasks=' + _DL_MAX_TASKS + ', elapsed=' + _DL_MAX_ELAPSED +
+    ', concurrent=' + _DL_CONCURRENT);
 
   if (progressCb) progressCb('Загрузка задач за период', fromStr + ' — ' + toStr);
 
@@ -509,9 +493,9 @@ function PR_loadRealData(year, month, progressCb) {
         console.log('[DL] DATE distribution (raw): ' + JSON.stringify(dateStats));
       }
 
-      /* ─── Фильтрация: период + наши разработчики ─── */
+      /* ─── Фильтрация: период + наши АКТИВНЫЕ разработчики ─── */
       var devIdSet = {};
-      DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
+      ACTIVE_DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
 
       var beforeFilter = allElapsed.length;
       allElapsed = allElapsed.filter(function(e) {
@@ -615,6 +599,8 @@ function _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range, metric
       tasksMeta: tasksMeta,
       from: range.from,
       to: range.to,
+      fromStr: fmt(range.from),
+      toStr: fmt(range.to),
       days: range.days,
       _metrics: metrics
     };

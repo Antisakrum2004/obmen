@@ -438,7 +438,7 @@ function _prRenderLoading() {
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: activity-filtered v7.0.0</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: activity-filtered v7.1.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -755,6 +755,17 @@ function _prRenderDevCards() {
   if (!_pr.projection.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет данных за выбранный период</div></div>';
 
   var filtered = _prGetFilteredProjection();
+
+  /* v7.1.0: Диагностика — логируем какие разработчики рендерятся */
+  console.log('[PR] _prRenderDevCards: projection=' + _pr.projection.length +
+    ', filtered=' + filtered.length +
+    ', filters=' + JSON.stringify(_pr.filters));
+  filtered.forEach(function(dev) {
+    console.log('[PR]   Рендер: ' + dev.developerName +
+      ' (id=' + dev.developerId + ', fact=' + dev.totalFactHours.toFixed(1) +
+      'h, base=' + (dev.totalBase || 0) + ', amount=' + dev.totalAmount + ')');
+  });
+
   if (!filtered.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет задач за выбранный период</div></div>';
 
   var densityCls = _pr.densityMode === 'compact' ? ' pr-compact' : '';
@@ -840,6 +851,15 @@ function _prEnsureAllDevsInProjection() {
 function _prGetFilteredProjection() {
   var f = _pr.filters;
   return _pr.projection.filter(function(dev) {
+    /* v7.1.0: Разработчики с baseSalary > 0 или payrollAmount > 0
+       ВСЕГДА видимы, даже если у них 0 часов.
+       Без этого фильтр по проекту/статусу скрывает Предеина и др. */
+    var hasVisiblePayroll = dev.totalBase > 0 || dev.totalAmount > 0;
+    var hasRows = false;
+    _pr.rows.forEach(function(r) {
+      if (String(r.developerId) === String(dev.developerId)) hasRows = true;
+    });
+
     if (f.developer && String(dev.developerId) !== String(f.developer)) return false;
     if (f.project) {
       /* Check if this developer has tasks in this project */
@@ -849,7 +869,8 @@ function _prGetFilteredProjection() {
           hasProject = true;
         }
       });
-      if (!hasProject) return false;
+      /* v7.1.0: Разработчики с baseSalary > 0 всегда проходят проектный фильтр */
+      if (!hasProject && !hasVisiblePayroll) return false;
     }
     if (f.status) {
       /* Check if this developer has tasks with this status */
@@ -859,7 +880,8 @@ function _prGetFilteredProjection() {
           hasStatus = true;
         }
       });
-      if (!hasStatus) return false;
+      /* v7.1.0: Разработчики с baseSalary > 0 всегда проходят статусный фильтр */
+      if (!hasStatus && !hasVisiblePayroll) return false;
     }
     return true;
   });
