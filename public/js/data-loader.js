@@ -1,26 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════
-   data-loader.js — Загрузчик данных из Bitrix24 (v6.7.0)
+   data-loader.js — Загрузчик данных из Bitrix24 (v6.8.0)
 
-   Ключевые изменения v6.7.0:
-   - УДАЛЁН _prLoadElapsedByUser (tasks.elapseditem.list НЕ СУЩЕСТВУЕТ
-     в Битрикс24 — вызывает ERROR_METHOD_NOT_FOUND + бесконечный ретрай)
-   - _dlBxPost: НЕ ретраит невосстановимые ошибки (METHOD_NOT_FOUND и т.п.)
-   - Batch elapsed: улучшена диагностика, обработка ошибок в batch-ответах
-   - Добавлен тестовый вызов task.elapseditem.getlist для одной задачи
-     при нулевых результатах — чтобы понять, работает ли метод вообще
-   - Для Предеина: последовательная загрузка elapsed по задачам из группы 26
-     если batch не нашёл его записи
-
-   Алгоритм загрузки:
-   1. Загрузка задач по RESPONSIBLE (по каждому разработчику)
-   2. Загрузка задач по GROUP_ID ВСЕХ проектов (включая исключённые!)
-   3. Batch-загрузка elapsed для ВСЕХ найденных задач
-   4. Диагностика: если Predein=0, загрузка elapsed по задачам группы 26
-   5. Фильтрация elapsed по периоду + нашим разработчикам
-   6. Загрузка проектов (sonet_group.get)
+   Ключевые изменения v6.8.0:
+   - DIAGNOSTIC MODE: логирует формат batch-ответа, USER_ID и даты
+     для ВСЕХ найденных elapsed записей
+   - Обработка batch-ответа в ЛЮБОМ формате:
+     прямой массив [...], объект {result:[...]}, объект {items:[...]}
+   - Диагностика: тестовый вызов task.elapseditem.getlist для одной задачи,
+     чтобы увидеть реальный формат ответа API
+   - Логирование groupId для первых задач — понять, почему группа 26 = 0
+   - Убран tasks.elapseditem.list (НЕ СУЩЕСТВУЕТ в Битрикс24)
+   - _dlBxPost НЕ ретраит METHOD_NOT_FOUND и др. невосстановимые ошибки
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Невосстановимые ошибки API (НЕ ретраить!) ─── */
+/* ─── Невосстановимые ошибки API ─── */
 var _DL_NON_RETRYABLE = [
   'ERROR_METHOD_NOT_FOUND',
   'ERROR_TASK_NOT_FOUND',
@@ -38,22 +31,19 @@ function _dlIsNonRetryable(errStr) {
   return false;
 }
 
-/* ─── Утилита: задержка ─── */
+/* ─── Утилиты ─── */
 function _dlDelay(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
-/* ─── Утилита: bxPost с retry (ТОЛЬКО для восстанимых ошибок!) ─── */
 function _dlBxPost(method, body, retries) {
   retries = retries || 1;
   return bxPost(method, body).then(function(r) {
     if (r && r.error) {
-      /* Невосстановимая ошибка — НЕ ретраим, сразу возвращаем */
       if (_dlIsNonRetryable(r.error)) {
         console.warn('[DL] НЕretryable ' + method + ': ' + r.error);
         return r;
       }
-      /* Восстановимая ошибка (502, таймаут) — ретраим */
       if (retries > 0) {
         console.warn('[DL] Retry ' + method + ' (' + retries + ' left): ' + r.error);
         return _dlDelay(2000).then(function() {
@@ -73,21 +63,66 @@ function _dlBxPost(method, body, retries) {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Извлечь массив elapsed из batch-результата одной команды.
+   Формат может быть ЛЮБЫМ:
+   - [...] — прямой массив
+   - {result: [...]} — объект с полем result
+   - {items: [...]} — объект с полем items
+   - {error: "..."} — ошибка
+   - null / false / число — нет данных
+   ═══════════════════════════════════════════════════════════════ */
+function _dlExtractElapsedItems(cmdResult, key) {
+  if (!cmdResult) return [];
+
+  /* Прямой массив */
+  if (Array.isArray(cmdResult)) return cmdResult;
+
+  /* Объект с ошибкой */
+  if (typeof cmdResult === 'object' && cmdResult.error) return [];
+
+  /* Объект с полем result (может быть массив) */
+  if (typeof cmdResult === 'object' && cmdResult.result) {
+    if (Array.isArray(cmdResult.result)) return cmdResult.result;
+    /* result может быть объектом с items */
+    if (typeof cmdResult.result === 'object' && cmdResult.result.items) {
+      if (Array.isArray(cmdResult.result.items)) return cmdResult.result.items;
+    }
+  }
+
+  /* Объект с полем items */
+  if (typeof cmdResult === 'object' && cmdResult.items) {
+    if (Array.isArray(cmdResult.items)) return cmdResult.items;
+  }
+
+  /* Неизвестный формат — логируем первые 3 */
+  if (typeof cmdResult === 'object' && Object.keys(cmdResult).length > 0) {
+    if (!_dlExtractElapsedItems._warnCount) _dlExtractElapsedItems._warnCount = 0;
+    if (_dlExtractElapsedItems._warnCount < 3) {
+      _dlExtractElapsedItems._warnCount++;
+      console.warn('[DL] Неизвестный формат batch-результата для key=' + key +
+        ': type=' + typeof cmdResult + ' keys=' + Object.keys(cmdResult).join(',') +
+        ' sample=' + JSON.stringify(cmdResult).substring(0, 300));
+    }
+  }
+
+  return [];
+}
+
 /* ─── Загрузка данных за период ─── */
 function prLoadPeriodData(year, month) {
   return PR_loadRealData(year, month);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Загрузка задач по GROUP_ID (ВСЕХ проектов, включая исключённые!)
+   Загрузка задач по GROUP_ID (ВСЕХ проектов)
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadTasksByGroups(lookbackStr) {
-  var groupIds = Object.keys(PROJECTS); /* ВСЕ группы, без EXCLUDE_GROUPS! */
-
+  var groupIds = Object.keys(PROJECTS);
   var allTasks = [];
   var seenIds = {};
+  var groupCount = {}; /* Диагностика: сколько задач в каждой группе */
 
-  /* Загружаем по 3 группы параллельно (anti-502) */
   var proms = [];
   for (var i = 0; i < groupIds.length; i += 3) {
     var chunk = groupIds.slice(i, i + 3);
@@ -103,8 +138,10 @@ function _prLoadTasksByGroups(lookbackStr) {
               select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE'],
               order: {ID: 'DESC'}
             }, 5).then(function(tasks) {
-              return Array.isArray(tasks) ? tasks : [];
-            }).catch(function() { return []; });
+              var arr = Array.isArray(tasks) ? tasks : [];
+              groupCount[gid] = arr.length;
+              return arr;
+            }).catch(function() { groupCount[gid] = 0; return []; });
           }));
         }).then(function(results) {
           results.forEach(function(tasks) {
@@ -120,12 +157,18 @@ function _prLoadTasksByGroups(lookbackStr) {
 
   return Promise.all(proms).then(function() {
     console.log('[DL] Задачи по группам: ' + allTasks.length + ' из ' + groupIds.length + ' групп');
+    /* Диагностика: сколько задач в каждой группе */
+    Object.keys(groupCount).sort(function(a,b){return (groupCount[b]||0)-(groupCount[a]||0);}).forEach(function(gid) {
+      if (groupCount[gid] > 0) {
+        console.log('[DL]   Группа ' + gid + ' (' + (PROJECTS[gid]||'?') + '): ' + groupCount[gid] + ' задач');
+      }
+    });
     return allTasks;
   });
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Загрузка метаданных потерянных задач
+   Загрузка потерянных задач
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadOrphanTasks(orphanTaskIds, tasksMeta, allTasks) {
   if (!orphanTaskIds.length) return Promise.resolve();
@@ -183,8 +226,7 @@ function _prLoadOrphanTasks(orphanTaskIds, tasksMeta, allTasks) {
 
 /* ═══════════════════════════════════════════════════════════════
    Диагностика: тестовый вызов elapsed для одной задачи
-   Вызывается если batch вернул 0 записей — чтобы понять,
-   работает ли метод вообще и какой формат ответа.
+   Вызывается ВСЕГДА — чтобы увидеть формат ответа API.
    ═══════════════════════════════════════════════════════════════ */
 function _dlDiagElapsed(testTaskId) {
   if (!testTaskId) return Promise.resolve();
@@ -192,30 +234,45 @@ function _dlDiagElapsed(testTaskId) {
   return bxPost('task.elapseditem.getlist', { TASK_ID: testTaskId }).then(function(r) {
     if (r && r.error) {
       console.warn('[DL] DIAG: task.elapseditem.getlist ERROR: ' + r.error + ' — ' + (r.error_description || ''));
-      /* Пробуем task.elapseditem.list */
-      return bxPost('task.elapseditem.list', { TASK_ID: testTaskId }).then(function(r2) {
+      /* Пробуем POST-вариант с параметром в теле */
+      return bxPost('task.elapseditem.getlist', { TASK_ID: testTaskId, FILTER: {}, ORDER: { ID: 'ASC' } }).then(function(r2) {
         if (r2 && r2.error) {
-          console.warn('[DL] DIAG: task.elapseditem.list ERROR: ' + r2.error + ' — ' + (r2.error_description || ''));
-        } else {
-          var items2 = r2 && r2.result;
-          console.log('[DL] DIAG: task.elapseditem.list OK! items=' + (Array.isArray(items2) ? items2.length : typeof items2));
-          if (items2 && !Array.isArray(items2)) {
-            console.log('[DL] DIAG: result type=' + typeof items2 + ' keys=' + (typeof items2 === 'object' ? Object.keys(items2).join(',') : ''));
+          console.warn('[DL] DIAG: вариант2 тоже ERROR: ' + r2.error);
+        } else if (r2 && r2.result) {
+          var items2 = r2.result;
+          console.log('[DL] DIAG: вариант2 OK! type=' + (Array.isArray(items2) ? 'array[' + items2.length + ']' : typeof items2));
+          if (!Array.isArray(items2) && typeof items2 === 'object') {
+            console.log('[DL] DIAG: keys=' + Object.keys(items2).join(','));
+            if (items2.result && Array.isArray(items2.result)) {
+              console.log('[DL] DIAG: items.result=' + items2.result.length + ' записей');
+            }
           }
           if (Array.isArray(items2) && items2.length > 0) {
-            console.log('[DL] DIAG: sample item keys=' + Object.keys(items2[0]).join(','));
+            console.log('[DL] DIAG: sample=' + JSON.stringify(items2[0]).substring(0, 500));
           }
         }
         return r2;
       });
     }
     var items = r && r.result;
-    console.log('[DL] DIAG: task.elapseditem.getlist OK! items=' + (Array.isArray(items) ? items.length : typeof items));
-    if (items && !Array.isArray(items)) {
-      console.log('[DL] DIAG: result type=' + typeof items + ' keys=' + (typeof items === 'object' ? Object.keys(items).join(',') : ''));
+    console.log('[DL] DIAG: task.elapseditem.getlist OK! type=' + (Array.isArray(items) ? 'array[' + items.length + ']' : typeof items));
+    if (items && !Array.isArray(items) && typeof items === 'object') {
+      console.log('[DL] DIAG: result keys=' + Object.keys(items).join(','));
+      if (items.result && Array.isArray(items.result)) {
+        console.log('[DL] DIAG: items.result=' + items.result.length + ' записей');
+        items = items.result;
+      }
     }
     if (Array.isArray(items) && items.length > 0) {
-      console.log('[DL] DIAG: sample item keys=' + Object.keys(items[0]).join(','));
+      console.log('[DL] DIAG: sample=' + JSON.stringify(items[0]).substring(0, 500));
+      /* Логируем USER_ID и CREATED_DATE для всех записей */
+      items.forEach(function(e, idx) {
+        if (idx < 10) {
+          console.log('[DL] DIAG:   #' + idx + ' ID=' + e.ID + ' USER_ID=' + e.USER_ID +
+            ' TASK_ID=' + e.TASK_ID + ' DATE=' + (e.CREATED_DATE || '').substring(0, 19) +
+            ' MIN=' + e.MINUTES + ' SEC=' + e.SECONDS);
+        }
+      });
     }
     return r;
   }).catch(function(e) {
@@ -225,17 +282,14 @@ function _dlDiagElapsed(testTaskId) {
 
 /* ═══════════════════════════════════════════════════════════════
    Fallback для Предеина: загрузка elapsed по задачам группы 26
-   Вызывается последовательно (не batch), по 5 задач за раз.
-   Это медленно, но надёжно — batch может молча проглатывать ошибки.
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadElapsedForPredein(taskIds, seenElapsedIds, allElapsed) {
   if (!taskIds || !taskIds.length) return Promise.resolve(0);
 
-  console.log('[DL] Fallback Предеин: загрузка elapsed для ' + taskIds.length + ' задач последовательно...');
+  console.log('[DL] Fallback Предеин: загрузка elapsed для ' + taskIds.length + ' задач...');
   var added = 0;
   var proms = [];
 
-  /* Обрабатываем по 5 задач одновременно */
   for (var i = 0; i < taskIds.length; i += 5) {
     var chunk = taskIds.slice(i, i + 5);
     (function(taskChunk, chunkIdx) {
@@ -243,11 +297,14 @@ function _prLoadElapsedForPredein(taskIds, seenElapsedIds, allElapsed) {
         _dlDelay(chunkIdx * 200).then(function() {
           return Promise.all(taskChunk.map(function(tid) {
             return bxPost('task.elapseditem.getlist', { TASK_ID: tid }).then(function(r) {
-              if (r && r.error) return; /* Нет elapsed или ошибка — пропускаем */
+              if (r && r.error) return;
               var items = r && r.result;
+              /* Обработка разных форматов */
+              if (items && typeof items === 'object' && !Array.isArray(items) && items.result) {
+                items = items.result;
+              }
               if (!Array.isArray(items)) return;
               items.forEach(function(e) {
-                /* Фильтруем только Предеина */
                 if (String(e.USER_ID) !== '116') return;
                 var eid = String(e.ID || '');
                 if (eid && !seenElapsedIds[eid]) {
@@ -256,7 +313,7 @@ function _prLoadElapsedForPredein(taskIds, seenElapsedIds, allElapsed) {
                   added++;
                 }
               });
-            }).catch(function() {}); /* Молча игнорируем ошибки отдельных задач */
+            }).catch(function() {});
           }));
         })
       );
@@ -266,6 +323,8 @@ function _prLoadElapsedForPredein(taskIds, seenElapsedIds, allElapsed) {
   return Promise.all(proms).then(function() {
     if (added > 0) {
       console.log('[DL] Fallback Предеин: добавлено ' + added + ' elapsed записей');
+    } else {
+      console.log('[DL] Fallback Предеин: 0 записей добавлено');
     }
     return added;
   });
@@ -280,11 +339,10 @@ function PR_loadRealData(year, month) {
   var toStr = fmt(range.to);
   var devIds = ACTIVE_DEV_IDS;
 
-  /* Look back 6 месяцев */
   var lookbackDate = new Date(year, month - 1 - 6, 1);
   var lookbackStr = fmt(lookbackDate);
 
-  console.log('[DL] PR_loadRealData v6.7.0: ' + fromStr + ' — ' + toStr +
+  console.log('[DL] PR_loadRealData v6.8.0: ' + fromStr + ' — ' + toStr +
     ', devs=' + devIds.length);
 
   /* ═══ Phase 1: Поиск задач по RESPONSIBLE ═══ */
@@ -302,7 +360,7 @@ function PR_loadRealData(year, month) {
     );
   });
 
-  /* ═══ Phase 2: Загрузка задач по ВСЕМ группам проектов ═══ */
+  /* ═══ Phase 2: Загрузка задач по ВСЕМ группам ═══ */
   var groupTaskProm = _prLoadTasksByGroups(lookbackStr);
 
   /* ═══ Запуск обеих фаз параллельно ═══ */
@@ -313,7 +371,7 @@ function PR_loadRealData(year, month) {
     var taskArrays = phases[0];
     var groupTasks = phases[1];
 
-    /* ─── Собрать задачи, дедупликация по ID ─── */
+    /* ─── Собрать задачи, дедупликация ─── */
     var allTasks = [];
     var seenTaskIds = {};
 
@@ -332,12 +390,37 @@ function PR_loadRealData(year, month) {
 
     console.log('[DL] Найдено задач: ' + allTasks.length + ' (дедуплицировано)');
 
+    /* ─── Диагностика: какие groupId у задач ─── */
+    var groupIdStats = {};
+    var g26Sample = null;
+    allTasks.forEach(function(t) {
+      var gid = String(t.groupId || t.GROUP_ID || (t.group && t.group.id) || '0');
+      groupIdStats[gid] = (groupIdStats[gid] || 0) + 1;
+      if (gid === '26' && !g26Sample) {
+        g26Sample = t;
+      }
+    });
+    console.log('[DL] GroupId distribution: ' + JSON.stringify(groupIdStats));
+    if (g26Sample) {
+      console.log('[DL] Группа 26 SAMPLE: id=' + g26Sample.id + ' title=' + (g26Sample.title||'').substring(0,60) +
+        ' groupId=' + g26Sample.groupId + ' GROUP_ID=' + g26Sample.GROUP_ID +
+        ' group=' + JSON.stringify(g26Sample.group).substring(0, 100));
+    } else {
+      console.log('[DL] НЕТ задач с groupId=26! Проверяем другие поля...');
+      /* Логируем первые 5 задач и их group-поля */
+      allTasks.slice(0, 5).forEach(function(t, idx) {
+        console.log('[DL]   Задача #' + idx + ': id=' + t.id +
+          ' groupId=' + t.groupId + ' GROUP_ID=' + t.GROUP_ID +
+          ' group=' + JSON.stringify(t.group).substring(0, 100));
+      });
+    }
+
     /* ─── Построить tasksMeta ─── */
     var tasksMeta = {};
     var taskIdList = [];
     allTasks.forEach(function(t) {
       var id = String(t.id || t.ID);
-      var gid = String(t.groupId || t.GROUP_ID || '0');
+      var gid = String(t.groupId || t.GROUP_ID || (t.group && t.group.id) || '0');
       var pname = (t.group && t.group.name) || PROJECTS[gid] || '';
       tasksMeta[id] = {
         groupId: gid,
@@ -357,15 +440,14 @@ function PR_loadRealData(year, month) {
       };
     }
 
-    /* ═══ Phase 3: Batch-загрузка elapsed для ВСЕХ задач ═══ */
+    /* ═══ Phase 3: Batch-загрузка elapsed ═══ */
     console.log('[DL] Batch-загрузка elapsed для ' + taskIdList.length + ' задач...');
 
     var allElapsed = [];
     var seenElapsedIds = {};
     var batchProms = [];
     var BATCH_SIZE = 25;
-    /* Статистика для диагностики */
-    var _batchStats = { total: 0, success: 0, empty: 0, error: 0, errorSamples: [] };
+    var _batchStats = { total: 0, success: 0, empty: 0, error: 0, errorSamples: [], formatSample: null };
 
     for (var i = 0; i < taskIdList.length; i += BATCH_SIZE) {
       var chunk = taskIdList.slice(i, i + BATCH_SIZE);
@@ -377,10 +459,9 @@ function PR_loadRealData(year, month) {
         batchProms.push(
           _dlDelay(batchIdx * 300).then(function() {
             _batchStats.total++;
-            return _dlBxPost('batch', { halt: 0, cmd: batchCmd }, 0); /* 0 retries для batch */
+            return _dlBxPost('batch', { halt: 0, cmd: batchCmd }, 0);
           }).then(function(r) {
             if (r && r.error) {
-              /* Весь batch упал */
               _batchStats.error++;
               if (_batchStats.errorSamples.length < 3) {
                 _batchStats.errorSamples.push(r.error);
@@ -398,16 +479,22 @@ function PR_loadRealData(year, month) {
             }
 
             var batchHasItems = false;
-            var batchErrorCount = 0;
             Object.keys(results).forEach(function(key) {
-              var items = results[key];
-              /* Если это объект с error — задача без elapsed или ошибка */
-              if (items && typeof items === 'object' && !Array.isArray(items) && items.error) {
-                batchErrorCount++;
-                return; /* Это нормально — не у всех задач есть elapsed */
+              var cmdResult = results[key];
+
+              /* Сохранить образец формата первого непустого результата */
+              if (!_batchStats.formatSample && cmdResult && typeof cmdResult === 'object') {
+                if (Array.isArray(cmdResult) && cmdResult.length > 0) {
+                  _batchStats.formatSample = 'array[' + cmdResult.length + '] keys=' + Object.keys(cmdResult[0]).join(',');
+                } else if (!Array.isArray(cmdResult) && !cmdResult.error) {
+                  _batchStats.formatSample = 'object keys=' + Object.keys(cmdResult).join(',');
+                }
               }
-              if (!Array.isArray(items)) return;
+
+              /* Извлечь elapsed записи из любого формата */
+              var items = _dlExtractElapsedItems(cmdResult, key);
               if (items.length > 0) batchHasItems = true;
+
               items.forEach(function(e) {
                 var eid = String(e.ID || '');
                 if (eid && !seenElapsedIds[eid]) {
@@ -421,13 +508,6 @@ function PR_loadRealData(year, month) {
               _batchStats.success++;
             } else {
               _batchStats.empty++;
-            }
-            if (batchErrorCount > 0 && batchErrorCount === chunkSize) {
-              /* Все задачи в батче вернули ошибку — подозрительно */
-              if (_batchStats.errorSamples.length < 3) {
-                var sampleKey = Object.keys(results)[0];
-                _batchStats.errorSamples.push('all-errors: ' + JSON.stringify(results[sampleKey]).substring(0, 200));
-              }
             }
           }).catch(function(e) {
             _batchStats.error++;
@@ -444,42 +524,68 @@ function PR_loadRealData(year, month) {
       console.log('[DL] Batch stats: total=' + _batchStats.total +
         ' success=' + _batchStats.success + ' empty=' + _batchStats.empty +
         ' error=' + _batchStats.error);
+      console.log('[DL] Batch format sample: ' + (_batchStats.formatSample || 'none'));
       if (_batchStats.errorSamples.length > 0) {
         console.warn('[DL] Batch error samples: ' + _batchStats.errorSamples.join(' | '));
       }
 
       console.log('[DL] Elapsed загружено: ' + allElapsed.length + ' записей (до фильтрации)');
 
-      /* ─── Диагностика: сколько elapsed у Предеина (user=116) ─── */
+      /* ─── ДЕТАЛЬНАЯ диагностика: USER_ID и даты ─── */
+      var userIdStats = {};
+      var dateStats = {};
+      allElapsed.forEach(function(e, idx) {
+        var uid = String(e.USER_ID || '?');
+        userIdStats[uid] = (userIdStats[uid] || 0) + 1;
+        var d = (e.CREATED_DATE || '').substring(0, 10);
+        dateStats[d] = (dateStats[d] || 0) + 1;
+        /* Логируем первые 20 записей подробно */
+        if (idx < 20) {
+          console.log('[DL]   elapsed #' + idx + ': ID=' + e.ID + ' USER=' + e.USER_ID +
+            ' TASK=' + e.TASK_ID + ' DATE=' + (e.CREATED_DATE || '').substring(0, 19) +
+            ' MIN=' + e.MINUTES + ' SEC=' + e.SECONDS);
+        }
+      });
+      console.log('[DL] USER_ID distribution: ' + JSON.stringify(userIdStats));
+      console.log('[DL] DATE distribution: ' + JSON.stringify(dateStats));
+
+      /* ─── Предеин ─── */
       var predeinBefore = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
       console.log('[DL] Предеин (116): ' + predeinBefore.length + ' записей до фильтрации');
 
-      /* ─── Если elapsed = 0 — диагностика: тестовый вызов для одной задачи ─── */
-      if (allElapsed.length === 0 && taskIdList.length > 0) {
-        return _dlDiagElapsed(taskIdList[0]).then(function() {
-          return _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta, taskIdList, range, fromStr, toStr, devIds);
+      /* ─── ВСЕГДА: тестовый вызов для одной задачи ─── */
+      var testTaskId = taskIdList[0];
+      /* Найти задачу с наибольшим количеством elapsed для более информативного теста */
+      if (allElapsed.length > 0) {
+        var taskElapsedCount = {};
+        allElapsed.forEach(function(e) { taskElapsedCount[e.TASK_ID] = (taskElapsedCount[e.TASK_ID] || 0) + 1; });
+        var maxTask = '';
+        var maxCount = 0;
+        Object.keys(taskElapsedCount).forEach(function(tid) {
+          if (taskElapsedCount[tid] > maxCount) { maxCount = taskElapsedCount[tid]; maxTask = tid; }
         });
+        if (maxTask) testTaskId = maxTask;
       }
 
-      return _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta, taskIdList, range, fromStr, toStr, devIds);
+      return _dlDiagElapsed(testTaskId).then(function() {
+        return _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta, taskIdList, range, fromStr, toStr, devIds);
+      });
     });
   });
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Продолжение после загрузки elapsed: fallback для Предеина,
-   фильтрация, потерянные задачи, проекты
+   Продолжение: fallback Предеин, фильтрация, потерянные задачи
    ═══════════════════════════════════════════════════════════════ */
 function _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta, taskIdList, range, fromStr, toStr, devIds) {
 
-  /* ─── Fallback: загрузка elapsed для Предеина по задачам группы 26 ─── */
+  /* ─── Fallback: загрузка elapsed для Предеина ─── */
   var predeinBefore = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
   var predeinFallbackNeeded = predeinBefore.length === 0;
 
   var fallbackProm;
   if (predeinFallbackNeeded) {
-    /* Собрать задачи из группы 26 или задачи, где Предеин не ответственный,
-       но мог списывать время */
+    /* Собрать задачи для проверки */
     var group26TaskIds = [];
     var predeinNotResponsibleIds = [];
     taskIdList.forEach(function(tid) {
@@ -487,13 +593,14 @@ function _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta
       if (meta && String(meta.groupId) === '26') {
         group26TaskIds.push(tid);
       }
-      /* Также: задачи, где Предеин НЕ ответственный — он мог списывать на чужие */
       if (meta && String(meta.responsibleId) !== '116') {
         predeinNotResponsibleIds.push(tid);
       }
     });
 
-    /* Ограничиваем список — только задачи из группы 26 + до 100 чужих задач */
+    console.log('[DL] Fallback Предеин: группа 26 задач=' + group26TaskIds.length +
+      ', чужих задач=' + predeinNotResponsibleIds.length);
+
     var fallbackTaskIds = group26TaskIds.slice();
     predeinNotResponsibleIds.forEach(function(tid) {
       if (fallbackTaskIds.indexOf(tid) < 0 && fallbackTaskIds.length < 200) {
@@ -501,35 +608,35 @@ function _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta
       }
     });
 
-    console.log('[DL] Fallback Предеин: группа 26 задач=' + group26TaskIds.length +
-      ', всего для проверки=' + fallbackTaskIds.length);
     fallbackProm = _prLoadElapsedForPredein(fallbackTaskIds, seenElapsedIds, allElapsed);
   } else {
     fallbackProm = Promise.resolve(0);
   }
 
   return fallbackProm.then(function() {
-    /* Обновить диагноз Предеина */
     predeinBefore = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
     console.log('[DL] Предеин (116): ' + predeinBefore.length + ' записей (после fallback)');
-    predeinBefore.forEach(function(e) {
-      console.log('[DL]   Предеин elapsed: TASK=' + e.TASK_ID + ' DATE=' + (e.CREATED_DATE || '').substring(0,10) +
-        ' MIN=' + e.MINUTES + ' SEC=' + e.SECONDS);
-    });
 
     /* ─── Фильтрация: период + наши разработчики ─── */
     var devIdSet = {};
     DEV_IDS.forEach(function(id) { devIdSet[String(id)] = true; });
 
+    /* Диагностика: какие USER_ID есть и кто в devIdSet */
+    console.log('[DL] devIdSet: ' + Object.keys(devIdSet).join(','));
+
+    var beforeFilter = allElapsed.length;
     allElapsed = allElapsed.filter(function(e) {
       var d = (e.CREATED_DATE || '').substring(0, 10);
       if (d < fromStr || d > toStr) return false;
       return devIdSet[String(e.USER_ID)];
     });
 
+    console.log('[DL] Фильтрация: ' + beforeFilter + ' → ' + allElapsed.length +
+      ' (период ' + fromStr + ' — ' + toStr + ')');
+
     /* Диагностика: Предеин после фильтрации */
     var predeinAfter = allElapsed.filter(function(e) { return String(e.USER_ID) === '116'; });
-    console.log('[DL] Предеин (116): ' + predeinAfter.length + ' записей после фильтрации (' + fromStr + ' — ' + toStr + ')');
+    console.log('[DL] Предеин (116): ' + predeinAfter.length + ' записей после фильтрации');
 
     /* Создать плейсхолдеры для задач без метаданных */
     var orphanTaskIds = [];
@@ -543,8 +650,6 @@ function _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta
         };
       }
     });
-
-    console.log('[DL] После фильтрации: ' + allElapsed.length + ' elapsed записей');
 
     /* Статистика по разработчикам */
     var devMinutes = {};
@@ -572,7 +677,7 @@ function _prContinueAfterElapsed(allElapsed, seenElapsedIds, allTasks, tasksMeta
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Загрузка проектов + финальная сборка результата
+   Загрузка проектов + финальная сборка
    ═══════════════════════════════════════════════════════════════ */
 function _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range) {
   return _dlBxPost('sonet_group.get', { select: ['ID','NAME'] }, 0).then(function(r) {
@@ -589,7 +694,6 @@ function _prLoadProjectsAndFinish(allElapsed, allTasks, tasksMeta, range) {
       });
     }
 
-    /* Обновить groupName из загруженных проектов */
     Object.keys(tasksMeta).forEach(function(tid) {
       var meta = tasksMeta[tid];
       var gid = meta.groupId;
