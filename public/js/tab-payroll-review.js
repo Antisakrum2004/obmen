@@ -438,7 +438,7 @@ function _prRenderLoading() {
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: concurrent-POST v6.11.0</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: activity-filtered v6.12.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -1337,7 +1337,7 @@ function _prRenderDebug() {
   var h = '<div class="pr-debug">';
   h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
   h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: concurrent-POST v6.11.0</div>';
+  h += '<div class="pr-debug-row">Pipeline: activity-filtered v6.12.0</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
@@ -2316,7 +2316,7 @@ window.__PAYROLL_PERF = function() {
   var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
   var result = {
     version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'unknown',
-    pipeline: 'concurrent-POST v6.11.0',
+    pipeline: 'activity-filtered v6.12.0',
     timing: {
       loadData: loadMs + 'ms',
       normalization: normMs + 'ms',
