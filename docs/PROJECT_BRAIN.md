@@ -51,9 +51,42 @@
 - Мьютекс generation для отмены устаревших загрузок
 - Всё ещё использовал `>=CREATED_DATE` вместо `>=DATE_ACTIVITY`
 
-### ПР-7.0.0 — ACTIVITY-FILTERED TASKS-FIRST (текущая)
+### ПР-7.0.0 — ACTIVITY-FILTERED TASKS-FIRST
 
-## Архитектура v7.0.0
+Первоначальная реализация activity-filtered pipeline. Результаты:
+- Buffer 14 дней создавал 58-дневное окно (Apr 17 — Jun 14)
+- 5 из 8 разработчиков упёрлись в лимит 150 задач (3 стр × 50)
+- ACCOMPLICE запросы добавляли 111 лишних задач
+- Итого: 1020 задач → обрезано до 400 → 86 секунд загрузка
+- Предеин добавлялся в projection, но фильтровался в UI
+- Только 120 из 578 elapsed записей были за май (79% мусор)
+
+### ПР-7.1.0 — Pipeline fix (текущая)
+
+Критические исправления по результатам v7.0.0:
+
+1. **Убран buffer 14 дней** — теперь ТОЧНЫЙ период (2026-05-01 — 2026-05-31)
+   - Буфер давал 58-дневное окно → 1020 задач
+   - Без буфера: ожидается ~100-200 задач
+
+2. **Убраны ACCOMPLICE запросы** — 111 лишних задач
+   - Elapsed соучастников находится через задачи RESPONSIBLE_ID
+   - `task.elapseditem.getlist(taskId)` возвращает ВСЕ записи для задачи
+
+3. **Пагинация 3→2 страницы** (150→100 задач на разработчика)
+
+4. **Снижены лимиты**: tasks 400→250, elapsed 500→350
+
+5. **Увеличена конкурентность**: 6→10 параллельных, delay 200→100ms
+
+6. **Исправлена видимость Предеина** — разработчики с baseSalary>0
+   теперь проходят проектные и статусные фильтры
+
+7. **Добавлен fromStr/toStr** в объект данных для нормализатора
+
+8. **ACTIVE_DEV_IDS вместо DEV_IDS** при фильтрации elapsed
+
+## Архитектура v7.1.0
 
 ### Pipeline
 
@@ -66,42 +99,50 @@
 │ 2. tasks.task.list (per developer)              │
 │    FILTER:                                       │
 │      RESPONSIBLE_ID = devId                      │
-│      >=DATE_ACTIVITY = periodStart - 14 дней     │
-│      <=DATE_ACTIVITY = periodEnd + 14 дней       │
-│    (+ ACCOMPLICE для каждого devId)              │
-│    МАКС 3 страницы = 150 задач/разработчик       │
+│      >=DATE_ACTIVITY = periodStart (ТОЧНО)       │
+│      <=DATE_ACTIVITY = periodEnd (ТОЧНО)         │
+│    АССОЦИАТЫ НЕ ЗАГРУЖАЮТСЯ (v7.1.0)           │
+│    МАКС 2 страницы = 100 задач/разработчик       │
 ├─────────────────────────────────────────────────┤
 │ 3. Дедупликация TASK_ID                          │
-│    Hard limit: 400 задач                         │
+│    Hard limit: 250 задач                         │
 ├─────────────────────────────────────────────────┤
 │ 4. task.elapseditem.getlist (POST)              │
 │    ТОЛЬКО для найденных taskIds                  │
 │    Формат: [taskId, {ID:'DESC'}, {}]             │
-│    Параллельно: 6 concurrent                     │
+│    Параллельно: 10 concurrent                    │
 │    Таймаут: 8с на запрос                         │
-│    Hard limit: 500 elapsed записей               │
+│    Hard limit: 350 elapsed записей               │
 ├─────────────────────────────────────────────────┤
 │ 5. Фильтрация по выбранному месяцу              │
 │    CREATED_DATE >= fromStr AND <= toStr          │
-│    Только DEV_IDS разработчики                   │
+│    Только ACTIVE_DEV_IDS разработчики            │
 ├─────────────────────────────────────────────────┤
 │ 6. Загрузка проектов (sonet_group.get)           │
 │    + orphan tasks (batch, max 50)                │
 ├─────────────────────────────────────────────────┤
 │ 7. PayrollCache.set(key, data, 5 мин)           │
+│    + fromStr/toStr для нормализатора             │
 └─────────────────────────────────────────────────┘
 ```
 
 ### Ожидаемый масштаб
-- 80-250 задач на месяц
-- 20-60 API вызовов
-- 3-10 секунд загрузка
+- 100-200 задач на месяц (vs 1020 в v7.0.0)
+- 15-40 API вызовов (vs 67 в v7.0.0)
+- 5-15 секунд загрузка (vs 86.2с в v7.0.0)
 
 ### СТАРОГО масштаб (до v7.0.0)
 - 3260 задач
 - 2182+ elapsed checks
 - 273+ batch chunks
 - Минуты загрузки, 502 таймауты
+
+### v7.0.0 масштаб (с буфером 14 дней)
+- 1020 задач (8 разраб × ~130 + ACCOMPLICE 111)
+- 400 elapsed checks (обрезано с 400 задач)
+- 67 API chunks
+- 86.2 секунды
+- 578 raw elapsed → 120 за май (79% мусор из других месяцев)
 
 ### Ключевые правила
 
@@ -112,12 +153,15 @@
 - No-date task loading
 - Unbounded pagination
 - Tasks without activity filter
+- ACCOMPLICE queries (v7.1.0 — удалено, слишком много задач)
+- Activity buffer > 0 дней (v7.1.0 — удалено, 58-дневное окно)
 
 #### Обязательно
-- DATE_ACTIVITY фильтр с buffer 14 дней
-- Hard limits: 400 задач, 500 elapsed
+- DATE_ACTIVITY фильтр ТОЧНО за месяц (без буфера)
+- Hard limits: 250 задач, 350 elapsed
 - Кэш PayrollCache с TTL 5 мин
 - Partial data rendering (если часть API упала)
+- ACTIVE_DEV_IDS при фильтрации elapsed
 
 ### Видимость разработчиков
 
@@ -131,13 +175,19 @@ tasks.length > 0
   OR adjustments.length > 0
 ```
 
-Реализация: `_prEnsureAllDevsInProjection()` добавляет ВСЕХ активных
-разработчиков в projection, даже с 0 часов, но с их baseSalary.
+Реализация (v7.1.0):
+- `_prEnsureAllDevsInProjection()` добавляет ВСЕХ активных
+  разработчиков в projection, даже с 0 часов, но с их baseSalary
+- `_prGetFilteredProjection()` НЕ фильтрует разработчиков с
+  `totalBase > 0 || totalAmount > 0` при проектных/статусных фильтрах
+- Диагностический лог: каждый рендер карточек выводит список
+  разработчиков с их метриками
 
 **Предеин (ID 116)**: rate=0, base=200000, клиент rate=0
 - Всегда виден благодаря baseSalary > 0
 - Карточка показывает: 0.0h факт, 200,000 затраты
 - Риски: LOW LOAD, RATE=0
+- v7.1.0: Проходит проектный и статусный фильтры благодаря hasVisiblePayroll
 
 ### Bitrix24 API
 
@@ -155,8 +205,8 @@ tasks.length > 0
 ```
 public/js/
 ├── core.js                      — Константы, API, утилиты (ПР-7.0.0)
-├── data-loader.js                — Pipeline загрузки данных (v7.0.0)
-├── tab-payroll-review.js         — UI модуль (v5.0.0+)
+├── data-loader.js                — Pipeline загрузки данных (v7.1.0)
+├── tab-payroll-review.js         — UI модуль (v5.0.0+, Predein fix v7.1.0)
 ├── payroll-review-styles.js      — CSS стили
 ├── payroll-review-export.js      — CSV экспорт
 ├── payroll-review-storage.js     — localStorage обёртка
