@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Payroll Review v7.0 — Админка Mockup</title>
+<style>
+  :root {
+    --bg: #08090d;
+    --bg1: #0d1017;
+    --bg2: #131720;
+    --text: #e4e8ee;
+    --text2: #a0aec0;
+    --text3: #5a6578;
+    --accent: #00d4ff;
+    --accent-hover: #00b8e6;
+    --green: #22d47e;
+    --red: #f04848;
+    --yellow: #f5a623;
+    --cyan: #00d4ff;
+    --orange: #f5a623;
+    --border: #1a1f2e;
+    --border2: #2a3040;
+    --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 32px;
+  }
+
+  /* ═══════════════════════════════════════════════
+     DASHBOARD HEADER (как в v7.0)
+     ═══════════════════════════════════════════════ */
+  .dash-header {
+    width: 100%;
+    max-width: 1400px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0 0 8px;
+  }
+  .dash-title {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dash-title::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+  .dash-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .dash-stat {
+    font-size: 10px;
+    color: var(--text3);
+    padding: 3px 8px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .dash-version {
+    font-size: 9px;
+    color: var(--text3);
+    padding: 2px 6px;
+    background: rgba(0,212,255,.08);
+    border: 1px solid rgba(0,212,255,.2);
+    border-radius: 4px;
+    letter-spacing: .04em;
+  }
+  .dash-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .dash-badge-mock {
+    background: rgba(245,166,35,.1);
+    color: var(--yellow);
+    border: 1px solid rgba(245,166,35,.25);
+  }
+  .dash-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ═══ Role toggle ═══ */
+  .role-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .role-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text3);
+    transition: all .15s;
+  }
+  .role-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .role-btn:hover:not(.active) { color: var(--text); }
+
+  /* ═══ Buttons ═══ */
+  .pr-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid; text-transform: uppercase;
+    letter-spacing: .04em; transition: all .15s;
+  }
+  .pr-btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pr-btn-primary:hover { background: var(--accent-hover); }
+  .pr-btn-orange { background: rgba(245,166,35,.1); color: var(--yellow); border-color: rgba(245,166,35,.3); }
+  .pr-btn-ghost { background: transparent; color: var(--text3); border-color: var(--border); }
+  .pr-btn-ghost:hover { color: var(--text); border-color: var(--border2); }
+
+  /* ═══ KPI grid ═══ */
+  .kpi-grid {
+    width: 100%;
+    max-width: 1400px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .kpi-card {
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .kpi-label {
+    font-size: 9px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .kpi-value {
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .kpi-sub {
+    font-size: 10px;
+    color: var(--text3);
+  }
+
+  /* ═══ Heatmap ═══ */
+  .heatmap {
+    width: 100%;
+    max-width: 1400px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .heatmap-title {
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-right: 8px;
+  }
+  .heatmap-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .heatmap-chip:hover { border-color: var(--accent); }
+  .heatmap-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+  .heatmap-dot.green { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .heatmap-dot.yellow { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }
+  .heatmap-dot.red { background: var(--red); box-shadow: 0 0 4px var(--red); }
+  .heatmap-name { font-size: 11px; color: var(--text); }
+  .heatmap-hours { font-size: 10px; color: var(--text3); }
+  .heatmap-margin { font-size: 10px; }
+  .heatmap-margin.pos { color: var(--green); }
+  .heatmap-margin.neg { color: var(--red); }
+
+  /* ═══ Dev cards ═══ */
+  .dev-cards {
+    width: 100%;
+    max-width: 1400px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  .dev-card {
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .card-name { font-size: 13px; font-weight: 600; }
+  .card-role { font-size: 10px; color: var(--text3); }
+  .card-status {
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .card-status.ok { background: rgba(34,212,126,.1); color: var(--green); border: 1px solid rgba(34,212,126,.25); }
+  .card-status.warn { background: rgba(245,166,35,.1); color: var(--yellow); border: 1px solid rgba(245,166,35,.25); }
+  .card-status.danger { background: rgba(240,72,72,.1); color: var(--red); border: 1px solid rgba(240,72,72,.25); }
+
+  .card-kpi {
+    display: flex;
+    gap: 20px;
+  }
+  .card-kpi-item { display: flex; flex-direction: column; gap: 2px; }
+  .card-kpi-money { font-size: 18px; font-weight: 700; }
+  .card-kpi-hours { font-size: 18px; font-weight: 700; color: var(--accent); }
+  .card-kpi-label { font-size: 9px; color: var(--text3); text-transform: uppercase; }
+
+  .card-sec {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .sec-item { display: flex; flex-direction: column; gap: 1px; }
+  .sec-label { font-size: 9px; color: var(--text3); }
+  .sec-val { font-size: 11px; }
+  .sec-val.billable { color: var(--cyan); }
+  .sec-val.cut { color: var(--yellow); }
+  .sec-val.margin-pos { color: var(--green); }
+  .sec-val.margin-neg { color: var(--red); }
+  .sec-divider { width: 1px; height: 24px; background: var(--border); }
+
+  .card-progress { display: flex; flex-direction: column; gap: 6px; }
+  .progress-row { display: flex; align-items: center; gap: 8px; }
+  .progress-label { font-size: 9px; color: var(--text3); min-width: 70px; }
+  .progress-track { flex: 1; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+  .progress-fill.green { background: var(--green); }
+  .progress-fill.yellow { background: var(--yellow); }
+  .progress-fill.red { background: var(--red); }
+  .progress-fill.accent { background: var(--accent); }
+  .progress-val { font-size: 10px; color: var(--text3); min-width: 50px; text-align: right; }
+
+  /* ═══ Modal ═══ */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal {
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 1080px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .modal-close {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-size: 10px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ═══ Admin table ═══ */
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .admin-table th {
+    font-size: 9px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 8px 6px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: rgba(18,21,31,.5);
+  }
+  .admin-table td {
+    padding: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .admin-table tr.row-changed {
+    background: rgba(34,212,126,.08);
+  }
+  .admin-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 8px;
+    outline: none;
+    width: 100%;
+  }
+  .admin-input:focus { border-color: var(--accent); }
+  .admin-input.red-text { color: var(--red); }
+  .c-num {
+    font-size: 10px;
+    color: var(--text3);
+    text-align: center;
+  }
+
+  .save-success {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: auto;
+    padding: 6px 12px;
+    background: rgba(34,212,126,.12);
+    border: 1px solid rgba(34,212,126,.3);
+    border-radius: 6px;
+  }
+
+  /* ═══ Info block ═══ */
+  .info-block {
+    width: 100%;
+    max-width: 1400px;
+    padding: 24px;
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+  }
+  .info-block h2 {
+    font-size: 13px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-row {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11px;
+  }
+  .info-label { color: var(--text3); min-width: 200px; }
+  .info-value { color: var(--text); }
+  .info-value.yes { color: var(--green); }
+  .info-value.no { color: var(--red); }
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 4px;
+  }
+  .tag-green { background: rgba(34,212,126,.1); color: var(--green); border: 1px solid rgba(34,212,126,.25); }
+  .tag-red { background: rgba(240,72,72,.1); color: var(--red); border: 1px solid rgba(240,72,72,.25); }
+  .tag-yellow { background: rgba(245,166,35,.1); color: var(--yellow); border: 1px solid rgba(245,166,35,.25); }
+  .tag-cyan { background: rgba(0,212,255,.08); color: var(--cyan); border: 1px solid rgba(0,212,255,.2); }
+  .commit-ref {
+    font-size: 10px;
+    color: var(--text3);
+    background: rgba(0,212,255,.06);
+    border: 1px solid rgba(0,212,255,.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ЗАГОЛОВОК СТРАНИЦЫ
+     ═══════════════════════════════════════════════════════════════ -->
+<div style="text-align:center;padding:8px;font-size:10px;color:var(--text3)">
+  Визуальный рендер <strong>v7.0</strong> из коммита <span class="commit-ref">580cfa7</span> —
+  Источник: <code>download/payroll-review/static/js/tab-payroll-review.js</code> + <code>core.js</code>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     DASHBOARD HEADER (как в v7.0)
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="dash-header">
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="dash-title">Зарплатный обзор</span>
+    <span class="dash-badge dash-badge-mock">МОК</span>
+    <span class="dash-version">v7.0.0</span>
+  </div>
+  <div class="dash-info">
+    <span class="dash-stat">8 разраб.</span>
+    <span class="dash-stat">139 задач</span>
+    <span class="dash-stat">Май 2026</span>
+  </div>
+  <div class="dash-controls">
+    <!-- Role mode toggle — НОВОЕ в v7.0 -->
+    <div class="role-toggle">
+      <button class="role-btn" onclick="setRole('dev')">Разраб</button>
+      <button class="role-btn active" onclick="setRole('finance')">Фин.</button>
+      <button class="role-btn" onclick="setRole('audit')">Аудит</button>
+    </div>
+    <button class="pr-btn pr-btn-orange" onclick="openAdmin()">&#9881; Админка</button>
+    <button class="pr-btn pr-btn-ghost" title="Обновить">&#8635;</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     KPI КАРТОЧКИ (finance mode)
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="kpi-grid" id="kpiGrid">
+  <div class="kpi-card">
+    <span class="kpi-label">Опл. клиента</span>
+    <span class="kpi-value" style="color:var(--cyan)">1 204.5ч</span>
+    <span class="kpi-sub">1 204 500 р</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">К выплате</span>
+    <span class="kpi-value" style="color:var(--orange)">1 349 000 р</span>
+    <span class="kpi-sub">5 ожидает</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Маржа</span>
+    <span class="kpi-value" style="color:var(--green)">+11.2%</span>
+    <span class="kpi-sub">144 500 р</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Факт часы</span>
+    <span class="kpi-value" style="color:var(--accent)">1 362.0</span>
+    <span class="kpi-sub">139 задач</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     HEATMAP — Команда
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="heatmap">
+  <span class="heatmap-title">Команда</span>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Макаров</span><span class="heatmap-hours">165ч</span><span class="heatmap-margin pos">+8%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot yellow"></span><span class="heatmap-name">Приходько</span><span class="heatmap-hours">176ч</span><span class="heatmap-margin pos">+5%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Соколовский</span><span class="heatmap-hours">160ч</span><span class="heatmap-margin pos">+12%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Попов</span><span class="heatmap-hours">152ч</span><span class="heatmap-margin pos">+15%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Забиров</span><span class="heatmap-hours">170ч</span><span class="heatmap-margin pos">+6%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Кашина</span><span class="heatmap-hours">158ч</span><span class="heatmap-margin pos">+10%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot green"></span><span class="heatmap-name">Замшина</span><span class="heatmap-hours">155ч</span><span class="heatmap-margin pos">+9%</span></div>
+  <div class="heatmap-chip"><span class="heatmap-dot yellow"></span><span class="heatmap-name">Предеин</span><span class="heatmap-hours">26ч</span><span class="heatmap-margin neg">-23%</span></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     КАРТОЧКИ РАЗРАБОТЧИКОВ — с клиентской ставкой в карточке!
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="dev-cards">
+
+  <!-- Макаров -->
+  <div class="dev-card">
+    <div class="card-hdr">
+      <div class="card-identity">
+        <div class="card-avatar">В</div>
+        <div><div class="card-name">Владимир Макаров</div><div class="card-role">1000 р/ч</div></div>
+      </div>
+      <span class="card-status ok">OK</span>
+    </div>
+    <div class="card-kpi">
+      <div class="card-kpi-item"><span class="card-kpi-money">165 000 р</span><span class="card-kpi-label">К выплате</span></div>
+      <div class="card-kpi-item"><span class="card-kpi-hours">165.0</span><span class="card-kpi-label">Факт часов</span></div>
+    </div>
+    <div class="card-sec">
+      <div class="sec-item"><span class="sec-label">Опл. клиента</span><span class="sec-val billable">155.0ч</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Срез</span><span class="sec-val cut">-10.0ч</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Маржа</span><span class="sec-val margin-pos">+6%</span></div>
+    </div>
+    <div class="card-progress">
+      <div class="progress-row"><span class="progress-label">Загрузка</span><div class="progress-track"><div class="progress-fill green" style="width:100%"></div></div><span class="progress-val">165/160ч</span></div>
+      <div class="progress-row"><span class="progress-label">Опл. клиента</span><div class="progress-track"><div class="progress-fill green" style="width:94%"></div></div><span class="progress-val">94%</span></div>
+      <div class="progress-row"><span class="progress-label">Маржа</span><div class="progress-track"><div class="progress-fill accent" style="width:6%"></div></div><span class="progress-val">+6%</span></div>
+    </div>
+  </div>
+
+  <!-- Приходько -->
+  <div class="dev-card">
+    <div class="card-hdr">
+      <div class="card-identity">
+        <div class="card-avatar">К</div>
+        <div><div class="card-name">Константин Приходько</div><div class="card-role">1000 р/ч</div></div>
+      </div>
+      <span class="card-status ok">OK</span>
+    </div>
+    <div class="card-kpi">
+      <div class="card-kpi-item"><span class="card-kpi-money">176 000 р</span><span class="card-kpi-label">К выплате</span></div>
+      <div class="card-kpi-item"><span class="card-kpi-hours">176.0</span><span class="card-kpi-label">Факт часов</span></div>
+    </div>
+    <div class="card-sec">
+      <div class="sec-item"><span class="sec-label">Опл. клиента</span><span class="sec-val billable">168.0ч</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Срез</span><span class="sec-val cut">-8.0ч</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Маржа</span><span class="sec-val margin-pos">+5%</span></div>
+    </div>
+    <div class="card-progress">
+      <div class="progress-row"><span class="progress-label">Загрузка</span><div class="progress-track"><div class="progress-fill yellow" style="width:100%"></div></div><span class="progress-val">176/160ч</span></div>
+      <div class="progress-row"><span class="progress-label">Опл. клиента</span><div class="progress-track"><div class="progress-fill green" style="width:95%"></div></div><span class="progress-val">95%</span></div>
+      <div class="progress-row"><span class="progress-label">Маржа</span><div class="progress-track"><div class="progress-fill accent" style="width:5%"></div></div><span class="progress-val">+5%</span></div>
+    </div>
+  </div>
+
+  <!-- Предеин — окладник, ставка 0, КЛИЕНТСКАЯ СТАВКА в карточке! -->
+  <div class="dev-card" style="border-color:rgba(245,166,35,.3)">
+    <div class="card-hdr">
+      <div class="card-identity">
+        <div class="card-avatar">А</div>
+        <div>
+          <div class="card-name">Андрей Предеин</div>
+          <!-- v7.0: клиентская ставка показывалась в карточке когда != rate -->
+          <div class="card-role">0 р/ч / <span style="color:var(--cyan)">1000 кл.</span></div>
+        </div>
+      </div>
+      <span class="card-status warn">ОКЛАД</span>
+    </div>
+    <div class="card-kpi">
+      <div class="card-kpi-item"><span class="card-kpi-money" style="color:var(--orange)">200 000 р</span><span class="card-kpi-label">К выплате (оклад)</span></div>
+      <div class="card-kpi-item"><span class="card-kpi-hours">26.0</span><span class="card-kpi-label">Факт часов</span></div>
+    </div>
+    <div class="card-sec">
+      <div class="sec-item"><span class="sec-label">Опл. клиента</span><span class="sec-val billable">26.0ч</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Базовая</span><span class="sec-val" style="color:var(--green)">200 000 р</span></div>
+      <div class="sec-divider"></div>
+      <div class="sec-item"><span class="sec-label">Маржа</span><span class="sec-val margin-neg">-23%</span></div>
+    </div>
+    <div class="card-progress">
+      <div class="progress-row"><span class="progress-label">Загрузка</span><div class="progress-track"><div class="progress-fill red" style="width:16%"></div></div><span class="progress-val">26/160ч</span></div>
+      <div class="progress-row"><span class="progress-label">Опл. клиента</span><div class="progress-track"><div class="progress-fill green" style="width:100%"></div></div><span class="progress-val">100%</span></div>
+      <div class="progress-row"><span class="progress-label">Маржа</span><div class="progress-track"><div class="progress-fill red" style="width:23%"></div></div><span class="progress-val">-23%</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ═══ АДМИНКА v7.0 — ПОЛНАЯ МОДАЛКА ═══
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="adminOverlay">
+<div class="modal">
+
+  <!-- Header -->
+  <div class="modal-header">
+    <span class="modal-title">&#9881; Админка — Данные разработчиков</span>
+    <button class="modal-close" onclick="closeAdmin()">&times;</button>
+  </div>
+
+  <!-- Body -->
+  <div class="modal-body">
+
+    <!-- ── СЕКЦИЯ: Активные разработчики ── -->
+    <div style="margin-bottom:16px">
+      <div class="section-label">Активные разработчики</div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>ФИО</th>
+            <th>ИНН</th>
+            <th>Ставка<br>(р/ч)</th>
+            <!-- ★ КОЛОНКА «Клиент. ставка» — ЕСТЬ ТОЛЬКО В v7.0 ★ -->
+            <th style="color:var(--cyan)">Клиент.<br>ставка</th>
+            <th>Базовая /<br>Премия (р)</th>
+            <th style="color:var(--red)">Штраф<br>(р)</th>
+            <th>Коммент.<br>к штрафу</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Макаров -->
+          <tr>
+            <td class="c-num">1</td>
+            <td><input class="admin-input" type="text" value="Владимир Макаров" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px" title="Ставка разработчика (р/ч)"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)" title="Ставка для клиента (р/ч). Если 0 = ставка разраба"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px" title="Единовременная выплата (оклад/премия)"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px" title="Штраф, вычитается из общей суммы"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Приходько -->
+          <tr>
+            <td class="c-num">18</td>
+            <td><input class="admin-input" type="text" value="Константин Приходько" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Соколовский -->
+          <tr>
+            <td class="c-num">38</td>
+            <td><input class="admin-input" type="text" value="Александр Соколовский" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Попов -->
+          <tr>
+            <td class="c-num">54</td>
+            <td><input class="admin-input" type="text" value="Александр Попов" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Забиров -->
+          <tr>
+            <td class="c-num">82</td>
+            <td><input class="admin-input" type="text" value="Тимур Забиров" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Кашина -->
+          <tr>
+            <td class="c-num">92</td>
+            <td><input class="admin-input" type="text" value="Елена Кашина" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Замшина -->
+          <tr>
+            <td class="c-num">98</td>
+            <td><input class="admin-input" type="text" value="Ольга Замшина" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--text3)"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- ★ Предеин — окладник, ставка 0, клиентская ставка отличается ★ -->
+          <tr class="row-changed" style="background:rgba(0,212,255,.04)">
+            <td class="c-num">116</td>
+            <td><input class="admin-input" type="text" value="Андрей Предеин" style="width:130px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:65px;border-color:var(--yellow);box-shadow:0 0 4px rgba(245,166,35,.3)" title="Ставка 0 = окладник"></td>
+            <!-- ★ КЛИЕНТСКАЯ СТАВКА — отличается от ставки разраба! ★ -->
+            <td><input class="admin-input" type="number" value="1000" style="width:65px;color:var(--cyan);border-color:rgba(0,212,255,.3)" title="Ставка для клиента (р/ч). Если 0 = ставка разраба"></td>
+            <td><input class="admin-input" type="number" value="0" style="width:75px;border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)" title="Единовременная выплата (оклад/премия)"></td>
+            <td><input class="admin-input red-text" type="number" value="0" style="width:75px"></td>
+            <td><input class="admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══ БЛОК ИСКЛЮЧЁННЫХ — НЕТ В v7.0! ═══ -->
+    <!-- В 580cfa7 (v7.0) этого блока не было -->
+    <!-- Он был только в e7bb0f2 (v6.x) -->
+    <div style="margin-top:12px;padding:12px;background:rgba(240,72,72,.04);border:1px dashed rgba(240,72,72,.2);border-radius:8px">
+      <div style="font-size:10px;color:var(--text3);font-style:italic">
+        &#9888; В v7.0 нет блока «Исключённые разработчики». Было в v6.x (e7bb0f2), удалено.<br>
+        Исключённые (Сергей Приходько, Denius Coder, Марина Савчук) просто не показываются в таблице.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer с сообщением об успешном сохранении -->
+  <div class="modal-footer">
+    <div class="save-success">
+      <span style="color:var(--green);font-size:14px">&#10003;</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--green);font-weight:600">Данные сохранены</span>
+    </div>
+    <button class="pr-btn pr-btn-ghost" onclick="closeAdmin()">Отмена</button>
+    <button class="pr-btn pr-btn-primary">Сохранить всё</button>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     СПЕЦИФИКАЦИЯ v7.0
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="info-block">
+  <h2>&#9881; Спецификация админки v7.0 (коммит 580cfa7)</h2>
+
+  <div class="info-row"><span class="info-label">Коммит:</span><span class="info-value"><span class="commit-ref">580cfa7bf2ba82122668b72dda907f583090e2af</span></span></div>
+  <div class="info-row"><span class="info-label">Файл:</span><span class="info-value"><code>download/payroll-review/static/js/tab-payroll-review.js</code>, строки 1338–1400</span></div>
+  <div class="info-row"><span class="info-label">Функция:</span><span class="info-value"><code>_prRenderAdminModal()</code></span></div>
+
+  <div style="height:12px"></div>
+
+  <div class="info-row"><span class="info-label">Секций в модалке:</span><span class="info-value"><strong>1</strong> — «Активные разработчики» <span class="tag tag-yellow">ОДНА</span></span></div>
+  <div class="info-row"><span class="info-label">Вкладки (табы):</span><span class="info-value no">НЕТ <span class="tag tag-red">БЕЗ ТАБОВ</span></span></div>
+  <div class="info-row"><span class="info-label">Блок исключённых:</span><span class="info-value no">НЕТ <span class="tag tag-red">НЕТ</span></span></div>
+  <div class="info-row"><span class="info-label">Клиентская ставка:</span><span class="info-value yes">ЕСТЬ <span class="tag tag-cyan">В КОЛОНКЕ</span> — «Клиент. ставка»</span></div>
+  <div class="info-row"><span class="info-label">Подсветка clientRate:</span><span class="info-value yes">cyan если ≠ rate <span class="tag tag-green">ЕСТЬ</span></span></div>
+  <div class="info-row"><span class="info-label">Колонки таблицы:</span><span class="info-value">8 — ID, ФИО, ИНН, Ставка, <strong>Клиент. ставка</strong>, Базовая, Штраф, Коммент.</span></div>
+  <div class="info-row"><span class="info-label">Разработчиков в таблице:</span><span class="info-value">8 (только ACTIVE_DEV_IDS)</span></div>
+  <div class="info-row"><span class="info-label">Режимы ролей:</span><span class="info-value yes">Разраб / Фин. / Аудит <span class="tag tag-green">НОВОЕ</span></span></div>
+  <div class="info-row"><span class="info-label">clientRate в карточке:</span><span class="info-value yes">«1000 р/ч / 1200 кл.» <span class="tag tag-green">ЕСТЬ</span> (только fin/audit)</span></div>
+  <div class="info-row"><span class="info-label">Автозакрытие модалки:</span><span class="info-value">2 сек. после сохранения</span></div>
+  <div class="info-row"><span class="info-label">Green highlight:</span><span class="info-value yes">изменённые строки подсвечиваются <span class="tag tag-green">ЕСТЬ</span></span></div>
+
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#128270; Ключевой код — что делает v7.0 уникальной</h2>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:10px;line-height:1.8;overflow-x:auto;margin-top:8px">
+<pre style="color:var(--text2)">
+<span style="color:var(--cyan)">/* Колонка «Клиент. ставка» в таблице — ТОЛЬКО в v7.0 */</span>
+h += '&lt;th&gt;Клиент.&lt;br&gt;ставка&lt;/th&gt;';                          <span style="color:var(--green)">← строка 1354</span>
+
+<span style="color:var(--cyan)">/* Получение клиентской ставки */</span>
+var clientRate = prGetClientRate(sid);                          <span style="color:var(--green)">← строка 1363</span>
+
+<span style="color:var(--cyan)">/* Подсветка cyan если отличается от ставки разраба */</span>
+var isClientDiff = clientRate !== rate;                         <span style="color:var(--green)">← строка 1370</span>
+var clientRateStyle = isClientDiff
+  ? ';color:var(--cyan);border-color:rgba(0,212,255,.3)'       <span style="color:var(--green)">← строка 1371</span>
+  : '';
+
+<span style="color:var(--cyan)">/* Инпут клиентской ставки */</span>
+h += '&lt;td&gt;&lt;input class="pr-admin-input" type="number"
+     value="' + clientRate + '"
+     data-devid="' + sid + '"
+     data-field="clientRate"                                    <span style="color:var(--green)">← ключевой data-field!</span>
+     style="width:65px' + clientRateStyle + '"
+     title="Ставка для клиента (р/ч). Если 0 = ставка разраба"
+&gt;&lt;/td&gt;';                                                      <span style="color:var(--green)">← строка 1378</span>
+
+<span style="color:var(--cyan)">/* В карточке разработчика — тоже показывалась */</span>
+var clientRateVal = prGetClientRate(dev.developerId);
+var rateLabel = rate + ' р/ч';
+if (_pr.roleMode !== 'dev' && clientRateVal !== rate)
+  rateLabel += ' / &lt;span style="color:var(--cyan)"&gt;' + clientRateVal + ' кл.&lt;/span&gt;';
+                                                                <span style="color:var(--green)">← строка 884-885</span>
+</pre>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#128197; Что случилось с «Клиент. ставка» потом</h2>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:10px;line-height:2.2;margin-top:8px">
+    <div><span class="commit-ref">580cfa7</span> <span class="tag tag-green">v7.0</span> Колонка «Клиент. ставка» в таблице + cyan-подсветка + в карточке «1200 кл.»</div>
+    <div><span class="commit-ref">580c389</span> <span class="tag tag-red">v7.3.0</span> <strong>УДАЛЕНО</strong> — commit message: «remove clientRate from dev admin»</div>
+    <div style="padding-left:20px;color:var(--text3)">Убрано: &lt;th&gt;, var clientRate, isClientDiff, clientRateStyle, &lt;td&gt; input clientRate</div>
+    <div><span class="commit-ref">f2ddc46</span> <span class="tag tag-red">v7.3.1</span> Мёртвый код: _prSaveAdmin() ещё обрабатывает data-field="clientRate"</div>
+    <div><span class="commit-ref">c4347a9</span> <span class="tag tag-cyan">v8.0.0</span> Клиентская ставка перенесена в <strong>отдельный таб «Клиенты (проекты)»</strong> — по проектам, не по разрабам</div>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#9889; prGetClientRate() — логика из core.js (строки 287-293)</h2>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:10px;line-height:1.8;margin-top:8px">
+<pre style="color:var(--text2)">
+function prGetClientRate(developerId) {
+  <span style="color:var(--text3)">/* Клиентская ставка. Если 0 или не задана — равна ставке разработчика */</span>
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.clientRate) return saved.clientRate;
+  }
+  var cr = DEV_CLIENT_RATE[String(developerId)] || 0;
+  return cr > 0 ? cr : prGetRate(developerId);   <span style="color:var(--green)">← fallback на ставку разраба!</span>
+}
+</pre>
+  </div>
+
+  <div style="height:8px;color:var(--text3);font-size:10px">
+    <strong>Важно:</strong> prGetClientRate() ВСЕГДА возвращает ставку если clientRate=0. Поэтому в админке у Предеина (rate=0) клиентская ставка показывалась как 1000 (fallback).
+  </div>
+
+</div>
+
+<script>
+function setRole(mode) {
+  document.querySelectorAll('.role-btn').forEach(function(b) { b.classList.remove('active'); });
+  event.target.classList.add('active');
+}
+function openAdmin() {
+  document.getElementById('adminOverlay').style.display = 'flex';
+}
+function closeAdmin() {
+  document.getElementById('adminOverlay').style.display = 'none';
+}
+</script>
+
+</body>
+</html>

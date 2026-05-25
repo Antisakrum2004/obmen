@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Review — Админка</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:#0f1117;color:#e0e0e0;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;
+  }
+
+  /* ── Overlay ── */
+  .overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);
+    display:flex;align-items:center;justify-content:center;
+    z-index:100;
+  }
+
+  /* ── Main Modal ── */
+  .modal{
+    background:#1a1d27;border-radius:16px;
+    width:820px;max-height:88vh;
+    display:flex;flex-direction:column;
+    box-shadow:0 24px 80px rgba(0,0,0,.5);
+    overflow:hidden;
+  }
+  .modal-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 24px 0;
+  }
+  .modal-title{font-size:20px;font-weight:700;color:#fff}
+  .modal-close{
+    width:30px;height:30px;border:none;border-radius:8px;
+    background:rgba(255,255,255,.06);color:#888;
+    font-size:16px;cursor:pointer;transition:.2s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .modal-close:hover{background:rgba(255,255,255,.12);color:#fff}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:4px;padding:12px 24px 0}
+  .tab{
+    padding:8px 20px;border-radius:8px 8px 0 0;
+    border:none;cursor:pointer;
+    font-size:13px;font-weight:600;
+    background:rgba(255,255,255,.04);color:#888;
+    transition:.25s;
+  }
+  .tab.active{
+    background:#252836;color:#7c6cff;
+    box-shadow:0 -2px 0 #7c6cff inset;
+  }
+  .tab:hover:not(.active){background:rgba(255,255,255,.07);color:#bbb}
+
+  .tab-body{
+    background:#252836;flex:1;overflow-y:auto;
+    padding:16px 24px 20px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+
+  /* ── Card (compact) ── */
+  .dev-card, .client-card{
+    background:#1e2130;border-radius:10px;
+    padding:14px 18px;
+    transition:.3s;border:1px solid transparent;
+    position:relative;
+  }
+  .dev-card.saved, .client-card.saved{
+    border-color:#2ecc71;
+    box-shadow:0 0 12px rgba(46,204,113,.12);
+  }
+
+  .card-top{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .dev-name, .client-name{font-size:14px;font-weight:700;color:#fff}
+  .dev-role{font-size:11px;color:#888;margin-left:6px}
+  .client-projects{font-size:11px;color:#888;margin-top:1px}
+
+  /* ── Settings Chip ── */
+  .chip{
+    display:inline-flex;align-items:center;gap:4px;
+    padding:3px 10px;border-radius:16px;
+    background:rgba(124,108,255,.12);color:#7c6cff;
+    font-size:11px;font-weight:600;cursor:pointer;
+    border:1px solid rgba(124,108,255,.25);
+    transition:.2s;
+  }
+  .chip:hover{background:rgba(124,108,255,.22);border-color:rgba(124,108,255,.45)}
+  .chip svg{width:12px;height:12px}
+
+  /* ── Row ── */
+  .fields-row{
+    display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;
+  }
+  .field{
+    display:flex;flex-direction:column;gap:3px;flex:1;min-width:120px;
+  }
+  .field label{
+    font-size:10px;color:#777;text-transform:uppercase;
+    letter-spacing:.4px;font-weight:600;
+  }
+  .field input, .field select{
+    background:#161925;border:1px solid rgba(255,255,255,.08);
+    border-radius:6px;padding:6px 10px;color:#e0e0e0;
+    font-size:13px;outline:none;transition:.2s;
+  }
+  .field input:focus, .field select:focus{
+    border-color:#7c6cff;box-shadow:0 0 0 2px rgba(124,108,255,.18);
+  }
+  .field input.green-flash, .fine-row input.green-flash, .sub-field input.green-flash{
+    border-color:#2ecc71!important;box-shadow:0 0 0 2px rgba(46,204,113,.25)!important;
+    background:rgba(46,204,113,.06)!important;
+  }
+
+  /* ── Fines Section ── */
+  .fines-section{margin-top:8px}
+  .fines-header{
+    display:flex;align-items:center;gap:6px;margin-bottom:6px;
+  }
+  .fines-title{font-size:10px;color:#e74c3c;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .btn-add{
+    width:20px;height:20px;border-radius:5px;
+    border:1px dashed rgba(231,76,60,.4);
+    background:rgba(231,76,60,.06);color:#e74c3c;
+    font-size:14px;cursor:pointer;transition:.2s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .btn-add:hover{background:rgba(231,76,60,.15);border-color:rgba(231,76,60,.6)}
+
+  .fine-row{
+    display:flex;gap:8px;align-items:center;
+    margin-bottom:5px;
+  }
+  .fine-row input{
+    background:#161925;border:1px solid rgba(255,255,255,.08);
+    border-radius:6px;padding:5px 8px;color:#e0e0e0;
+    font-size:12px;outline:none;transition:.2s;
+  }
+  .fine-row input:focus{border-color:#e74c3c;box-shadow:0 0 0 2px rgba(231,76,60,.15)}
+  .fine-amount{width:90px}
+  .fine-comment{flex:1;min-width:140px}
+  .btn-remove-fine{
+    width:20px;height:20px;border-radius:5px;border:none;
+    background:rgba(231,76,60,.1);color:#e74c3c;
+    font-size:12px;cursor:pointer;transition:.2s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .btn-remove-fine:hover{background:rgba(231,76,60,.25)}
+
+  /* ── Footer Save Bar ── */
+  .save-footer{
+    background:#1a1d27;padding:12px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+    border-top:1px solid rgba(255,255,255,.06);
+  }
+  .save-footer .changes-hint{
+    font-size:11px;color:#666;
+  }
+  .save-footer .changes-hint .count{
+    color:#7c6cff;font-weight:600;
+  }
+  .btn-save-all{
+    padding:9px 28px;border-radius:8px;border:none;
+    background:linear-gradient(135deg,#7c6cff,#6b5ce7);color:#fff;
+    font-size:13px;font-weight:600;cursor:pointer;transition:.2s;
+    box-shadow:0 2px 12px rgba(124,108,255,.25);
+  }
+  .btn-save-all:hover{background:linear-gradient(135deg,#8d7fff,#7c6cff);transform:translateY(-1px);box-shadow:0 4px 16px rgba(124,108,255,.35)}
+  .btn-save-all:active{transform:translateY(0)}
+  .btn-save-all.flash{
+    background:linear-gradient(135deg,#2ecc71,#27ae60)!important;
+    box-shadow:0 2px 16px rgba(46,204,113,.3)!important;
+  }
+
+  /* ── Sub-modal (Settings) ── */
+  .sub-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.45);
+    display:flex;align-items:center;justify-content:center;
+    z-index:200;opacity:0;pointer-events:none;transition:.25s;
+  }
+  .sub-overlay.open{opacity:1;pointer-events:auto}
+
+  .sub-modal{
+    background:#1a1d27;border-radius:14px;
+    width:420px;padding:22px;
+    box-shadow:0 16px 60px rgba(0,0,0,.5);
+    transform:translateY(20px) scale(.96);
+    transition:.3s;
+  }
+  .sub-overlay.open .sub-modal{transform:translateY(0) scale(1)}
+
+  .sub-title{
+    font-size:16px;font-weight:700;color:#fff;margin-bottom:16px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .sub-close{
+    width:26px;height:26px;border:none;border-radius:6px;
+    background:rgba(255,255,255,.06);color:#888;
+    font-size:14px;cursor:pointer;transition:.2s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .sub-close:hover{background:rgba(255,255,255,.12);color:#fff}
+
+  .sub-field{
+    display:flex;flex-direction:column;gap:3px;margin-bottom:10px;
+  }
+  .sub-field label{
+    font-size:10px;color:#888;text-transform:uppercase;
+    letter-spacing:.4px;font-weight:600;
+  }
+  .sub-field input, .sub-field select{
+    background:#161925;border:1px solid rgba(255,255,255,.08);
+    border-radius:6px;padding:7px 10px;color:#e0e0e0;
+    font-size:13px;outline:none;transition:.2s;
+  }
+  .sub-field input:focus, .sub-field select:focus{border-color:#7c6cff;box-shadow:0 0 0 2px rgba(124,108,255,.18)}
+
+  .sub-save-row{
+    display:flex;justify-content:flex-end;margin-top:4px;
+  }
+
+  /* ── Hint ── */
+  .hint{font-size:10px;color:#555;margin-top:1px}
+
+  /* ── Hidden ── */
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ MAIN MODAL ═══════════ -->
+<div class="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">⚙️ Админ-панель</span>
+      <button class="modal-close" title="Закрыть">✕</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="devs">👨‍💻 Разработчики</button>
+      <button class="tab" data-tab="clients">🏢 Клиенты</button>
+    </div>
+
+    <!-- ════════ DEV TAB ════════ -->
+    <div class="tab-body" id="tab-devs">
+
+      <!-- Dev 1 -->
+      <div class="dev-card" id="dev-1">
+        <div class="card-top">
+          <div><span class="dev-name">Приходько Данил</span><span class="dev-role">Senior</span></div>
+          <div class="chip" onclick="openSettings('dev-1','Приходько Данил')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Настройки
+          </div>
+        </div>
+        <div class="fields-row">
+          <div class="field"><label>Ставка ₽/ч</label><input type="number" value="2500" data-orig="2500"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="0" placeholder="Бонус / ЗП" data-orig="0"><span class="hint">Бонус, доплата, ЗП</span></div>
+        </div>
+        <div class="fines-section">
+          <div class="fines-header"><span class="fines-title">Штрафы</span><button class="btn-add" onclick="addFine('dev-1')" title="Добавить штраф">+</button></div>
+          <div class="fine-row">
+            <input type="number" class="fine-amount" value="5000" placeholder="₽" data-orig="5000">
+            <input type="text" class="fine-comment" value="Опоздание на стендап" placeholder="Комментарий" data-orig="Опоздание на стендап">
+            <button class="btn-remove-fine" onclick="removeFine(this)" title="Удалить">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dev 2 -->
+      <div class="dev-card" id="dev-2">
+        <div class="card-top">
+          <div><span class="dev-name">Макаров Артём</span><span class="dev-role">Middle+</span></div>
+          <div class="chip" onclick="openSettings('dev-2','Макаров Артём')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Настройки
+          </div>
+        </div>
+        <div class="fields-row">
+          <div class="field"><label>Ставка ₽/ч</label><input type="number" value="2000" data-orig="2000"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="15000" placeholder="Бонус / ЗП" data-orig="15000"><span class="hint">Бонус, доплата, ЗП</span></div>
+        </div>
+        <div class="fines-section">
+          <div class="fines-header"><span class="fines-title">Штрафы</span><button class="btn-add" onclick="addFine('dev-2')" title="Добавить штраф">+</button></div>
+        </div>
+      </div>
+
+      <!-- Dev 3 -->
+      <div class="dev-card" id="dev-3">
+        <div class="card-top">
+          <div><span class="dev-name">Попов Максим</span><span class="dev-role">Middle</span></div>
+          <div class="chip" onclick="openSettings('dev-3','Попов Максим')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Настройки
+          </div>
+        </div>
+        <div class="fields-row">
+          <div class="field"><label>Ставка ₽/ч</label><input type="number" value="1800" data-orig="1800"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="0" placeholder="Бонус / ЗП" data-orig="0"><span class="hint">Бонус, доплата, ЗП</span></div>
+        </div>
+        <div class="fines-section">
+          <div class="fines-header"><span class="fines-title">Штрафы</span><button class="btn-add" onclick="addFine('dev-3')" title="Добавить штраф">+</button></div>
+          <div class="fine-row">
+            <input type="number" class="fine-amount" value="3000" placeholder="₽" data-orig="3000">
+            <input type="text" class="fine-comment" value="Срыв дедлайна" placeholder="Комментарий" data-orig="Срыв дедлайна">
+            <button class="btn-remove-fine" onclick="removeFine(this)" title="Удалить">✕</button>
+          </div>
+          <div class="fine-row">
+            <input type="number" class="fine-amount" value="2000" placeholder="₽" data-orig="2000">
+            <input type="text" class="fine-comment" value="Некачественный код" placeholder="Комментарий" data-orig="Некачественный код">
+            <button class="btn-remove-fine" onclick="removeFine(this)" title="Удалить">✕</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-devs -->
+
+    <!-- ════════ CLIENT TAB ════════ -->
+    <div class="tab-body hidden" id="tab-clients">
+
+      <div class="client-card" id="client-1">
+        <div class="card-top">
+          <div><span class="client-name">A-TILAB</span><span class="client-projects">Мобильное приложение, CRM</span></div>
+        </div>
+        <div class="fields-row" style="margin-top:8px">
+          <div class="field"><label>Ставка клиента ₽/ч</label><input type="number" value="4000" data-orig="4000"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="0" placeholder="Поддержка" data-orig="0"><span class="hint">Проект на поддержке</span></div>
+        </div>
+      </div>
+
+      <div class="client-card" id="client-2">
+        <div class="card-top">
+          <div><span class="client-name">ООО «ВегаСофт»</span><span class="client-projects">ERP-система</span></div>
+        </div>
+        <div class="fields-row" style="margin-top:8px">
+          <div class="field"><label>Ставка клиента ₽/ч</label><input type="number" value="3500" data-orig="3500"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="80000" placeholder="Поддержка" data-orig="80000"><span class="hint">Проект на поддержке</span></div>
+        </div>
+      </div>
+
+      <div class="client-card" id="client-3">
+        <div class="card-top">
+          <div><span class="client-name">ИП Смирнов</span><span class="client-projects">Лендинг, SEO-инструмент</span></div>
+        </div>
+        <div class="fields-row" style="margin-top:8px">
+          <div class="field"><label>Ставка клиента ₽/ч</label><input type="number" value="3000" data-orig="3000"></div>
+          <div class="field"><label>Фикс сумма ₽</label><input type="number" value="0" placeholder="Поддержка" data-orig="0"><span class="hint">Проект на поддержке</span></div>
+        </div>
+      </div>
+
+    </div><!-- /tab-clients -->
+
+    <!-- ════════ FOOTER SAVE BAR ════════ -->
+    <div class="save-footer">
+      <span class="changes-hint">Изменено: <span class="count" id="changes-count">0</span> полей</span>
+      <button class="btn-save-all" onclick="saveAll()">💾 Сохранить всё</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════ SUB-MODAL (Настройки разраба) ═══════════ -->
+<div class="sub-overlay" id="sub-overlay">
+  <div class="sub-modal">
+    <div class="sub-title">
+      <span>📋 <span id="sub-dev-name">—</span></span>
+      <button class="sub-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="sub-field"><label>ФИО полностью</label><input type="text" id="sub-fullname" placeholder="Иванов Иван Иванович" data-orig=""></div>
+    <div class="sub-field"><label>ИНН</label><input type="text" id="sub-inn" placeholder="7700000000" data-orig=""></div>
+    <div class="sub-field"><label>Номер договора</label><input type="text" id="sub-contract" placeholder="ДГ-2024/001" data-orig=""></div>
+    <div class="sub-field"><label>Дата договора</label><input type="date" id="sub-contract-date" data-orig=""></div>
+    <div class="sub-field"><label>Самозанятый</label><select id="sub-self-employed"><option value="no">Нет</option><option value="yes">Да</option><option value="ip">ИП</option></select></div>
+    <div class="sub-field"><label>Банк / Реквизиты</label><input type="text" id="sub-bank" placeholder="Сбербанк, 4081 7810 ..." data-orig=""></div>
+    <div class="sub-field"><label>Примечание</label><input type="text" id="sub-notes" placeholder="Любые заметки" data-orig=""></div>
+
+    <div class="sub-save-row">
+      <button class="btn-save-all" onclick="saveSubModal()">💾 Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── Tabs ── */
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-body').forEach(t => t.classList.add('hidden'));
+      document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+    });
+  });
+
+  /* ── Track changes count ── */
+  function recountChanges() {
+    let count = 0;
+    document.querySelectorAll('.tab-body input, .tab-body select').forEach(inp => {
+      const orig = inp.getAttribute('data-orig') ?? '';
+      if (String(inp.value) !== orig) count++;
+    });
+    document.getElementById('changes-count').textContent = count;
+  }
+  document.addEventListener('input', recountChanges);
+  document.addEventListener('change', recountAgainst);
+
+  /* ── Add Fine ── */
+  function addFine(cardId) {
+    const section = document.querySelector('#' + cardId + ' .fines-section');
+    const row = document.createElement('div');
+    row.className = 'fine-row';
+    row.innerHTML = `
+      <input type="number" class="fine-amount" placeholder="₽" data-orig="">
+      <input type="text" class="fine-comment" placeholder="Комментарий" data-orig="">
+      <button class="btn-remove-fine" onclick="removeFine(this)" title="Удалить">✕</button>
+    `;
+    section.appendChild(row);
+    recountChanges();
+  }
+
+  /* ── Remove Fine ── */
+  function removeFine(btn) {
+    btn.closest('.fine-row').remove();
+    recountChanges();
+  }
+
+  /* ── Save All ── */
+  function saveAll() {
+    const cards = document.querySelectorAll('.dev-card, .client-card');
+    let totalChanges = 0;
+
+    cards.forEach(card => {
+      const inputs = card.querySelectorAll('input, select');
+      let cardHasChanges = false;
+
+      inputs.forEach(inp => {
+        const orig = inp.getAttribute('data-orig') ?? '';
+        if (String(inp.value) !== orig) {
+          cardHasChanges = true;
+          totalChanges++;
+          inp.classList.add('green-flash');
+          inp.setAttribute('data-orig', inp.value);
+          setTimeout(() => inp.classList.remove('green-flash'), 2200);
+        }
+      });
+
+      if (cardHasChanges) {
+        card.classList.add('saved');
+        setTimeout(() => card.classList.remove('saved'), 2500);
+      }
+    });
+
+    // Flash button green
+    const btn = document.querySelector('.btn-save-all');
+    if (totalChanges > 0) {
+      btn.classList.add('flash');
+      btn.textContent = '✅ Сохранено!';
+      setTimeout(() => { btn.classList.remove('flash'); btn.textContent = '💾 Сохранить всё'; }, 1800);
+    }
+    document.getElementById('changes-count').textContent = '0';
+  }
+
+  /* ── Sub-Modal ── */
+  let currentDevId = null;
+  const devData = {
+    'dev-1': { fullname:'Приходько Данил Сергеевич', inn:'7705123456', contract:'ДГ-2024/012', contractDate:'2024-03-15', selfEmployed:'no', bank:'Тинькофф 2200 7000 ...', notes:'' },
+    'dev-2': { fullname:'Макаров Артём Алексеевич', inn:'7710234567', contract:'ДГ-2024/018', contractDate:'2024-05-01', selfEmployed:'yes', bank:'Сбербанк 4081 7810 ...', notes:'Самозанятый' },
+    'dev-3': { fullname:'Попов Максим Игоревич', inn:'', contract:'ДГ-2024/025', contractDate:'2024-06-10', selfEmployed:'ip', bank:'Альфа 4070 2810 ...', notes:'ИП Попов М.И.' },
+  };
+
+  function openSettings(devId, name) {
+    currentDevId = devId;
+    document.getElementById('sub-dev-name').textContent = name;
+    const d = devData[devId] || {};
+    document.getElementById('sub-fullname').value = d.fullname || '';
+    document.getElementById('sub-inn').value = d.inn || '';
+    document.getElementById('sub-contract').value = d.contract || '';
+    document.getElementById('sub-contract-date').value = d.contractDate || '';
+    document.getElementById('sub-self-employed').value = d.selfEmployed || 'no';
+    document.getElementById('sub-bank').value = d.bank || '';
+    document.getElementById('sub-notes').value = d.notes || '';
+
+    document.querySelectorAll('#sub-overlay input, #sub-overlay select').forEach(inp => {
+      inp.setAttribute('data-orig', inp.value);
+      inp.classList.remove('green-flash');
+    });
+
+    document.getElementById('sub-overlay').classList.add('open');
+  }
+
+  function closeSettings() {
+    document.getElementById('sub-overlay').classList.remove('open');
+  }
+
+  function saveSubModal() {
+    const inputs = document.querySelectorAll('#sub-overlay input, #sub-overlay select');
+    let hasChanges = false;
+    inputs.forEach(inp => {
+      const orig = inp.getAttribute('data-orig') ?? '';
+      if (String(inp.value) !== orig) {
+        hasChanges = true;
+        inp.classList.add('green-flash');
+        inp.setAttribute('data-orig', inp.value);
+        setTimeout(() => inp.classList.remove('green-flash'), 2200);
+      }
+    });
+    if (hasChanges && currentDevId && devData[currentDevId]) {
+      devData[currentDevId] = {
+        fullname: document.getElementById('sub-fullname').value,
+        inn: document.getElementById('sub-inn').value,
+        contract: document.getElementById('sub-contract').value,
+        contractDate: document.getElementById('sub-contract-date').value,
+        selfEmployed: document.getElementById('sub-self-employed').value,
+        bank: document.getElementById('sub-bank').value,
+        notes: document.getElementById('sub-notes').value,
+      };
+    }
+    setTimeout(closeSettings, 600);
+  }
+
+  document.getElementById('sub-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('sub-overlay')) closeSettings();
+  });
+</script>
+</body>
+</html>

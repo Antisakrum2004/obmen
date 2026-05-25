@@ -277,3 +277,268 @@ User 116 = Андрей Предеин
 - SWR: `getStale()` для stale-while-revalidate
 - Key format: `data:YYYY-MM`
 - Invalidate: при manual refresh, при смене периода
+
+## Известные баги (НЕИСПРАВЛЕННЫЕ)
+
+### 1. Скролл в админке прыгает наверх
+- **Симптом**: При нажатии любой кнопки в админке список прокручивается наверх
+- **Причина**: `_prSaveAdmin()` → `_prScheduleRender()` → `_prRenderAll()` → `_pr.container.innerHTML = h` — ПОЛНОЕ пересоздание DOM
+- **3 попытки FAILED**: scrollTop save/restore, double RAF, убирание _prScheduleRender
+- **Решение**: Микросервисная разбивка — AdminService рендерит ТОЛЬКО свой .pr-modal-body
+
+### 2. Сумма штрафа не отображается светло-красным
+- **Симптом**: В админке поле штрафа должно быть светло-красным
+- **Причина**: CSS не применяется корректно к input полю
+- **Статус**: Не исправлено. В мокапе v2 зафиксирован цвет: `rgba(255,110,120,0.9)`
+
+### 3. Формула выгрузки: base добавляется на КАЖДУЮ задачу (КРИТИЧЕСКИЙ)
+- **Симптом**: 10800 вместо 10000 при ставке 1000 за 10 часов
+- **Причина**: `payroll-review-calc.js:146` — `r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base`
+  Добавляет `base` на каждую задачу. А `buildMonthlyProjection()` добавляет ЕЩЁ РАЗ на уровне разработчика.
+  Итого: base × количество задач + base × 1 = двойной/множественный учёт
+- **Решение**: Убрать `+ r.base` из `buildTaskReviewRows()`. Base добавляется ОДИН раз в `buildMonthlyProjection()`
+- **Статус**: Не исправлено. Планируется в v10.0 Фаза 1
+
+## План микросервисной разбивки
+
+### Цель: «Один настраиваешь — остальное не ломается»
+
+Разбить монолит `tab-payroll-review.js` (2398 строк) на 7 сервисов + EventBus:
+
+| Сервис | Ответственность | Строк |
+|--------|----------------|-------|
+| SVC 1: Data | Загрузка, кэш, нормализация | ~120 |
+| SVC 2: Admin | Модалка, ставки, штрафы, проекты | ~320 |
+| SVC 3: Review | Статусы, часы, слайдеры, пресеты | ~260 |
+| SVC 4: Cards | Карточки, KPI, фильтры, таблица, таймлайн | ~620 |
+| SVC 5: Export | CSV экспорт, диагностика, debug | ~200 |
+
+Порядок: pr-bus.js → AdminService (решает скролл-баг) → ReviewService → CardsService → ExportService → тонкий оркестратор
+
+## v9.1 — Мокап v2 (НЕ В PROD)
+
+Цвета: цифры `rgba(210,215,225,0.88)`, ЗП зелёная `rgba(52,211,153,0.85)`, штрафы красные `rgba(255,110,120,0.9)`, лейблы +20% ярче. KPI блоки одинаковые: min-height:100px + 1fr. Кнопки: active translateY(1px) scale(0.97). Tooltip словарь 30+ элементов.
+
+---
+
+## v10.0 — ПЛАН РЕАЛИЗАЦИИ 9 ФИЧ (НЕ КОДИМ — ТОЛЬКО ПЛАН)
+Дата: 2026-05-25
+Статус: **ПЛАН** — ожидает подтверждения перед реализацией
+
+### КОРНЕВАЯ ПРОБЛЕМА: Расхождение формул
+
+В коде **ТРИ** параллельных пути расчёта payrollAmount:
+
+```
+Путь 1: payroll-review-calc.js:146
+  r.payrollAmount = Math.round(r.payrollHours * r.rate) + r.base
+  ↑ base добавляется НА КАЖДУЮ ЗАДАЧУ ← БАГ!
+
+Путь 2: payroll-domain.js:142
+  r.payrollAmount = Math.round(r.payrollHours * r.rate)
+  ↑ base НЕ добавляется (комментарий: "added once per developer in projection")
+
+Путь 3: payroll-projection.js:153
+  d.totalAmount = d.totalAmount + baseSalary - fine
+  ↑ base добавляется ОДИН РАЗ на уровне projection
+```
+
+Если путь 1 добавляет base на задачу, а путь 3 ещё раз на разработчика — **base удваивается**.
+При 10 задачах и base=200000: вместо 10*rate получаем 10*(rate+base) + base.
+
+---
+
+### Фича 1: Починить формулы выгрузки [P0 — КРИТИЧЕСКИЙ]
+
+**Проблема**: `buildTaskReviewRows()` строка 146 добавляет `+ r.base` на каждую задачу.
+
+**Решение**: Убрать `+ r.base`. Base добавляется один раз в `buildMonthlyProjection()`.
+
+**Затронутые файлы**:
+- `payroll-review-calc.js:146` — убрать `+ r.base`
+- `payroll-review-export.js:28` — после фикса `totalAmount += r.payrollAmount` не содержит base, добавить отдельно
+
+**Риски**: ВСЕ суммы изменятся. Нужно перерассчитать периоды.
+
+---
+
+### Фича 2: Детализация выплат («расчётный листок») [P1]
+
+**Что**: По каждому разработчику — раскрытый вид с детализацией по задачам:
+```
+Задача #312 «Верстка»  Факт:12.5ч → К оплате:10ч → 10 000 руб
+Задача #315 «API»      Факт:8.0ч  → К оплате:8.0ч → 8 000 руб
+─── Итого по задачам: 18 000 руб
++ Базовая ЗП:         200 000 руб
+- Штраф:              -20 000 руб
+═══ К ВЫПЛАТЕ:        198 000 руб
+```
+
+**Затронутые файлы**:
+- `tab-payroll-review.js` — +~80 строк: `_prRenderPaystub()`
+- `payroll-review-styles.js` — +~40 строк: стили paystub
+- **НЕ ТРОГАЕМ**: payroll/*.js — данные уже есть
+
+---
+
+### Фича 3: Корректировка часов в большую сторону [P1]
+
+**Проблема**: Слайдер ограничен `0 <= billableHours <= factHours`.
+
+**Решение**: Разрешить `billableHours > factHours` (до factHours * 1.5). Warning при превышении.
+
+**Затронутые файлы**:
+- `tab-payroll-review.js` — убрать `max=factHours` на слайдере
+- `payroll-domain.js` — валидация: warning при `billableHours > factHours * 2`
+- `cutHours` может стать отрицательным → переименовать в «Корректировка» с +/-
+
+**Риски**: Маржа может стать отрицательной. Нужен warning.
+
+---
+
+### Фича 4: Три отдельные колонки часов [P1]
+
+**Что**: Факт | К расчёту | Клиенту — три значения вместо двух.
+
+**Уже есть**: `createTaskReview()` содержит `factHours`, `billableHours`, `payrollHours`.
+
+**Затронутые файлы**:
+- `tab-payroll-review.js` — `_prRenderOneDevCard()`, `_prRenderTable()`, `_prRenderTimelineItem()`
+- `payroll-review-styles.js` — 3-колоночный layout
+- **НЕ ТРОГАЕМ**: payroll/*.js — поля уже есть
+
+**Зависимость**: Фича 3 (корректировка вверх) должна быть первой.
+
+---
+
+### Фича 5: Автоматический вычет правок [P2]
+
+**Что**: Задачи в статусе «Правки» → время автоматически вычитается из billable.
+
+**Нужно от заказчика**: Какие статусы Bitrix24 = «Правки»?
+
+**Решение**:
+1. DATA ENGINE: Сохранять STATUS из tasks.task.list в tasksMeta
+2. FINANCE ENGINE: При `buildTaskReviewRows()` — если isRevisionStatus, то billable=0, payroll=factHours
+3. UI: Метка «Правки» в таймлайне, флаг `autoDeducted: true`
+
+**Затронутые файлы**:
+- `payroll-domain.js` — +`isRevisionStatus()`, +`PR_TASK_STATUSES_DEDUCTIBLE`
+- `payroll-review-calc.js` — автовычет для revision задач
+- `data-loader.js` — сохранять STATUS в tasksMeta
+- `tab-payroll-review.js` — визуальная метка
+
+---
+
+### Фича 6: Светлая тема [P2]
+
+**Что**: Переключатель dark/light theme.
+
+**Решение**: CSS custom properties + `data-theme` атрибут на корневом элементе.
+
+**Затронутые файлы**:
+- `payroll-review-styles.js` — +~60 строк: светлые переменные
+- `tab-payroll-review.js` — toggle кнопка
+- `payroll-review-storage.js` — pr_theme в localStorage
+
+**Риски**: Все rgba из мокапа v2 hardcoded под тёмную тему — нужен пересчёт.
+
+---
+
+### Фича 7: Интеграция с 1С [P2]
+
+**Что**: CSV для загрузки в 1С (счета, акты).
+
+**Уже есть**: `payroll-review-export.js` генерирует CSV, но не в формате 1С.
+
+**Нужно от заказчика**: Формат 1С (Бухгалтерия 3.0 / ЗУП / другая конфигурация).
+
+**Новый формат**:
+```
+Организация;ИНН;КПП;Период;Услуга;Кол-во;Ед.;Цена;Сумма;НДС%;Сумма НДС;Всего
+```
+
+**Затронутые файлы**:
+- `payroll-review-export.js` — +~80 строк: `generate1CExport()`
+- `tab-payroll-review.js` — кнопка «Экспорт 1С»
+- `payroll-review-storage.js` — реквизиты компании
+
+---
+
+### Фича 8: План/Факт [P3]
+
+**Что**: Блок планирования — сравнение заложенных часов с фактически отработанными.
+
+**Вариант A** (рекомендую): Использовать `TIME_ESTIMATE` из Bitrix24 tasks.task.list.
+**Вариант B**: Ручной ввод плана в админке.
+
+**Затронутые файлы**:
+- `data-loader.js` — добавить TIME_ESTIMATE в select
+- `payroll-review-calc.js` — `plannedHours` из taskMeta
+- `payroll-projection.js` — `totalPlannedHours`, `deltaHours`
+- `tab-payroll-review.js` — рендер План/Факт блока
+- `payroll-review-styles.js` — стили
+
+**Риски**: TIME_ESTIMATE может быть не заполнен в Bitrix24.
+
+---
+
+### Фича 9: Комментарии к времени [P0 — ПРОСТАЯ ПРАВКА]
+
+**Что**: Показывать комментарии разработчиков к elapsed записям.
+
+**Уже есть**: `normalizeElapsed()` сохраняет `entry.COMMENT_TEXT` в `comment` — данные ЗАГРУЖАЮТСЯ, но НЕ ОТОБРАЖАЮТСЯ.
+
+**Затронутые файлы**:
+- `tab-payroll-review.js` — `_prRenderTimelineItem()`: +1 строка с комментарием
+- `payroll-review-styles.js` — мелкий шрифт, обрезка 60 символов + tooltip
+- Минимальные изменения!
+
+---
+
+### ПОРЯДОК РЕАЛИЗАЦИИ
+
+```
+Фаза 1 — КРИТИЧЕСКИЕ (P0):
+  ├── 1. Починить формулы (base удваивается) — FINANCE ENGINE
+  └── 9. Показать комментарии (данные уже есть) — UI ENGINE
+
+Фаза 2 — ВАЖНЫЕ (P1):
+  ├── 3. Корректировка часов вверх — UI + FINANCE ENGINE
+  ├── 4. Три колонки часов — UI ENGINE
+  └── 2. Расчётный листок — UI ENGINE
+
+Фаза 3 — УЛУЧШЕНИЯ (P2):
+  ├── 5. Автовычет правок (нужны статусы Bitrix24) — DATA + FINANCE ENGINE
+  ├── 6. Светлая тема — UI ENGINE
+  └── 7. 1С экспорт (нужен формат) — FINANCE + UI ENGINE
+
+Фаза 4 — ПЛАНИРОВАНИЕ (P3):
+  └── 8. План/Факт — DATA + UI ENGINE
+```
+
+### ЗАВИСИМОСТИ
+
+```
+Фича 1 (формулы) → ПЕРВАЯ, все остальные зависят от корректных расчётов
+Фича 3 (корректировка ↑) → Фича 4 (три колонки имеют смысл при ↑)
+Фича 5 (автовычет) → нужны статусы от заказчика
+Фича 7 (1С) → нужен формат от заказчика
+Фича 8 (план/факт) → нужен TIME_ESTIMATE из Bitrix24
+```
+
+### 5 ДВИЖКОВ (модульная архитектура)
+
+| Движок | Файлы | Правило |
+|--------|-------|---------|
+| DATA ENGINE | data-loader.js, payroll-cache.js, payroll-normalizer.js | Только Фичи 5,8 затрагивают |
+| FINANCE ENGINE | payroll-projection.js, payroll-domain.js, payroll-review-calc.js | Фича 1 багфикс, Фича 5 автовычет |
+| UI ENGINE | tab-payroll-review.js, payroll-review-styles.js | Основной объём |
+| ADMIN ENGINE | Админка в tab-payroll-review.js | Фича 7 реквизиты |
+| TIMELINE ENGINE | _prRenderTimeline*() | Фичи 9, 4 |
+
+### Lessons learned
+- ДВА пути расчёта payrollAmount — гарантированный источник багов. После фикса оставить ОДИН путь (через payroll-domain.js calculateReviewAmount())
+- base salary = одна выплата на разработчика, НЕ на задачу
+- COMMENT_TEXT уже загружается — нужно просто отобразить
+- CSS переменные позволяют сделать светлую тему минимальными правками

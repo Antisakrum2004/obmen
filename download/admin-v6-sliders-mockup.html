@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мокап v6.0 — Ползунки Опл. клиента / К выплате (0%/50%/100%)</title>
+<style>
+  :root {
+    --bg:#0f1117; --bg2:#181a20; --bg3:#1e2028;
+    --border:#2a2d38; --border2:#363948;
+    --text:#e1e4eb; --text2:#9ca0ad; --text3:#6b6f7e;
+    --accent:#4f8bff; --green:#22d47e; --red:#ff4f6a;
+    --yellow:#f5a623; --cyan:#00d4ff; --orange:#ff8c42;
+    --mono:'JetBrains Mono','Fira Code','Consolas',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px}
+
+  h1{font-family:var(--mono);font-size:16px;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  h1::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .subtitle{font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:24px;letter-spacing:.04em}
+
+  /* Table */
+  .pr-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg2)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;padding:10px 12px;font-weight:500;color:var(--text2);font-size:10px;border-bottom:1px solid var(--border);white-space:nowrap;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
+  td{padding:8px 12px;border-bottom:1px solid rgba(42,45,56,.4);vertical-align:middle}
+  tbody tr:hover{background:rgba(79,139,255,.04)}
+  .c-num{font-family:var(--mono);text-align:center;font-size:11px;color:var(--text3)}
+
+  /* Task link */
+  .pr-task-link{color:var(--text);font-size:12px;cursor:pointer}
+  .pr-task-link:hover{color:var(--accent)}
+
+  /* Project tag */
+  .pr-proj-tag{font-family:var(--mono);font-size:10px;color:var(--cyan);background:rgba(0,212,255,.08);padding:2px 8px;border-radius:4px}
+
+  /* Dev name */
+  .pr-dev-name{display:flex;align-items:center;gap:6px;font-size:12px}
+  .pr-dev-av{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+
+  /* Readonly field */
+  .pr-readonly{font-family:var(--mono);font-size:12px;color:var(--text)}
+
+  /* ═══════════════════════════════════════
+     НОВОЕ: SLIDER + PRESET BUTTONS
+     ═══════════════════════════════════════ */
+  .pr-hours-cell{display:flex;flex-direction:column;gap:4px;min-width:120px}
+
+  /* Preset buttons row */
+  .pr-preset-row{display:flex;gap:2px}
+  .pr-preset-btn{
+    font-family:var(--mono);font-size:9px;font-weight:700;
+    padding:3px 8px;border-radius:4px;cursor:pointer;
+    border:1px solid var(--border);background:var(--bg3);color:var(--text3);
+    transition:all .12s;user-select:none;letter-spacing:.02em
+  }
+  .pr-preset-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(79,139,255,.06)}
+  .pr-preset-btn.active{
+    border-color:var(--accent);color:#fff;background:var(--accent);
+    box-shadow:0 0 6px rgba(79,139,255,.25)
+  }
+
+  /* Preset for billable (client) — cyan theme */
+  .pr-preset-btn.billable.active{
+    border-color:var(--cyan);color:#000;background:var(--cyan);
+    box-shadow:0 0 6px rgba(0,212,255,.25)
+  }
+  .pr-preset-btn.billable:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  /* Preset for payroll — orange theme */
+  .pr-preset-btn.payroll.active{
+    border-color:var(--orange);color:#000;background:var(--orange);
+    box-shadow:0 0 6px rgba(255,140,66,.25)
+  }
+  .pr-preset-btn.payroll:hover{border-color:var(--orange);color:var(--orange)}
+
+  /* Slider */
+  .pr-slider-row{display:flex;align-items:center;gap:6px}
+  .pr-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer}
+  .pr-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;cursor:pointer;border:2px solid var(--accent);background:var(--bg2);transition:all .12s}
+  .pr-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 0 6px rgba(79,139,255,.3)}
+  .pr-slider.billable::-webkit-slider-thumb{border-color:var(--cyan)}
+  .pr-slider.billable::-webkit-slider-thumb:hover{box-shadow:0 0 6px rgba(0,212,255,.3)}
+  .pr-slider.payroll::-webkit-slider-thumb{border-color:var(--orange)}
+  .pr-slider.payroll::-webkit-slider-thumb:hover{box-shadow:0 0 6px rgba(255,140,66,.3)}
+
+  /* Value display */
+  .pr-slider-val{font-family:var(--mono);font-size:11px;min-width:42px;text-align:right}
+  .pr-slider-val.billable{color:var(--cyan)}
+  .pr-slider-val.payroll{color:var(--orange)}
+
+  /* Fine input for manual override */
+  .pr-fine-input{
+    font-family:var(--mono);font-size:11px;
+    background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+    color:var(--text);padding:2px 6px;width:50px;text-align:right
+  }
+  .pr-fine-input:focus{outline:none;border-color:var(--accent)}
+
+  /* Status badges */
+  .pr-status{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;cursor:pointer}
+  .pr-status-pending{background:rgba(107,111,126,.12);color:var(--text3);border:1px solid rgba(107,111,126,.2)}
+  .pr-status-approved{background:rgba(34,212,126,.12);color:var(--green);border:1px solid rgba(34,212,126,.2)}
+
+  /* Footer */
+  .info-bar{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:24px;font-size:12px;color:var(--text2);line-height:1.8}
+  .info-bar strong{color:var(--accent)}
+  .info-bar .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);margin:0 2px}
+  .tag-cyan{background:rgba(0,212,255,.12);color:var(--cyan)}
+  .tag-orange{background:rgba(255,140,66,.12);color:var(--orange)}
+  .tag-green{background:rgba(34,212,126,.12);color:var(--green)}
+
+  /* Comparison */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .compare-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px}
+  .compare-card h3{font-family:var(--mono);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .compare-card.old{border-color:rgba(255,79,106,.2)}
+  .compare-card.new{border-color:rgba(34,212,126,.2)}
+
+  /* Version badge */
+  .version-badge{position:fixed;bottom:16px;right:16px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-family:var(--mono);font-size:11px;color:var(--text3)}
+  .version-badge span{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<h1>Зарплатный обзор <span style="font-size:10px;color:var(--text3);padding:2px 6px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:4px">vПР-6.0.0</span></h1>
+<div class="subtitle">Таблица задач — ползунки 0%/50%/100% для настройки выплат</div>
+
+<!-- ═══════ ТАБЛИЦА С ПОЛЗУНКАМИ ═══════ -->
+<div class="pr-table-wrap">
+<table>
+<thead>
+<tr>
+  <th>Задача</th>
+  <th>Проект</th>
+  <th>Разработчик</th>
+  <th class="c-num">Факт (ч)</th>
+  <th>Опл. клиента (ч)</th>
+  <th>К выплате (ч)</th>
+  <th class="c-num">Ставка</th>
+  <th class="c-num">Сумма (р)</th>
+  <th>Статус</th>
+</tr>
+</thead>
+<tbody>
+
+<!-- ═══ Row 1: 100% billable, 100% payroll ═══ -->
+<tr>
+  <td><span class="pr-task-link">Настроить форму отбора</span></td>
+  <td><span class="pr-proj-tag">Веб-сайт</span></td>
+  <td><span class="pr-dev-name"><span class="pr-dev-av">М</span>Макаров</span></td>
+  <td class="c-num">8.0</td>
+  <!-- Опл. клиента — SLIDER + PRESETS -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn billable" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn billable active" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider billable" min="0" max="100" value="100" oninput="onSlider(this)">
+        <span class="pr-slider-val billable">8.0ч</span>
+      </div>
+    </div>
+  </td>
+  <!-- К выплате — SLIDER + PRESETS -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn payroll active" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider payroll" min="0" max="100" value="100" oninput="onSlider(this)">
+        <span class="pr-slider-val payroll">8.0ч</span>
+      </div>
+    </div>
+  </td>
+  <td class="c-num">1000</td>
+  <td class="c-num">8,000</td>
+  <td><span class="pr-status pr-status-approved">Подтв.</span></td>
+</tr>
+
+<!-- ═══ Row 2: 100% billable, 50% payroll (СРЕЗ) ═══ -->
+<tr>
+  <td><span class="pr-task-link">Интеграция API оплаты</span></td>
+  <td><span class="pr-proj-tag">Мобильное приложение</span></td>
+  <td><span class="pr-dev-name"><span class="pr-dev-av">П</span>Приходько</span></td>
+  <td class="c-num">12.0</td>
+  <!-- Опл. клиента — 100% -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn billable" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn billable active" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider billable" min="0" max="100" value="100" oninput="onSlider(this)">
+        <span class="pr-slider-val billable">12.0ч</span>
+      </div>
+    </div>
+  </td>
+  <!-- К выплате — 50% (СРЕЗ) -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn payroll active" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider payroll" min="0" max="100" value="50" oninput="onSlider(this)">
+        <span class="pr-slider-val payroll">6.0ч</span>
+      </div>
+    </div>
+  </td>
+  <td class="c-num">1000</td>
+  <td class="c-num" style="color:var(--yellow)">6,000</td>
+  <td><span class="pr-status pr-status-pending">Ожидает</span></td>
+</tr>
+
+<!-- ═══ Row 3: 0% billable (НЕ ОПЛ.), 0% payroll ═══ -->
+<tr>
+  <td><span class="pr-task-link">Обучение 1С — видеокурс</span></td>
+  <td><span class="pr-proj-tag" style="color:var(--yellow);background:rgba(245,166,35,.08)">Обучение 1с</span></td>
+  <td><span class="pr-dev-name"><span class="pr-dev-av">К</span>Кашина</span></td>
+  <td class="c-num">4.5</td>
+  <!-- Опл. клиента — 0% (НЕ ОПЛ.) -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn billable active" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider billable" min="0" max="100" value="0" oninput="onSlider(this)">
+        <span class="pr-slider-val billable">0.0ч</span>
+      </div>
+    </div>
+  </td>
+  <!-- К выплате — 0% -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn payroll active" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider payroll" min="0" max="100" value="0" oninput="onSlider(this)">
+        <span class="pr-slider-val payroll">0.0ч</span>
+      </div>
+    </div>
+  </td>
+  <td class="c-num">1000</td>
+  <td class="c-num" style="color:var(--text3)">0</td>
+  <td><span class="pr-status pr-status-pending">Ожидает</span></td>
+</tr>
+
+<!-- ═══ Row 4: Custom value (73%) ═══ -->
+<tr>
+  <td><span class="pr-task-link">Рефакторинг модуля отчётов</span></td>
+  <td><span class="pr-proj-tag">ERP система</span></td>
+  <td><span class="pr-dev-name"><span class="pr-dev-av">С</span>Соколовский</span></td>
+  <td class="c-num">15.0</td>
+  <!-- Опл. клиента — custom 73% -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn billable" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn billable" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider billable" min="0" max="100" value="73" oninput="onSlider(this)">
+        <span class="pr-slider-val billable">11.0ч</span>
+      </div>
+    </div>
+  </td>
+  <!-- К выплате — 100% -->
+  <td>
+    <div class="pr-hours-cell">
+      <div class="pr-preset-row">
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,0)">0%</button>
+        <button class="pr-preset-btn payroll" onclick="setPreset(this,50)">50%</button>
+        <button class="pr-preset-btn payroll active" onclick="setPreset(this,100)">100%</button>
+      </div>
+      <div class="pr-slider-row">
+        <input type="range" class="pr-slider payroll" min="0" max="100" value="100" oninput="onSlider(this)">
+        <span class="pr-slider-val payroll">15.0ч</span>
+      </div>
+    </div>
+  </td>
+  <td class="c-num">1000</td>
+  <td class="c-num">15,000</td>
+  <td><span class="pr-status pr-status-pending">Ожидает</span></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ═══════ COMPARISON ═══════ -->
+<div class="compare">
+  <div class="compare-card old">
+    <h3>❌ ДО (v7.3 — number input)</h3>
+    <table style="width:100%">
+      <tr>
+        <td style="color:var(--text3);font-size:11px">Опл. клиента</td>
+        <td><input type="number" step="0.5" min="0" value="8.0" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;width:60px;font-family:var(--mono);font-size:11px"></td>
+      </tr>
+      <tr>
+        <td style="color:var(--text3);font-size:11px">К выплате</td>
+        <td><input type="number" step="0.5" min="0" value="6.0" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;width:60px;font-family:var(--mono);font-size:11px"></td>
+      </tr>
+    </table>
+    <div style="margin-top:8px;font-size:10px;color:var(--text3)">Ввод числа вручную, неудобно быстро настроить</div>
+  </div>
+  <div class="compare-card new">
+    <h3>✅ ПОСЛЕ (v6.0 — slider + presets)</h3>
+    <div style="margin-bottom:6px">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Опл. клиента</div>
+      <div style="display:flex;gap:2px;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text3)">0%</span>
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--cyan);background:var(--cyan);color:#000;font-weight:700">50%</span>
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text3)">100%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="range" min="0" max="100" value="50" style="flex:1;accent-color:var(--cyan)">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--cyan)">4.0ч</span>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:2px">К выплате</div>
+      <div style="display:flex;gap:2px;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text3)">0%</span>
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text3)">50%</span>
+        <span style="font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--orange);background:var(--orange);color:#000;font-weight:700">100%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="range" min="0" max="100" value="100" style="flex:1;accent-color:var(--orange)">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--orange)">8.0ч</span>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:var(--green)">Быстрые пресеты + точная настройка слайдером ✅</div>
+  </div>
+</div>
+
+<!-- ═══════ INFO ═══════ -->
+<div class="info-bar">
+  <strong>v6.0.0 — Ползунки и пресеты</strong><br>
+  <span class="tag tag-cyan">Опл. клиента</span> = billableHours — сколько часов оплатить клиенту (cyan theme)<br>
+  <span class="tag tag-orange">К выплате</span> = payrollHours — сколько часов выплатить разрабу (orange theme)<br>
+  <span class="tag tag-green">0%/50%/100%</span> — быстрый пресет (один клик), слайдер — точная настройка<br><br>
+  <strong>Логика:</strong> Факт = 8ч, пресет 50% → billableHours = 4.0ч, слайдер на 73% → billableHours = 5.8ч<br>
+  <strong>Формула:</strong> <code>hours = factHours × (pct / 100)</code> — минимум 0, максимум factHours
+</div>
+
+<div class="version-badge">мокап <span>v6.0.0</span> — ползунки 0/50/100%</div>
+
+<script>
+function setPreset(btn, pct) {
+  var cell = btn.closest('.pr-hours-cell');
+  var slider = cell.querySelector('.pr-slider');
+  var valSpan = cell.querySelector('.pr-slider-val');
+  var allBtns = cell.querySelectorAll('.pr-preset-btn');
+
+  slider.value = pct;
+  allBtns.forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+
+  // Calculate hours from fact (3rd td from the left = Факт)
+  var row = cell.closest('tr');
+  var factTd = row.querySelectorAll('td')[3];
+  var factHours = parseFloat(factTd.textContent) || 0;
+  var hours = (factHours * pct / 100).toFixed(1);
+  valSpan.textContent = hours + 'ч';
+}
+
+function onSlider(slider) {
+  var cell = slider.closest('.pr-hours-cell');
+  var valSpan = cell.querySelector('.pr-slider-val');
+  var allBtns = cell.querySelectorAll('.pr-preset-btn');
+
+  var pct = parseInt(slider.value);
+  var row = cell.closest('tr');
+  var factTd = row.querySelectorAll('td')[3];
+  var factHours = parseFloat(factTd.textContent) || 0;
+  var hours = (factHours * pct / 100).toFixed(1);
+  valSpan.textContent = hours + 'ч';
+
+  // Update active preset
+  allBtns.forEach(function(b) {
+    var bPct = parseInt(b.textContent);
+    b.classList.toggle('active', bPct === pct);
+  });
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мокап админки — v6.x (коммит e7bb0f2)</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #181a20;
+    --bg3: #1e2028;
+    --border: #2a2d38;
+    --border-light: #363948;
+    --text: #e1e4eb;
+    --text2: #9ca0ad;
+    --text3: #6b6f7e;
+    --accent: #4f8bff;
+    --green: #22d47e;
+    --red: #ff4f6a;
+    --orange: #f5a623;
+    --cyan: #00d4ff;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Modal overlay */
+  .pr-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+
+  /* Modal */
+  .pr-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 960px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+
+  /* Header */
+  .pr-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pr-modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* Close button */
+  .pr-modal-close {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .pr-modal-close:hover { background: var(--bg3); color: var(--text); }
+
+  /* Body */
+  .pr-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  /* Footer */
+  .pr-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Section labels */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-label.active { color: var(--accent); }
+  .section-label.excluded { color: var(--red); }
+
+  /* Admin table */
+  .pr-admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .pr-admin-table th {
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 500;
+    color: var(--text2);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .pr-admin-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(42,45,56,.5);
+    vertical-align: middle;
+  }
+  .pr-admin-table tbody tr:hover {
+    background: rgba(79,139,255,.04);
+  }
+  .pr-admin-table tbody tr.changed {
+    background: rgba(34,212,126,.08);
+  }
+
+  /* Inputs */
+  .pr-admin-input {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 4px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    width: 100%;
+  }
+  .pr-admin-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .pr-admin-input[type="number"] {
+    font-family: var(--mono);
+    text-align: right;
+  }
+  .pr-admin-input.fine-input {
+    color: var(--red);
+  }
+  .pr-admin-input.rate-changed {
+    border-color: var(--green);
+    box-shadow: 0 0 4px rgba(34,212,126,.3);
+  }
+
+  /* Number cell */
+  .c-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    text-align: center;
+  }
+
+  /* Excluded row */
+  .excluded-name {
+    color: var(--text3);
+    text-decoration: line-through;
+  }
+  .excluded-row {
+    opacity: 0.5;
+  }
+
+  /* Buttons */
+  .pr-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .pr-btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .pr-btn-primary:hover { background: #3d7ae8; }
+  .pr-btn-ghost {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .pr-btn-ghost:hover { background: var(--bg3); }
+
+  /* Save message */
+  .save-msg {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: auto;
+    padding: 6px 12px;
+    background: rgba(34,212,126,.12);
+    border: 1px solid rgba(34,212,126,.3);
+    border-radius: 6px;
+  }
+  .save-msg .check { color: var(--green); font-size: 14px; }
+  .save-msg .text {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  /* Info bar */
+  .info-bar {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+  .info-bar strong { color: var(--accent); }
+  .info-bar .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--mono);
+    margin: 0 2px;
+  }
+  .tag-green { background: rgba(34,212,126,.15); color: var(--green); }
+  .tag-red { background: rgba(255,79,106,.15); color: var(--red); }
+  .tag-blue { background: rgba(79,139,255,.15); color: var(--accent); }
+
+  /* Excluded section divider */
+  .excluded-divider {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Version badge */
+  .version-badge {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .version-badge span { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="pr-modal-overlay">
+  <div class="pr-modal" style="max-width:960px">
+
+    <!-- Header -->
+    <div class="pr-modal-header">
+      <span class="pr-modal-title">&#9881; Админка — Данные разработчиков</span>
+      <button class="pr-modal-close">&times;</button>
+    </div>
+
+    <!-- Body -->
+    <div class="pr-modal-body">
+
+      <!-- Info bar (not in original code, added for context) -->
+      <div class="info-bar">
+        <strong>Коммит e7bb0f2</strong> — версия ПР-5.0.0 в core.js, но по структуре кода это <strong>v6.x</strong><br>
+        Структура: <span class="tag tag-blue">2 секции</span>
+        <span class="tag tag-green">Активные разработчики</span>
+        <span class="tag tag-red">Исключённые</span>
+        Нет вкладок, нет клиентской ставки, есть блок исключённых
+      </div>
+
+      <!-- ═══════ СЕКЦИЯ 1: Активные разработчики ═══════ -->
+      <div style="margin-bottom:16px">
+        <div class="section-label active">Активные разработчики</div>
+        <table class="pr-admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ФИО</th>
+              <th>ИНН</th>
+              <th>Ставка<br>(р/ч)</th>
+              <th>Базовая /<br>Премия (р)</th>
+              <th style="color:var(--red)">Штраф<br>(р)</th>
+              <th>Коммент.<br>к штрафу</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- ID 1 — Макаров -->
+            <tr>
+              <td class="c-num">1</td>
+              <td><input class="pr-admin-input" type="text" value="Владимир Макаров" data-devid="1" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="1" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="1" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="1" data-field="base" title="Единовременная выплата (оклад/премия), добавляется 1 раз к сумме по задачам"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="1" data-field="fine" title="Штраф, вычитается из общей суммы"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="1" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 18 — Приходько К. -->
+            <tr>
+              <td class="c-num">18</td>
+              <td><input class="pr-admin-input" type="text" value="Константин Приходько" data-devid="18" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="18" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="18" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="18" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="18" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="18" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 38 — Соколовский -->
+            <tr>
+              <td class="c-num">38</td>
+              <td><input class="pr-admin-input" type="text" value="Александр Соколовский" data-devid="38" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="38" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="38" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="38" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="38" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="38" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 54 — Попов -->
+            <tr>
+              <td class="c-num">54</td>
+              <td><input class="pr-admin-input" type="text" value="Александр Попов" data-devid="54" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="54" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="54" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="54" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="54" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="54" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 82 — Забиров -->
+            <tr>
+              <td class="c-num">82</td>
+              <td><input class="pr-admin-input" type="text" value="Тимур Забиров" data-devid="82" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="82" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="82" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="82" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="82" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="82" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 92 — Кашина -->
+            <tr>
+              <td class="c-num">92</td>
+              <td><input class="pr-admin-input" type="text" value="Елена Кашина" data-devid="92" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="92" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="92" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="92" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="92" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="92" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 98 — Замшина -->
+            <tr>
+              <td class="c-num">98</td>
+              <td><input class="pr-admin-input" type="text" value="Ольга Замшина" data-devid="98" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="98" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="98" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="98" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="98" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="98" data-field="fineComment"></td>
+            </tr>
+            <!-- ID 116 — Предеин -->
+            <tr>
+              <td class="c-num">116</td>
+              <td><input class="pr-admin-input" type="text" value="Андрей Предеин" data-devid="116" data-field="name"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:80px" data-devid="116" data-field="inn"></td>
+              <td><input class="pr-admin-input" type="number" step="100" min="0" value="1000" style="width:70px" data-devid="116" data-field="rate"></td>
+              <td><input class="pr-admin-input" type="number" step="1000" min="0" value="0" style="width:80px" data-devid="116" data-field="base"></td>
+              <td><input class="pr-admin-input fine-input" type="number" step="500" min="0" value="0" style="width:80px" data-devid="116" data-field="fine"></td>
+              <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:100px" data-devid="116" data-field="fineComment"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ═══════ СЕКЦИЯ 2: Исключённые (не работают) ═══════ -->
+      <div class="excluded-divider">
+        <div class="section-label excluded">&#9888; Исключены из расчётов (не работают)</div>
+        <table class="pr-admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ФИО</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- ID 80 — Сергей Приходько -->
+            <tr class="excluded-row">
+              <td class="c-num">80</td>
+              <td class="excluded-name">Сергей Приходько</td>
+            </tr>
+            <!-- ID 94 — Denius Coder -->
+            <tr class="excluded-row">
+              <td class="c-num">94</td>
+              <td class="excluded-name">Denius Coder</td>
+            </tr>
+            <!-- ID 96 — Марина Савчук -->
+            <tr class="excluded-row">
+              <td class="c-num">96</td>
+              <td class="excluded-name">Марина Савчук</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div><!-- /pr-modal-body -->
+
+    <!-- Footer -->
+    <div class="pr-modal-footer">
+      <!-- Пример сообщения после сохранения (скрыт по умолчанию) -->
+      <!--
+      <div class="save-msg">
+        <span class="check">&#10003;</span>
+        <span class="text">Изменено: Владимир Макаров</span>
+      </div>
+      -->
+      <button class="pr-btn pr-btn-ghost">Отмена</button>
+      <button class="pr-btn pr-btn-primary">Сохранить всё</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Version badge -->
+<div class="version-badge">
+  коммит <span>e7bb0f2</span> &middot; core.js <span>ПР-5.0.0</span> &middot; структура <span>v6.x</span>
+</div>
+
+</body>
+</html>

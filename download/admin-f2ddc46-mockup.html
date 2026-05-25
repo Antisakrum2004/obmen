@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Админка — Mockup из коммита f2ddc46 (v7.3.1)</title>
+<style>
+  :root {
+    --bg: #08090d;
+    --bg1: #0d1017;
+    --bg2: #131720;
+    --text: #e4e8ee;
+    --text2: #a0aec0;
+    --text3: #5a6578;
+    --accent: #00d4ff;
+    --accent-hover: #00b8e6;
+    --green: #22d47e;
+    --red: #f04848;
+    --yellow: #f5a623;
+    --cyan: #00d4ff;
+    --orange: #f5a623;
+    --border: #1a1f2e;
+    --border2: #2a3040;
+    --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    --radius: 10px;
+    --shadow-btn: 0 2px 8px rgba(0,0,0,.3);
+    --shadow-btn-hover: 0 4px 16px rgba(0,0,0,.4);
+    --highlight: inset 0 1px 0 rgba(255,255,255,.04);
+    --highlight-strong: inset 0 1px 0 rgba(255,255,255,.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  /* ─── Modal overlay ─── */
+  .pr-modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+
+  .pr-modal {
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    width: 100%; max-width: 1080px;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  }
+
+  .pr-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pr-modal-title {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--text); text-transform: uppercase; letter-spacing: .06em;
+  }
+
+  .pr-modal-close {
+    background: none; border: none; color: var(--text3);
+    font-size: 20px; cursor: pointer; padding: 4px 8px;
+    transition: color .15s;
+  }
+  .pr-modal-close:hover { color: var(--text); }
+
+  .pr-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .pr-modal-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ─── Section label ─── */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ─── Admin table ─── */
+  .pr-admin-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .pr-admin-table th {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 8px 6px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: rgba(18,21,31,.5);
+  }
+
+  .pr-admin-table td {
+    padding: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pr-admin-table tr.changed {
+    background: rgba(34,212,126,.08);
+  }
+
+  .pr-admin-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 8px;
+    outline: none;
+    width: 100%;
+    transition: border-color .15s;
+  }
+
+  .pr-admin-input:focus {
+    border-color: var(--accent);
+  }
+
+  .pr-admin-input.input-red {
+    color: var(--red);
+  }
+
+  .c-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    text-align: center;
+    padding-right: 8px;
+  }
+
+  /* ─── Buttons ─── */
+  .pr-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid; text-transform: uppercase;
+    letter-spacing: .04em; transition: all .15s;
+    box-shadow: var(--shadow-btn), var(--highlight);
+  }
+  .pr-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-btn-hover), var(--highlight-strong);
+  }
+  .pr-btn-primary {
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+  }
+  .pr-btn-primary:hover { background: var(--accent-hover); }
+  .pr-btn-ghost {
+    background: transparent; color: var(--text3);
+    border-color: var(--border);
+  }
+  .pr-btn-ghost:hover {
+    color: var(--text); border-color: var(--border2);
+  }
+
+  /* ─── Success message ─── */
+  .save-success {
+    display: flex; align-items: center; gap: 6px;
+    margin-right: auto;
+    padding: 6px 12px;
+    background: rgba(34,212,126,.12);
+    border: 1px solid rgba(34,212,126,.3);
+    border-radius: 6px;
+  }
+  .save-success .check { color: var(--green); font-size: 14px; }
+  .save-success .msg {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--green); font-weight: 600;
+  }
+
+  /* ─── Info boxes ─── */
+  .info-box {
+    margin-top: 40px;
+    padding: 24px;
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    max-width: 1080px;
+    width: 100%;
+  }
+  .info-box h2 {
+    font-size: 13px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-row {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11px;
+  }
+  .info-label {
+    color: var(--text3);
+    min-width: 220px;
+  }
+  .info-value {
+    color: var(--text);
+  }
+  .info-value.yes { color: var(--green); }
+  .info-value.no { color: var(--red); }
+  .info-value.warn { color: var(--yellow); }
+
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 6px;
+  }
+  .tag-green { background: rgba(34,212,126,.1); color: var(--green); border: 1px solid rgba(34,212,126,.25); }
+  .tag-red { background: rgba(240,72,72,.1); color: var(--red); border: 1px solid rgba(240,72,72,.25); }
+  .tag-yellow { background: rgba(245,166,35,.1); color: var(--yellow); border: 1px solid rgba(245,166,35,.25); }
+  .tag-cyan { background: rgba(0,212,255,.08); color: var(--cyan); border: 1px solid rgba(0,212,255,.2); }
+
+  .commit-ref {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    background: rgba(0,212,255,.06);
+    border: 1px solid rgba(0,212,255,.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     АДМИНКА — Визуальный рендер из коммита f2ddc46 (v7.3.1)
+     Файл: public/js/tab-payroll-review.js, строки 1334-1400
+     
+     Это ТОЧНАЯ копия того что рендерила _prRenderAdminModal()
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:32px;width:100%">
+
+<!-- Заголовок-пометка -->
+<div style="text-align:center;padding:12px;font-family:var(--mono);font-size:10px;color:var(--text3)">
+  Визуальный рендер админки из коммита <span class="commit-ref">f2ddc46</span> (v7.3.1)<br>
+  Источник: <code>public/js/tab-payroll-review.js:1334-1400</code> — функция <code>_prRenderAdminModal()</code>
+</div>
+
+<!-- ════ МОДАЛКА ════ -->
+<div class="pr-modal" style="position:relative;max-height:none">
+
+  <!-- Header -->
+  <div class="pr-modal-header">
+    <span class="pr-modal-title">&#9881; Админка — Данные разработчиков</span>
+    <button class="pr-modal-close">&times;</button>
+  </div>
+
+  <!-- Body — ЕДИНСТВЕННАЯ секция -->
+  <div class="pr-modal-body">
+
+    <!-- ── Секция: Активные разработчики ── -->
+    <div style="margin-bottom:16px">
+      <div class="section-label">Активные разработчики</div>
+      <table class="pr-admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>ФИО</th>
+            <th>ИНН</th>
+            <th>Ставка<br>(р/ч)</th>
+            <th>Базовая /<br>Премия (р)</th>
+            <th style="color:var(--red)">Штраф<br>(р)</th>
+            <th>Коммент.<br>к штрафу</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Макаров Владимир -->
+          <tr>
+            <td class="c-num">1</td>
+            <td><input class="pr-admin-input" type="text" value="Владимир Макаров" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px" title="Ставка разработчика (р/ч)"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px" title="Единовременная выплата (оклад/премия)"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px" title="Штраф, вычитается из общей суммы"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Приходько Константин -->
+          <tr>
+            <td class="c-num">18</td>
+            <td><input class="pr-admin-input" type="text" value="Константин Приходько" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Соколовский Александр -->
+          <tr>
+            <td class="c-num">38</td>
+            <td><input class="pr-admin-input" type="text" value="Александр Соколовский" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Попов Александр -->
+          <tr>
+            <td class="c-num">54</td>
+            <td><input class="pr-admin-input" type="text" value="Александр Попов" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Забиров Тимур -->
+          <tr>
+            <td class="c-num">82</td>
+            <td><input class="pr-admin-input" type="text" value="Тимур Забиров" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Кашина Елена -->
+          <tr>
+            <td class="c-num">92</td>
+            <td><input class="pr-admin-input" type="text" value="Елена Кашина" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Замшина Ольга -->
+          <tr>
+            <td class="c-num">98</td>
+            <td><input class="pr-admin-input" type="text" value="Ольга Замшина" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="1000" style="width:65px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+          <!-- Предеин Андрей — оклад 200к, ставка 0 -->
+          <tr class="changed" style="background:rgba(0,212,255,.04)">
+            <td class="c-num">116</td>
+            <td><input class="pr-admin-input" type="text" value="Андрей Предеин" style="width:130px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="ИНН" style="width:110px"></td>
+            <td><input class="pr-admin-input" type="number" value="0" style="width:65px;border-color:var(--yellow);box-shadow:0 0 4px rgba(245,166,35,.3)" title="Ставка 0 = окладник"></td>
+            <td><input class="pr-admin-input" type="number" value="200000" style="width:75px;border-color:var(--green);box-shadow:0 0 4px rgba(34,212,126,.3)" title="Оклад 200к (3П)"></td>
+            <td><input class="pr-admin-input input-red" type="number" value="0" style="width:75px"></td>
+            <td><input class="pr-admin-input" type="text" value="" placeholder="Причина" style="width:90px"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══ БЛОК ИСКЛЮЧЁННЫХ РАЗРАБОТЧИКОВ — НЕТ В f2ddc46! ═══ -->
+    <!-- В коммите 580cfa7 этого блока НЕ БЫЛО в админке -->
+    <!-- Он появился позже в commit e7bb0f2 (v6.x) и потом был убран -->
+    <!-- В f2ddc46 (v7.3.1) — НЕТ блока исключённых -->
+
+  </div>
+
+  <!-- Footer -->
+  <div class="pr-modal-footer">
+    <button class="pr-btn pr-btn-ghost">Отмена</button>
+    <button class="pr-btn pr-btn-primary">Сохранить всё</button>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ДОКАЗАТЕЛЬСТВА — Анализ по коду
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="info-box">
+  <h2>&#9881; Анализ админки из коммита f2ddc46 (v7.3.1)</h2>
+
+  <div class="info-row">
+    <span class="info-label">Коммит:</span>
+    <span class="info-value"><span class="commit-ref">f2ddc4601d492e2a222ebee5512a8c8fcf555a5e</span></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Сообщение:</span>
+    <span class="info-value">v7.3.1: fix hours - CHANGED_DATE filter, remove client rate from admin</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Файл:</span>
+    <span class="info-value"><code>public/js/tab-payroll-review.js</code>, строки 1334–1400</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Функция:</span>
+    <span class="info-value"><code>_prRenderAdminModal()</code></span>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <div class="info-row">
+    <span class="info-label">Кол-во секций:</span>
+    <span class="info-value"><strong>1</strong> <span class="tag tag-yellow">ОДНА</span></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Название секции:</span>
+    <span class="info-value">«Активные разработчики»</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Вкладки (табы):</span>
+    <span class="info-value no">НЕТ <span class="tag tag-red">НЕТ ТАБОВ</span></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Двухсекционная структура:</span>
+    <span class="info-value no">НЕТ <span class="tag tag-red">НЕТ</span></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Блок исключённых:</span>
+    <span class="info-value no">НЕТ <span class="tag tag-red">НЕТ</span></span>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <div class="info-row">
+    <span class="info-label">Поля таблицы:</span>
+    <span class="info-value">
+      ID, ФИО, ИНН, Ставка (р/ч), Базовая/Премия (р), Штраф (р), Коммент. к штрафу
+      <span class="tag tag-cyan">7 КОЛОНОК</span>
+    </span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Клиентская ставка:</span>
+    <span class="info-value no">УБРАНА в этом коммите <span class="tag tag-red">НЕТ</span></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Кол-во разрабов в таблице:</span>
+    <span class="info-value">8 (ACTIVE_DEV_IDS, без исключённых)</span>
+  </div>
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#128270; Доказательство по коду</h2>
+
+  <div class="info-row">
+    <span class="info-label">Заголовок модалки:</span>
+    <span class="info-value" style="font-size:10px"><code>&#9881; Админка — Данные разработчиков</code></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Заголовок секции:</span>
+    <span class="info-value" style="font-size:10px"><code>АКТИВНЫЕ РАЗРАБОТЧИКИ</code> (строка 1348)</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Заголовки TH:</span>
+    <span class="info-value" style="font-size:10px"><code>ID | ФИО | ИНН | Ставка(р/ч) | Базовая/Премия(р) | Штраф(р) | Коммент.</code></span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Клиент. ставка TH:</span>
+    <span class="info-value no" style="font-size:10px"><code>&lt;th&gt;Клиент.&lt;br&gt;ставка&lt;/th&gt;</code> — НЕТ в f2ddc46</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">Исключённые devs:</span>
+    <span class="info-value no" style="font-size:10px">Нет блока <code>EXCLUDED_DEV_IDS</code> в рендере админки</span>
+  </div>
+  <div class="info-row">
+    <span class="info-label">data-field="clientRate":</span>
+    <span class="info-value no" style="font-size:10px">НЕТ в таблице, НО <strong>ЕСТЬ</strong> в <code>_prSaveAdmin()</code> (строка 1710) — мёртвый код</span>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#9889; Ключевой diff: 580cfa7 → f2ddc46</h2>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:10px;line-height:1.6;overflow-x:auto;margin-top:8px">
+    <div style="color:var(--red)">УДАЛЕНО из _prRenderAdminModal() (строка 1347):</div>
+<pre style="color:var(--text2);margin:8px 0 16px">
+-  h += '&lt;th&gt;Клиент.&lt;br&gt;ставка&lt;/th&gt;';          ← колонка удалена
+-  var clientRate = prGetClientRate(sid);          ← переменная удалена
+-  var isClientDiff = clientRate !== rate;          ← логика подсветки удалена
+-  var clientRateStyle = isClientDiff ? '...' : ''; ← стиль удалён
+-  h += '&lt;td&gt;&lt;input ... data-field="clientRate" ...&gt;&lt;/td&gt;';  ← инпут удалён
+</pre>
+
+    <div style="color:var(--green)">ОСТАЛОСЬ в _prSaveAdmin() (строка 1710):</div>
+<pre style="color:var(--text2);margin:8px 0 0">
++  if (d.clientRate !== undefined) {               ← мёртвый код! Инпута нет
++    var newClientRate = parseInt(d.clientRate) || 0;
++    settings.clientRate = newClientRate;
++  }
+</pre>
+  </div>
+
+  <div style="height:16px"></div>
+
+  <h2 style="margin-top:8px">&#128197; Хронология удаления «Клиент. ставка» из админки</h2>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:10px;line-height:2;margin-top:8px">
+    <div><span class="commit-ref">580cfa7</span> <span class="tag tag-green">БЫЛО</span> Колонка «Клиент. ставка» в таблице разработчиков — с cyan-подсветкой</div>
+    <div><span class="commit-ref">580c389</span> <span class="tag tag-red">УБРАНО</span> v7.3.0: «remove clientRate from dev admin» — колонка удалена из TH и TD</div>
+    <div><span class="commit-ref">3f8486a</span> <span class="tag tag-red">УБРАНО</span> v7.3.0 (дубль): «remove clientRate from dev admin» — то же самое</div>
+    <div><span class="commit-ref">f2ddc46</span> <span class="tag tag-red">НЕТ</span> v7.3.1: «remove client rate from admin» — нет колонки, мёртвый clientRate в _prSaveAdmin</div>
+    <div><span class="commit-ref">0dd10c8</span> <span class="tag tag-red">НЕТ</span> v7.3.3: последняя v7.x — нет клиентской ставки</div>
+    <div><span class="commit-ref">c4347a9</span> <span class="tag tag-cyan">НОВОЕ</span> v8.0.0: клиентская ставка перенесена в ОТДЕЛЬНЫЙ ТАБ «Клиенты (проекты)»</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     СРАВНЕНИЕ: Что было vs. Что стало
+     ═══════════════════════════════════════════════════════════════ -->
+
+<div class="info-box">
+  <h2>&#128200; Сравнение: 580cfa7 (с клиент. ставкой) vs f2ddc46 (без)</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+    
+    <!-- 580cfa7 -->
+    <div style="background:var(--bg);border:1px solid rgba(34,212,126,.3);border-radius:8px;padding:16px">
+      <div style="font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <span class="commit-ref">580cfa7</span> — С клиент. ставкой
+      </div>
+      <table class="pr-admin-table" style="font-size:10px">
+        <thead><tr>
+          <th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка</th>
+          <th style="color:var(--cyan)">Клиент.<br>ставка</th>
+          <th>Базовая</th><th style="color:var(--red)">Штраф</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-num">1</td><td style="color:var(--text2)">Макаров</td><td>—</td><td>1000</td>
+            <td style="color:var(--text3)">1000</td>
+            <td>0</td><td>0</td>
+          </tr>
+          <tr>
+            <td class="c-num">18</td><td style="color:var(--text2)">Приходько</td><td>—</td><td>1000</td>
+            <td style="color:var(--text3)">1000</td>
+            <td>0</td><td>0</td>
+          </tr>
+          <tr>
+            <td class="c-num">116</td><td style="color:var(--text2)">Предеин</td><td>—</td><td style="color:var(--yellow)">0</td>
+            <td style="color:var(--text3)">0</td>
+            <td style="color:var(--green)">200000</td><td>0</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:9px;color:var(--text3);margin-top:8px">8 колонок, clientRate инпут с cyan-подсветкой</div>
+    </div>
+
+    <!-- f2ddc46 -->
+    <div style="background:var(--bg);border:1px solid rgba(240,72,72,.3);border-radius:8px;padding:16px">
+      <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <span class="commit-ref">f2ddc46</span> — Без клиент. ставки
+      </div>
+      <table class="pr-admin-table" style="font-size:10px">
+        <thead><tr>
+          <th>ID</th><th>ФИО</th><th>ИНН</th><th>Ставка</th>
+          <th>Базовая</th><th style="color:var(--red)">Штраф</th><th>Коммент.</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="c-num">1</td><td style="color:var(--text2)">Макаров</td><td>—</td><td>1000</td>
+            <td>0</td><td>0</td><td>—</td>
+          </tr>
+          <tr>
+            <td class="c-num">18</td><td style="color:var(--text2)">Приходько</td><td>—</td><td>1000</td>
+            <td>0</td><td>0</td><td>—</td>
+          </tr>
+          <tr>
+            <td class="c-num">116</td><td style="color:var(--text2)">Предеин</td><td>—</td><td style="color:var(--yellow)">0</td>
+            <td style="color:var(--green)">200000</td><td>0</td><td>—</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:9px;color:var(--text3);margin-top:8px">7 колонок, колонка «Клиент. ставка» удалена</div>
+    </div>
+
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>

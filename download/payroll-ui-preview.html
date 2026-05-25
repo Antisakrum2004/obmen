@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Review — UX/UI Preview v9.0 (BEFORE / AFTER)</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   DESIGN TOKENS — Shared between BEFORE and AFTER
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #0d0f19;
+  --bg1: #0d0f19;
+  --bg2: #121521;
+  --bg3: #1a1e2e;
+  --bg-hover: rgba(79,139,255,.04);
+  --text: #e8ecf4;
+  --text2: #a1aec3;
+  --text3: #6b7a90;
+  --accent: #4f8bff;
+  --accent-hover: #6da0ff;
+  --green: #22d47e;
+  --red: #ff4f6a;
+  --yellow: #f5a623;
+  --orange: #f58623;
+  --cyan: #00d4ff;
+  --border: rgba(255,255,255,.06);
+  --border2: rgba(255,255,255,.12);
+  --glass-border: rgba(255,255,255,.08);
+  --radius: 14px;
+  --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --shadow-card: 0 1px 3px rgba(0,0,0,.3);
+  --shadow-card-hover: 0 4px 12px rgba(0,0,0,.4);
+  --shadow-btn: 0 1px 2px rgba(0,0,0,.3);
+  --shadow-btn-hover: 0 2px 8px rgba(0,0,0,.4);
+  --highlight: inset 0 1px 0 rgba(255,255,255,.03);
+  --highlight-strong: inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+/* ─── Toggle Switch ─── */
+.preview-toggle {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 12px 24px;
+  background: rgba(13,15,25,.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.preview-toggle h1 {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text);
+}
+.toggle-switch {
+  display: flex; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 2px; gap: 2px;
+}
+.toggle-btn {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  padding: 6px 18px; border-radius: 6px; border: none;
+  background: transparent; color: var(--text3); cursor: pointer;
+  transition: all .2s; text-transform: uppercase; letter-spacing: .04em;
+}
+.toggle-btn:hover { color: var(--text2); }
+.toggle-btn.active-before { background: var(--red); color: #fff; }
+.toggle-btn.active-after { background: var(--green); color: #000; }
+.preview-badge {
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  padding: 3px 10px; border-radius: 4px; text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.badge-mock { background: rgba(245,166,35,.1); color: var(--yellow); border: 1px solid rgba(245,166,35,.25); }
+
+.content-area { padding-top: 56px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BEFORE — Current Production Styles (копия payroll-review-styles.js)
+   ═══════════════════════════════════════════════════════════════ */
+.before .pr-wrap{display:flex;flex-direction:column;gap:16px}
+.before .pr-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:0 0 8px}
+.before .pr-title{font-family:var(--mono);font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);display:flex;align-items:center;gap:10px}
+.before .pr-title::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.before .pr-header-info{display:flex;align-items:center;gap:12px}
+.before .pr-header-stat{font-family:var(--mono);font-size:10px;color:var(--text3);padding:3px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:4px}
+.before .pr-version{font-family:var(--mono);font-size:9px;color:var(--text3);opacity:.6}
+.before .pr-badge{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;display:inline-flex;align-items:center;gap:4px}
+.before .pr-badge-live{background:rgba(34,212,126,.1);color:var(--green);border:1px solid rgba(34,212,126,.25)}
+.before .pr-badge-cache{background:rgba(0,212,255,.1);color:var(--cyan);border:1px solid rgba(0,212,255,.25);font-size:9px}
+.before .pr-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.before .pr-select{background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-family:var(--mono);font-size:11px;padding:6px 10px;outline:none;cursor:pointer}
+.before .pr-btn{font-family:var(--mono);font-size:11px;font-weight:700;padding:7px 14px;border-radius:8px;cursor:pointer;border:1px solid;text-transform:uppercase;letter-spacing:.04em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
+.before .pr-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-btn-hover),var(--highlight-strong)}
+.before .pr-btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.before .pr-btn-green{background:var(--green);color:#000;border-color:var(--green)}
+.before .pr-btn-orange{background:rgba(245,166,35,.1);color:var(--yellow);border-color:rgba(245,166,35,.3)}
+.before .pr-btn-ghost{background:transparent;color:var(--text3);border-color:var(--border)}
+.before .pr-view-toggle,.before .pr-role-toggle,.before .pr-density-toggle{display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px}
+.before .pr-view-btn,.before .pr-role-btn,.before .pr-density-btn{font-family:var(--mono);font-size:10px;font-weight:600;padding:4px 10px;border-radius:6px;border:none;background:transparent;color:var(--text3);cursor:pointer}
+.before .pr-view-btn.active{background:var(--accent);color:#fff}
+.before .pr-role-btn.active{background:var(--cyan);color:#000}
+.before .pr-density-btn.active{background:var(--bg3);color:var(--text)}
+
+/* BEFORE KPI */
+.before .pr-kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.before .pr-kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden;box-shadow:var(--shadow-card),var(--highlight)}
+.before .pr-kpi::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--kc,var(--accent))}
+.before .pr-kpi-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.before .pr-kpi-value{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--text);line-height:1}
+.before .pr-kpi-sub{font-size:10px;color:var(--text3);margin-top:4px}
+
+/* BEFORE Heatmap */
+.before .pr-heatmap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:8px}
+.before .pr-heatmap-title{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.before .pr-heatmap-row{display:flex;gap:6px;flex-wrap:wrap}
+.before .pr-heatmap-chip{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;transition:all .15s}
+.before .pr-heatmap-chip:hover{border-color:var(--border2);background:var(--bg-hover)}
+.before .pr-heatmap-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.before .pr-heatmap-dot.green{background:var(--green);box-shadow:0 0 4px var(--green)}
+.before .pr-heatmap-dot.yellow{background:var(--yellow);box-shadow:0 0 4px var(--yellow)}
+.before .pr-heatmap-dot.red{background:var(--red);box-shadow:0 0 4px var(--red)}
+.before .pr-heatmap-name{font-family:var(--mono);font-size:10px;color:var(--text2)}
+.before .pr-heatmap-hours{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.before .pr-heatmap-margin{font-family:var(--mono);font-size:9px;font-weight:600}
+.before .pr-heatmap-margin.pos{color:var(--green)}
+.before .pr-heatmap-margin.neg{color:var(--red)}
+
+/* BEFORE Filters */
+.before .pr-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0}
+.before .pr-filter-chip{font-family:var(--mono);font-size:10px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text3);transition:all .15s}
+.before .pr-filter-chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* BEFORE Cards */
+.before .pr-dev-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;margin-top:12px}
+.before .pr-dev-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-card),var(--highlight);transition:all .2s}
+.before .pr-dev-card:hover{border-color:var(--border2);box-shadow:var(--shadow-card-hover),var(--highlight-strong)}
+.before .pr-dev-card.risk-high{border-color:rgba(255,79,106,.3)}
+.before .pr-dev-card.risk-warn{border-color:rgba(245,166,35,.3)}
+.before .pr-card-inner{padding:16px 18px 10px}
+.before .pr-card-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.before .pr-card-avatar{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;background:var(--bg3);border:1px solid var(--glass-border);color:var(--accent);flex-shrink:0}
+.before .pr-card-identity{flex:1;min-width:0}
+.before .pr-card-name{font-weight:600;font-size:14px;color:var(--text)}
+.before .pr-card-role{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:1px}
+.before .pr-card-status{font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+.before .pr-card-status.s-review{background:rgba(79,139,255,.12);color:var(--accent);border:1px solid rgba(79,139,255,.25)}
+.before .pr-card-status.s-draft{background:rgba(161,174,195,.08);color:var(--text3);border:1px solid rgba(161,174,195,.15)}
+.before .pr-card-kpi{display:flex;gap:16px;margin-bottom:12px;align-items:flex-end}
+.before .pr-kpi-primary{flex:1}
+.before .pr-kpi-hours{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--accent);line-height:1}
+.before .pr-kpi-hours-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.before .pr-kpi-money{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--orange);line-height:1}
+.before .pr-kpi-money-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.before .pr-card-secondary{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.before .pr-sec-item{display:flex;align-items:center;gap:4px}
+.before .pr-sec-item.primary-sec{background:var(--bg3);padding:3px 8px;border-radius:4px}
+.before .pr-sec-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.before .pr-sec-val{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)}
+.before .pr-sec-val.billable{color:var(--green)}
+.before .pr-sec-val.cut{color:var(--red)}
+.before .pr-sec-divider{width:1px;height:14px;background:var(--border);margin:0 2px}
+.before .pr-card-progress{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.before .pr-progress-row{display:flex;align-items:center;gap:6px}
+.before .pr-progress-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;width:60px;flex-shrink:0}
+.before .pr-progress-track{flex:1;height:4px;background:var(--bg);border-radius:2px;overflow:hidden}
+.before .pr-progress-fill{height:100%;border-radius:2px;transition:width .3s}
+.before .pr-progress-fill.green{background:var(--green)}
+.before .pr-progress-fill.yellow{background:var(--yellow)}
+.before .pr-progress-fill.red{background:var(--red)}
+.before .pr-progress-val{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:40px;text-align:right}
+.before .pr-card-risks{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.before .pr-risk-pill{font-family:var(--mono);font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em}
+.before .risk-low_load{background:rgba(245,166,35,.12);color:var(--yellow);border:1px solid rgba(245,166,35,.25)}
+.before .risk-no_rate{background:rgba(255,79,106,.12);color:var(--red);border:1px solid rgba(255,79,106,.25)}
+.before .pr-card-footer{display:flex;gap:0;padding:8px 18px;background:rgba(0,0,0,.15);border-top:1px solid var(--border)}
+.before .pr-footer-metric{flex:1;text-align:center;padding:4px 0}
+.before .pr-footer-val{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text2)}
+.before .pr-footer-label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-top:1px}
+
+/* BEFORE Debug */
+.before .pr-debug{margin-top:16px;padding:12px 16px;background:rgba(0,0,0,.3);border:1px solid rgba(245,166,35,.15);border-radius:8px;font-family:var(--mono);font-size:10px;color:var(--text3)}
+.before .pr-debug-title{color:var(--yellow);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}
+.before .pr-debug-row{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+
+/* BEFORE Fin Footer */
+.before .pr-fin-footer{display:flex;align-items:center;gap:0;padding:10px 0;margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.before .pr-fin-item{flex:1;text-align:center;padding:6px 10px;border-right:1px solid var(--border)}
+.before .pr-fin-item:last-child{border-right:none}
+.before .pr-fin-label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.before .pr-fin-val{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
+.before .margin-pos{color:var(--green) !important}
+.before .margin-neg{color:var(--red) !important}
+
+/* ═══════════════════════════════════════════════════════════════
+   AFTER — Polished v9.0 Styles
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Stage 1: Visual Spacing System */
+.after .pr-wrap{display:flex;flex-direction:column;gap:24px}
+.after .pr-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;padding:0 0 12px}
+.after .pr-title{font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:.04em;color:var(--text);display:flex;align-items:center;gap:12px;text-transform:none}
+.after .pr-title::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:none;opacity:.7}
+.after .pr-header-info{display:flex;align-items:center;gap:16px}
+.after .pr-header-stat{font-family:var(--mono);font-size:10px;color:var(--text3);padding:4px 12px;background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:6px;letter-spacing:.02em}
+.after .pr-version{font-family:var(--mono);font-size:9px;color:var(--text3);opacity:.4}
+.after .pr-badge{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:4px}
+.after .pr-badge-live{background:rgba(34,212,126,.06);color:rgba(34,212,126,.7);border:1px solid rgba(34,212,126,.12)}
+.after .pr-badge-cache{background:rgba(0,212,255,.06);color:rgba(0,212,255,.6);border:1px solid rgba(0,212,255,.1);font-size:9px}
+
+/* Stage 4: Header Cleanup */
+.after .pr-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.after .pr-controls-group{display:flex;align-items:center;gap:6px}
+.after .pr-controls-divider{width:1px;height:24px;background:rgba(255,255,255,.04);margin:0 6px}
+.after .pr-select{background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:10px;color:var(--text2);font-family:var(--mono);font-size:11px;padding:7px 12px;outline:none;cursor:pointer;transition:border-color .2s}
+.after .pr-select:focus{border-color:rgba(79,139,255,.3)}
+.after .pr-btn{font-family:var(--mono);font-size:11px;font-weight:600;padding:7px 16px;border-radius:10px;cursor:pointer;border:1px solid;text-transform:none;letter-spacing:.02em;transition:all .2s;box-shadow:none}
+.after .pr-btn:hover{transform:translateY(-1px)}
+.after .pr-btn-primary{background:var(--accent);color:#fff;border-color:transparent;opacity:.85}
+.after .pr-btn-primary:hover{opacity:1;box-shadow:0 4px 16px rgba(79,139,255,.2)}
+.after .pr-btn-green{background:rgba(34,212,126,.08);color:rgba(34,212,126,.7);border-color:rgba(34,212,126,.15)}
+.after .pr-btn-green:hover{background:rgba(34,212,126,.12);color:var(--green)}
+.after .pr-btn-orange{background:rgba(245,166,35,.06);color:rgba(245,166,35,.6);border-color:rgba(245,166,35,.12)}
+.after .pr-btn-orange:hover{background:rgba(245,166,35,.1);color:var(--yellow)}
+.after .pr-btn-ghost{background:transparent;color:var(--text3);border-color:rgba(255,255,255,.04)}
+.after .pr-btn-ghost:hover{color:var(--text2);border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.02)}
+.after .pr-view-toggle,.after .pr-role-toggle,.after .pr-density-toggle{display:flex;gap:2px;background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:10px;padding:2px}
+.after .pr-view-btn,.after .pr-role-btn,.after .pr-density-btn{font-family:var(--mono);font-size:10px;font-weight:600;padding:5px 12px;border-radius:8px;border:none;background:transparent;color:var(--text3);cursor:pointer;transition:all .15s;letter-spacing:.01em}
+.after .pr-view-btn.active{background:var(--accent);color:#fff;opacity:.85}
+.after .pr-role-btn.active{background:rgba(0,212,255,.12);color:var(--cyan);border:none}
+.after .pr-density-btn.active{background:rgba(255,255,255,.06);color:var(--text)}
+
+/* Stage 1 + 7: KPI with Typography Polish */
+.after .pr-kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+@media(max-width:1000px){.after .pr-kpi-grid{grid-template-columns:repeat(3,1fr)}}
+.after .pr-kpi{background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:18px;padding:20px 22px;position:relative;overflow:hidden;box-shadow:var(--shadow-card);transition:all .2s}
+.after .pr-kpi:hover{box-shadow:var(--shadow-card-hover);border-color:rgba(255,255,255,.06)}
+/* Stage 8: Gradient top-line KPI */
+.after .pr-kpi::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--kc,var(--accent)),transparent);opacity:.6}
+.after .pr-kpi-label{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.04em;margin-bottom:10px;font-weight:600}
+.after .pr-kpi-value{font-family:var(--mono);font-size:36px;font-weight:700;color:var(--text);line-height:1.1;letter-spacing:-.02em}
+.after .pr-kpi-sub{font-size:12px;color:var(--text3);margin-top:6px;opacity:.7}
+
+/* Stage 5: Heatmap Simplification */
+.after .pr-heatmap{background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:14px;padding:12px 18px;margin-bottom:4px}
+.after .pr-heatmap-title{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.04em;margin-bottom:10px;font-weight:600}
+.after .pr-heatmap-row{display:flex;gap:6px;flex-wrap:wrap}
+.after .pr-heatmap-chip{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,.03);cursor:pointer;transition:all .2s}
+.after .pr-heatmap-chip:hover{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.06)}
+.after .pr-heatmap-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;box-shadow:none}
+.after .pr-heatmap-dot.green{background:var(--green)}
+.after .pr-heatmap-dot.yellow{background:var(--yellow)}
+.after .pr-heatmap-dot.red{background:var(--red)}
+.after .pr-heatmap-name{font-family:var(--mono);font-size:11px;color:var(--text2);font-weight:500}
+.after .pr-heatmap-hours{font-family:var(--mono);font-size:10px;color:var(--text3);font-weight:500}
+/* margin убран из чипа — только в tooltip */
+
+/* Stage 1: Filters with more spacing */
+.after .pr-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0}
+.after .pr-filter-chip{font-family:var(--mono);font-size:10px;font-weight:600;padding:5px 12px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.04);background:var(--bg2);color:var(--text3);transition:all .15s}
+.after .pr-filter-chip.active{background:var(--accent);color:#fff;border-color:transparent;opacity:.85}
+
+/* Stage 3: Grid Breathing */
+.after .pr-dev-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:24px;margin-top:16px}
+@media(min-width:1200px){.after .pr-dev-cards{grid-template-columns:repeat(3,1fr)}}
+
+/* Stage 2+3+8: Card Visual Hierarchy + Premium Feel */
+.after .pr-dev-card{background:var(--bg2);border:1px solid rgba(255,255,255,.03);border-radius:18px;overflow:hidden;box-shadow:var(--shadow-card);transition:all .25s}
+.after .pr-dev-card:hover{border-color:rgba(255,255,255,.06);box-shadow:0 8px 24px rgba(0,0,0,.3),0 0 0 1px rgba(79,139,255,.04)}
+.after .pr-dev-card.risk-high{border-color:rgba(255,79,106,.15)}
+.after .pr-dev-card.risk-warn{border-color:rgba(245,166,35,.1)}
+.after .pr-card-inner{padding:22px 24px 14px}
+.after .pr-card-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.after .pr-card-avatar{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;background:var(--bg3);border:1px solid rgba(255,255,255,.04);color:var(--accent);flex-shrink:0}
+.after .pr-card-identity{flex:1;min-width:0}
+.after .pr-card-name{font-weight:600;font-size:15px;color:var(--text);letter-spacing:.01em}
+.after .pr-card-role{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:2px;font-weight:500}
+.after .pr-card-status{font-family:var(--mono);font-size:10px;font-weight:600;padding:4px 10px;border-radius:6px;letter-spacing:.02em;text-transform:none}
+.after .pr-card-status.s-review{background:rgba(79,139,255,.08);color:rgba(79,139,255,.7);border:1px solid rgba(79,139,255,.12)}
+.after .pr-card-status.s-draft{background:rgba(161,174,195,.05);color:var(--text3);border:1px solid rgba(161,174,195,.08)}
+
+/* Stage 2: L1 — Primary KPI (maximum readability) */
+.after .pr-card-kpi{display:flex;gap:20px;margin-bottom:16px;align-items:flex-end}
+.after .pr-kpi-primary{flex:1}
+.after .pr-kpi-hours{font-family:var(--mono);font-size:36px;font-weight:700;color:var(--accent);line-height:1;letter-spacing:-.02em}
+.after .pr-kpi-hours-label{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.04em;margin-top:4px;font-weight:600}
+.after .pr-kpi-money{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--orange);line-height:1;letter-spacing:-.01em;opacity:.85}
+.after .pr-kpi-money-label{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.04em;margin-top:4px;font-weight:600}
+
+/* Stage 2: L2 — Secondary (calmer) */
+.after .pr-card-secondary{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;opacity:.8}
+.after .pr-sec-item{display:flex;align-items:center;gap:5px}
+.after .pr-sec-item.primary-sec{background:rgba(255,255,255,.03);padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.02)}
+.after .pr-sec-label{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.04em;font-weight:500}
+.after .pr-sec-val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)}
+.after .pr-sec-val.billable{color:rgba(34,212,126,.7)}
+.after .pr-sec-val.cut{color:rgba(255,79,106,.7)}
+.after .pr-sec-divider{width:1px;height:16px;background:rgba(255,255,255,.04);margin:0 2px}
+
+/* Stage 2: L3 — Progress Bars (background) */
+.after .pr-card-progress{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;opacity:.7}
+.after .pr-progress-row{display:flex;align-items:center;gap:8px}
+.after .pr-progress-label{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.04em;width:64px;flex-shrink:0;font-weight:500}
+.after .pr-progress-track{flex:1;height:3px;background:rgba(255,255,255,.04);border-radius:2px;overflow:hidden}
+.after .pr-progress-fill{height:100%;border-radius:2px;transition:width .3s}
+.after .pr-progress-fill.green{background:var(--green);opacity:.6}
+.after .pr-progress-fill.yellow{background:var(--yellow);opacity:.6}
+.after .pr-progress-fill.red{background:var(--red);opacity:.6}
+.after .pr-progress-val{font-family:var(--mono);font-size:10px;color:var(--text3);min-width:44px;text-align:right}
+
+/* Stage 2: Risks — muted */
+.after .pr-card-risks{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.after .pr-risk-pill{font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:5px;letter-spacing:.02em;text-transform:none}
+.after .risk-low_load{background:rgba(245,166,35,.06);color:rgba(245,166,35,.6);border:1px solid rgba(245,166,35,.1)}
+.after .risk-no_rate{background:rgba(255,79,106,.06);color:rgba(255,79,106,.6);border:1px solid rgba(255,79,106,.1)}
+
+/* Stage 2: L3 — Footer (background layer) */
+.after .pr-card-footer{display:flex;gap:0;padding:10px 24px;background:rgba(0,0,0,.1);border-top:1px solid rgba(255,255,255,.02);opacity:.6}
+.after .pr-footer-metric{flex:1;text-align:center;padding:4px 0}
+.after .pr-footer-val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text2)}
+.after .pr-footer-label{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.04em;margin-top:2px;font-weight:500}
+
+/* Stage 6: Debug Panel Reduction */
+.after .pr-debug{margin-top:16px;padding:0;background:transparent;border:none;border-radius:0;font-family:var(--mono);font-size:9px;color:var(--text3);opacity:.4}
+.after .pr-debug details{background:rgba(0,0,0,.15);border:1px solid rgba(255,255,255,.02);border-radius:10px;padding:8px 14px}
+.after .pr-debug summary{color:var(--text3);font-weight:600;letter-spacing:.04em;cursor:pointer;font-size:9px;list-style:none}
+.after .pr-debug summary::-webkit-details-marker{display:none}
+.after .pr-debug summary::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--text3);opacity:.3;margin-right:8px}
+.after .pr-debug details[open] summary::before{background:var(--yellow);opacity:.5}
+.after .pr-debug-row{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.02)}
+.after .pr-debug-title{display:none}
+
+/* Stage 8: Fin Footer — Floating Premium */
+.after .pr-fin-footer{display:flex;align-items:center;gap:0;padding:14px 0;margin-top:16px;background:rgba(18,21,31,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.03);border-radius:18px;overflow:hidden;position:sticky;bottom:0;z-index:100}
+.after .pr-fin-item{flex:1;text-align:center;padding:8px 12px;border-right:1px solid rgba(255,255,255,.03)}
+.after .pr-fin-item:last-child{border-right:none}
+.after .pr-fin-label{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.04em;margin-bottom:4px;font-weight:500}
+.after .pr-fin-val{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)}
+.after .margin-pos{color:rgba(34,212,126,.7) !important}
+.after .margin-neg{color:rgba(255,79,106,.7) !important}
+</style>
+</head>
+<body>
+
+<!-- Toggle -->
+<div class="preview-toggle">
+  <h1>Payroll Review v9.0</h1>
+  <span class="preview-badge badge-mock">PREVIEW</span>
+  <div class="toggle-switch">
+    <button class="toggle-btn active-before" id="btnBefore" onclick="showBefore()">Before</button>
+    <button class="toggle-btn" id="btnAfter" onclick="showAfter()">After</button>
+  </div>
+  <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">НЕ В PRODUCTION</span>
+</div>
+
+<!-- Content -->
+<div class="content-area" id="contentArea">
+
+<!-- ═══════════════ BEFORE ═══════════════ -->
+<div class="before" id="beforeView">
+
+<div style="max-width:1200px;margin:0 auto;padding:24px">
+<div class="pr-wrap">
+
+<!-- Header -->
+<div class="pr-header">
+  <div class="pr-title">Зарплатный обзор <span class="pr-badge pr-badge-live">ЖИВОЙ</span> <span class="pr-version">v8.5</span></div>
+  <div class="pr-header-info">
+    <span class="pr-header-stat">8 разраб.</span>
+    <span class="pr-header-stat">137 задач</span>
+    <span class="pr-header-stat" style="color:var(--cyan)">Черновик</span>
+  </div>
+  <div class="pr-controls">
+    <span class="pr-badge pr-badge-cache">кэш</span>
+    <select class="pr-select"><option>Май 2026</option><option>Апрель 2026</option></select>
+    <button class="pr-btn pr-btn-ghost">&#8635;</button>
+    <div class="pr-view-toggle"><button class="pr-view-btn active">Карточки</button><button class="pr-view-btn">Таблица</button></div>
+    <div class="pr-role-toggle"><button class="pr-role-btn active">Разраб</button><button class="pr-role-btn">Фин.</button><button class="pr-role-btn">Аудит</button></div>
+    <div class="pr-density-toggle"><button class="pr-density-btn">Компактно</button><button class="pr-density-btn active">Плотно</button></div>
+    <button class="pr-btn pr-btn-orange">&#9881; Админка</button>
+    <button class="pr-btn pr-btn-green">&#11015; CSV</button>
+    <button class="pr-btn pr-btn-ghost">CSV+</button>
+    <button class="pr-btn pr-btn-primary">&#10003; Подтвердить все</button>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="pr-kpi-grid">
+  <div class="pr-kpi" style="--kc:var(--accent)"><div class="pr-kpi-label">Факт часы</div><div class="pr-kpi-value">711.6</div><div class="pr-kpi-sub">137 задач</div></div>
+  <div class="pr-kpi" style="--kc:var(--green)"><div class="pr-kpi-label">Опл. клиента</div><div class="pr-kpi-value">589.2</div><div class="pr-kpi-sub">95 подтв.</div></div>
+  <div class="pr-kpi" style="--kc:var(--yellow)"><div class="pr-kpi-label">К выплате</div><div class="pr-kpi-value">524.8</div><div class="pr-kpi-sub">22 ожидает</div></div>
+  <div class="pr-kpi" style="--kc:var(--orange)"><div class="pr-kpi-label">Сумма выплат</div><div class="pr-kpi-value">1.2M р</div><div class="pr-kpi-sub">5 споров</div></div>
+</div>
+
+<!-- Heatmap -->
+<div class="pr-heatmap">
+  <div class="pr-heatmap-title">КОМАНДА</div>
+  <div class="pr-heatmap-row">
+    <div class="pr-heatmap-chip" title="Алексей: 168h | Billable: 145h | Маржа: +42%"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Алексей</span><span class="pr-heatmap-hours">168h</span><span class="pr-heatmap-margin pos">+42%</span></div>
+    <div class="pr-heatmap-chip" title="Дмитрий: 152h | Billable: 148h | Маржа: +38%"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Дмитрий</span><span class="pr-heatmap-hours">152h</span><span class="pr-heatmap-margin pos">+38%</span></div>
+    <div class="pr-heatmap-chip" title="Предеин: 0h | Billable: 0h | Риски: LOW LOAD, RATE=0"><span class="pr-heatmap-dot red"></span><span class="pr-heatmap-name">Предеин</span><span class="pr-heatmap-hours">0h</span></div>
+    <div class="pr-heatmap-chip" title="Михаил: 120h | Billable: 95h | Маржа: +15%"><span class="pr-heatmap-dot yellow"></span><span class="pr-heatmap-name">Михаил</span><span class="pr-heatmap-hours">120h</span><span class="pr-heatmap-margin pos">+15%</span></div>
+    <div class="pr-heatmap-chip" title="Олег: 98h | Billable: 72h | Маржа: -5%"><span class="pr-heatmap-dot red"></span><span class="pr-heatmap-name">Олег</span><span class="pr-heatmap-hours">98h</span><span class="pr-heatmap-margin neg">-5%</span></div>
+    <div class="pr-heatmap-chip"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Елена</span><span class="pr-heatmap-hours">135h</span><span class="pr-heatmap-margin pos">+30%</span></div>
+    <div class="pr-heatmap-chip"><span class="pr-heatmap-dot yellow"></span><span class="pr-heatmap-name">Виктор</span><span class="pr-heatmap-hours">45h</span></div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="pr-filters">
+  <select class="pr-select"><option>Все разработчики</option></select>
+  <select class="pr-select"><option>Все проекты</option></select>
+  <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Статус:</span>
+  <span class="pr-filter-chip">Ожидает</span>
+  <span class="pr-filter-chip active">Подтв.</span>
+  <span class="pr-filter-chip">Спор</span>
+  <span class="pr-filter-chip">Исключено</span>
+</div>
+
+<!-- Cards -->
+<div class="pr-dev-cards">
+
+<!-- Card 1 -->
+<div class="pr-dev-card">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">А</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Алексей Петров</div>
+        <div class="pr-card-role">1200 р/ч</div>
+      </div>
+      <span class="pr-card-status s-review">REVIEW</span>
+    </div>
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">168.0</div><div class="pr-kpi-hours-label">ФАКТ ЧАСОВ</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">201 600 р</div><div class="pr-kpi-money-label">ЗАТРАТЫ</div></div>
+    </div>
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">BILLABLE</span><span class="pr-sec-val billable">145.0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">CUT</span><span class="pr-sec-val cut">-23.0h</span></div>
+    </div>
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">ЗАГРУЗКА</span><div class="pr-progress-track"><div class="pr-progress-fill green" style="width:100%"></div></div><span class="pr-progress-val">168/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">BILLABLE</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:86%"></div></div><span class="pr-progress-val">86%</span></div>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">23</div><div class="pr-footer-label">ЗАДАЧ</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">7.3h</div><div class="pr-footer-label">СР/ЗАД</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">ВЫХОДН</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">8</div><div class="pr-footer-label">СВЕРХУР</div></div>
+  </div>
+</div>
+
+<!-- Card 2 -->
+<div class="pr-dev-card risk-warn">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">М</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Михаил Сидоров</div>
+        <div class="pr-card-role">1000 р/ч</div>
+      </div>
+      <span class="pr-card-status s-draft">DRAFT</span>
+    </div>
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">120.0</div><div class="pr-kpi-hours-label">ФАКТ ЧАСОВ</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">120 000 р</div><div class="pr-kpi-money-label">ЗАТРАТЫ</div></div>
+    </div>
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">BILLABLE</span><span class="pr-sec-val billable">95.0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">CUT</span><span class="pr-sec-val cut">-25.0h</span></div>
+    </div>
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">ЗАГРУЗКА</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:75%"></div></div><span class="pr-progress-val">120/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">BILLABLE</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:79%"></div></div><span class="pr-progress-val">79%</span></div>
+    </div>
+    <div class="pr-card-risks">
+      <span class="pr-risk-pill risk-low_load">LOW LOAD</span>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">15</div><div class="pr-footer-label">ЗАДАЧ</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">8.0h</div><div class="pr-footer-label">СР/ЗАД</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">ВЫХОДН</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">СВЕРХУР</div></div>
+  </div>
+</div>
+
+<!-- Card 3 -->
+<div class="pr-dev-card risk-high">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">П</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Андрей Предеин</div>
+        <div class="pr-card-role">0 р/ч</div>
+      </div>
+      <span class="pr-card-status s-draft">DRAFT</span>
+    </div>
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">0.0</div><div class="pr-kpi-hours-label">ФАКТ ЧАСОВ</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">200 000 р</div><div class="pr-kpi-money-label">ЗАТРАТЫ</div></div>
+    </div>
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">BILLABLE</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">CUT</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>
+    </div>
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">ЗАГРУЗКА</span><div class="pr-progress-track"><div class="pr-progress-fill red" style="width:0%"></div></div><span class="pr-progress-val">0/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">BILLABLE</span><div class="pr-progress-track"><div class="pr-progress-fill red" style="width:0%"></div></div><span class="pr-progress-val">0%</span></div>
+    </div>
+    <div class="pr-card-risks">
+      <span class="pr-risk-pill risk-low_load">LOW LOAD</span>
+      <span class="pr-risk-pill risk-no_rate">RATE=0</span>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">ЗАДАЧ</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0h</div><div class="pr-footer-label">СР/ЗАД</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">ВЫХОДН</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">СВЕРХУР</div></div>
+  </div>
+</div>
+
+</div><!-- /pr-dev-cards -->
+
+<!-- Financial Footer -->
+<div class="pr-fin-footer">
+  <div class="pr-fin-item"><div class="pr-fin-label">ФАКТ ЧАСЫ</div><div class="pr-fin-val" style="color:var(--accent)">711.6</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">BILLABLE</div><div class="pr-fin-val" style="color:var(--green)">589.2</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">ВЫРУЧКА</div><div class="pr-fin-val" style="color:var(--cyan)">2.1M р</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">ЗАТРАТЫ</div><div class="pr-fin-val" style="color:var(--orange)">1.2M р</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">МАРЖА</div><div class="pr-fin-val margin-pos">+43% <span style="font-size:9px;color:var(--text3)">(876 000 р)</span></div></div>
+</div>
+
+<!-- Debug -->
+<div class="pr-debug">
+  <div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>
+  <div class="pr-debug-row">Версия: ПР-7.2.0</div>
+  <div class="pr-debug-row">Pipeline: elapsed-first-daybyday v7.2.0</div>
+  <div class="pr-debug-row" style="color:var(--cyan)">Load: 3200ms | Norm: 180ms | Render: 45ms | Total: 3425ms</div>
+  <div class="pr-debug-row">Cache: hits=5 misses=2 stale=1 rate=71%</div>
+  <div class="pr-debug-row">Elapsed записей: 342</div>
+  <div class="pr-debug-row">Строк обзора: 137</div>
+  <div class="pr-debug-row">Task date cache: 137 entries</div>
+  <div class="pr-debug-row">Разработчики: 11</div>
+  <div class="pr-debug-row">Проекты (не исключённые): 12</div>
+  <div class="pr-debug-row">Вебхук: https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss...</div>
+  <div class="pr-debug-row">Режим: ЖИВОЙ (Bitrix24 API)</div>
+  <div class="pr-debug-row">Период: 2026-05</div>
+  <div class="pr-debug-row">Статус периода: draft</div>
+  <div class="pr-debug-row">Источник данных: live</div>
+  <div class="pr-debug-row">Ставка по умолчанию: 1000 р/час</div>
+  <div class="pr-debug-row">Вид: cards | Плотность: comfortable</div>
+</div>
+
+</div><!-- /pr-wrap -->
+</div>
+</div><!-- /beforeView -->
+
+
+<!-- ═══════════════ AFTER ═══════════════ -->
+<div class="after" id="afterView" style="display:none">
+
+<div style="max-width:1200px;margin:0 auto;padding:24px">
+<div class="pr-wrap">
+
+<!-- Header — Stage 4: Cleanup -->
+<div class="pr-header">
+  <div class="pr-title">Зарплатный обзор <span class="pr-badge pr-badge-live">live</span> <span class="pr-version">v9.0</span></div>
+  <div class="pr-header-info">
+    <span class="pr-header-stat">8 разраб.</span>
+    <span class="pr-header-stat">137 задач</span>
+    <span class="pr-header-stat" style="color:var(--cyan)">Черновик</span>
+  </div>
+  <div class="pr-controls">
+    <!-- Group 1: Period -->
+    <div class="pr-controls-group">
+      <span class="pr-badge pr-badge-cache">кэш</span>
+      <select class="pr-select"><option>Май 2026</option><option>Апрель 2026</option></select>
+      <button class="pr-btn pr-btn-ghost">&#8635;</button>
+    </div>
+    <div class="pr-controls-divider"></div>
+    <!-- Group 2: View modes -->
+    <div class="pr-controls-group">
+      <div class="pr-view-toggle"><button class="pr-view-btn active">Карточки</button><button class="pr-view-btn">Таблица</button></div>
+      <div class="pr-role-toggle"><button class="pr-role-btn active">Разраб</button><button class="pr-role-btn">Фин.</button><button class="pr-role-btn">Аудит</button></div>
+      <div class="pr-density-toggle"><button class="pr-density-btn">Компактно</button><button class="pr-density-btn active">Плотно</button></div>
+    </div>
+    <div class="pr-controls-divider"></div>
+    <!-- Group 3: Actions -->
+    <div class="pr-controls-group">
+      <button class="pr-btn pr-btn-orange">Админка</button>
+      <button class="pr-btn pr-btn-ghost">CSV</button>
+      <button class="pr-btn pr-btn-ghost">CSV+</button>
+      <button class="pr-btn pr-btn-primary">Подтвердить все</button>
+    </div>
+  </div>
+</div>
+
+<!-- KPIs — Stage 7+8: Typography + Premium -->
+<div class="pr-kpi-grid">
+  <div class="pr-kpi" style="--kc:var(--accent)"><div class="pr-kpi-label">Факт часы</div><div class="pr-kpi-value">711.6</div><div class="pr-kpi-sub">137 задач</div></div>
+  <div class="pr-kpi" style="--kc:var(--green)"><div class="pr-kpi-label">Опл. клиента</div><div class="pr-kpi-value">589.2</div><div class="pr-kpi-sub">95 подтв.</div></div>
+  <div class="pr-kpi" style="--kc:var(--yellow)"><div class="pr-kpi-label">К выплате</div><div class="pr-kpi-value">524.8</div><div class="pr-kpi-sub">22 ожидает</div></div>
+  <div class="pr-kpi" style="--kc:var(--orange)"><div class="pr-kpi-label">Сумма выплат</div><div class="pr-kpi-value">1.2M р</div><div class="pr-kpi-sub">5 споров</div></div>
+</div>
+
+<!-- Heatmap — Stage 5: Simplified -->
+<div class="pr-heatmap">
+  <div class="pr-heatmap-title">Команда</div>
+  <div class="pr-heatmap-row">
+    <div class="pr-heatmap-chip" title="Алексей: 168h | Billable: 145h | Маржа: +42%"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Алексей</span><span class="pr-heatmap-hours">168h</span></div>
+    <div class="pr-heatmap-chip" title="Дмитрий: 152h | Billable: 148h | Маржа: +38%"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Дмитрий</span><span class="pr-heatmap-hours">152h</span></div>
+    <div class="pr-heatmap-chip" title="Предеин: 0h | Риски: LOW LOAD, RATE=0"><span class="pr-heatmap-dot red"></span><span class="pr-heatmap-name">Предеин</span><span class="pr-heatmap-hours">0h</span></div>
+    <div class="pr-heatmap-chip" title="Михаил: 120h | Billable: 95h | Маржа: +15%"><span class="pr-heatmap-dot yellow"></span><span class="pr-heatmap-name">Михаил</span><span class="pr-heatmap-hours">120h</span></div>
+    <div class="pr-heatmap-chip" title="Олег: 98h | Billable: 72h | Маржа: -5%"><span class="pr-heatmap-dot red"></span><span class="pr-heatmap-name">Олег</span><span class="pr-heatmap-hours">98h</span></div>
+    <div class="pr-heatmap-chip"><span class="pr-heatmap-dot green"></span><span class="pr-heatmap-name">Елена</span><span class="pr-heatmap-hours">135h</span></div>
+    <div class="pr-heatmap-chip"><span class="pr-heatmap-dot yellow"></span><span class="pr-heatmap-name">Виктор</span><span class="pr-heatmap-hours">45h</span></div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="pr-filters">
+  <select class="pr-select"><option>Все разработчики</option></select>
+  <select class="pr-select"><option>Все проекты</option></select>
+  <span class="pr-filter-chip">Ожидает</span>
+  <span class="pr-filter-chip active">Подтв.</span>
+  <span class="pr-filter-chip">Спор</span>
+  <span class="pr-filter-chip">Исключено</span>
+</div>
+
+<!-- Cards — Stage 2+3+8 -->
+<div class="pr-dev-cards">
+
+<!-- Card 1 -->
+<div class="pr-dev-card">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">А</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Алексей Петров</div>
+        <div class="pr-card-role">1200 р/ч</div>
+      </div>
+      <span class="pr-card-status s-review">Review</span>
+    </div>
+    <!-- L1: Primary KPI — maximum readability -->
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">168.0</div><div class="pr-kpi-hours-label">Факт часов</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">201 600 р</div><div class="pr-kpi-money-label">Затраты</div></div>
+    </div>
+    <!-- L2: Secondary — calmer -->
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Billable</span><span class="pr-sec-val billable">145.0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val cut">-23.0h</span></div>
+    </div>
+    <!-- L3: Progress — background layer -->
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">Загрузка</span><div class="pr-progress-track"><div class="pr-progress-fill green" style="width:100%"></div></div><span class="pr-progress-val">168/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">Billable</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:86%"></div></div><span class="pr-progress-val">86%</span></div>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">23</div><div class="pr-footer-label">задач</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">7.3h</div><div class="pr-footer-label">ср/зад</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">выходн</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">8</div><div class="pr-footer-label">сверхур</div></div>
+  </div>
+</div>
+
+<!-- Card 2 -->
+<div class="pr-dev-card risk-warn">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">М</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Михаил Сидоров</div>
+        <div class="pr-card-role">1000 р/ч</div>
+      </div>
+      <span class="pr-card-status s-draft">Draft</span>
+    </div>
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">120.0</div><div class="pr-kpi-hours-label">Факт часов</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">120 000 р</div><div class="pr-kpi-money-label">Затраты</div></div>
+    </div>
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Billable</span><span class="pr-sec-val billable">95.0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val cut">-25.0h</span></div>
+    </div>
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">Загрузка</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:75%"></div></div><span class="pr-progress-val">120/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">Billable</span><div class="pr-progress-track"><div class="pr-progress-fill yellow" style="width:79%"></div></div><span class="pr-progress-val">79%</span></div>
+    </div>
+    <div class="pr-card-risks">
+      <span class="pr-risk-pill risk-low_load">Low Load</span>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">15</div><div class="pr-footer-label">задач</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">8.0h</div><div class="pr-footer-label">ср/зад</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">выходн</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">сверхур</div></div>
+  </div>
+</div>
+
+<!-- Card 3 -->
+<div class="pr-dev-card risk-high">
+  <div class="pr-card-inner">
+    <div class="pr-card-hdr">
+      <div class="pr-card-avatar">П</div>
+      <div class="pr-card-identity">
+        <div class="pr-card-name">Андрей Предеин</div>
+        <div class="pr-card-role">0 р/ч</div>
+      </div>
+      <span class="pr-card-status s-draft">Draft</span>
+    </div>
+    <div class="pr-card-kpi">
+      <div class="pr-kpi-primary"><div class="pr-kpi-hours">0.0</div><div class="pr-kpi-hours-label">Факт часов</div></div>
+      <div class="pr-kpi-primary"><div class="pr-kpi-money">200 000 р</div><div class="pr-kpi-money-label">Затраты</div></div>
+    </div>
+    <div class="pr-card-secondary">
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Billable</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>
+      <div class="pr-sec-divider"></div>
+      <div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>
+    </div>
+    <div class="pr-card-progress">
+      <div class="pr-progress-row"><span class="pr-progress-label">Загрузка</span><div class="pr-progress-track"><div class="pr-progress-fill red" style="width:0%"></div></div><span class="pr-progress-val">0/160h</span></div>
+      <div class="pr-progress-row"><span class="pr-progress-label">Billable</span><div class="pr-progress-track"><div class="pr-progress-fill red" style="width:0%"></div></div><span class="pr-progress-val">0%</span></div>
+    </div>
+    <div class="pr-card-risks">
+      <span class="pr-risk-pill risk-low_load">Low Load</span>
+      <span class="pr-risk-pill risk-no_rate">Rate=0</span>
+    </div>
+  </div>
+  <div class="pr-card-footer">
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">задач</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0h</div><div class="pr-footer-label">ср/зад</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">выходн</div></div>
+    <div class="pr-footer-metric"><div class="pr-footer-val">0</div><div class="pr-footer-label">сверхур</div></div>
+  </div>
+</div>
+
+</div><!-- /pr-dev-cards -->
+
+<!-- Financial Footer — Stage 8: Floating Premium -->
+<div class="pr-fin-footer">
+  <div class="pr-fin-item"><div class="pr-fin-label">Факт часы</div><div class="pr-fin-val" style="color:var(--accent)">711.6</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">Billable</div><div class="pr-fin-val" style="color:var(--green)">589.2</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">Выручка</div><div class="pr-fin-val" style="color:var(--cyan)">2.1M р</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">Затраты</div><div class="pr-fin-val" style="color:var(--orange)">1.2M р</div></div>
+  <div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val margin-pos">+43% <span style="font-size:9px;color:var(--text3)">(876 000 р)</span></div></div>
+</div>
+
+<!-- Debug — Stage 6: Collapsed -->
+<div class="pr-debug">
+  <details>
+    <summary>Диагностика &mdash; Load: 3200ms | Norm: 180ms | Render: 45ms</summary>
+    <div style="margin-top:8px">
+      <div class="pr-debug-row">Версия: ПР-9.0 | Pipeline: elapsed-first-daybyday v7.2.0</div>
+      <div class="pr-debug-row">Cache: hits=5 misses=2 stale=1 rate=71%</div>
+      <div class="pr-debug-row">Elapsed записей: 342 | Строк обзора: 137</div>
+      <div class="pr-debug-row">Task date cache: 137 entries | Разработчики: 11</div>
+      <div class="pr-debug-row">Период: 2026-05 | Статус: draft | Источник: live</div>
+      <div class="pr-debug-row">Вид: cards | Плотность: comfortable</div>
+    </div>
+  </details>
+</div>
+
+</div><!-- /pr-wrap -->
+</div>
+</div><!-- /afterView -->
+
+</div><!-- /contentArea -->
+
+<script>
+function showBefore() {
+  document.getElementById('beforeView').style.display = '';
+  document.getElementById('afterView').style.display = 'none';
+  document.getElementById('btnBefore').className = 'toggle-btn active-before';
+  document.getElementById('btnAfter').className = 'toggle-btn';
+}
+function showAfter() {
+  document.getElementById('beforeView').style.display = 'none';
+  document.getElementById('afterView').style.display = '';
+  document.getElementById('btnBefore').className = 'toggle-btn';
+  document.getElementById('btnAfter').className = 'toggle-btn active-after';
+}
+</script>
+
+</body>
+</html>
