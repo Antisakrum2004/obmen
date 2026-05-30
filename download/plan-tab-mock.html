@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Планирование — Мокап вкладки ПЛАН</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ═══ Глобальные CSS-переменные (из основного проекта) ═══ */
+:root{
+  --bg:#0B0F17;--bg1:#111827;--bg2:#151C2C;--bg3:#1E293B;--bg-hover:#192236;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.10);--border-accent:rgba(59,130,246,.35);
+  --text:#F3F7FF;--text2:#A1AEC3;--text3:#6B7A90;
+  --accent:#4f8bff;--accent-hover:#60A5FA;
+  --green:#22d47e;--red:#ff4f6a;--yellow:#f5a623;--cyan:#00d4ff;--orange:#ff8c42;
+  --mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;
+  --glass:rgba(11,15,23,.88);--glass-border:rgba(148,163,184,.08);
+  --shadow-card:0 2px 8px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.22);
+  --shadow-card-hover:0 4px 12px rgba(0,0,0,.22),0 12px 32px rgba(0,0,0,.30);
+  --shadow-btn:0 1px 3px rgba(0,0,0,.20),0 2px 8px rgba(0,0,0,.15);
+  --shadow-btn-hover:0 2px 6px rgba(0,0,0,.25),0 4px 12px rgba(0,0,0,.20);
+  --highlight:inset 0 1px 0 rgba(255,255,255,.05);
+  --highlight-strong:inset 0 1px 0 rgba(255,255,255,.07);
+  --radius:12px;
+  --plan-green:rgba(34,212,126,.9);--plan-red:rgba(255,110,120,.9);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;overflow-x:hidden;letter-spacing:.2px;line-height:1.55}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 50% at 20% 80%,rgba(18,48,95,.35),transparent),radial-gradient(ellipse 60% 40% at 85% 15%,rgba(22,55,100,.25),transparent),linear-gradient(180deg,#070a12 0%,#0B0F17 100%)}
+body>*{position:relative;z-index:1}
+
+/* ═══ Topbar ═══ */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(11,15,23,.82);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);border-bottom:1px solid var(--glass-border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:52px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.05em}
+.bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:glow 2s infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 8px var(--accent)}50%{box-shadow:0 0 20px var(--accent)}}
+.topbar-r{display:flex;align-items:center;gap:8px}
+.refresh-btn{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;border:1px solid rgba(34,212,126,.3);background:rgba(34,212,126,.08);color:var(--green);transition:all .15s;user-select:none}
+.refresh-btn:hover{background:rgba(34,212,126,.15);border-color:rgba(34,212,126,.5)}
+.tabs{display:flex;gap:4px}
+.tab-btn{padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text3);background:rgba(18,21,31,.6);border:1px solid var(--glass-border);border-radius:8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
+.tab-btn:hover{color:var(--text2);border-color:var(--border2);transform:translateY(-1px)}
+.tab-btn.active{color:#fff;background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px rgba(79,139,255,.25),var(--highlight)}
+
+/* ═══ Main Container ═══ */
+.main{padding:20px 24px 60px;max-width:1400px;margin:0 auto}
+.tab-content{display:none}.tab-content.active{display:block}
+.version{font-family:var(--mono);font-size:10px;color:var(--text3);opacity:.5}
+
+/* ═══ PLAN: Document Header ═══ */
+.plan-doc-header{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;box-shadow:var(--shadow-card),var(--highlight)}
+.plan-doc-title{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.plan-doc-title::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.plan-doc-title .plan-doc-num{color:var(--accent);font-size:13px}
+.plan-doc-title .plan-doc-date{color:var(--text3);font-size:11px;font-weight:400}
+.plan-doc-title .plan-dirty{color:var(--yellow);font-size:16px;margin-left:4px}
+
+/* ═══ Action buttons ═══ */
+.plan-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.plan-btn{font-family:var(--mono);font-size:10px;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer;border:1px solid;text-transform:uppercase;letter-spacing:.04em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
+.plan-btn:hover{transform:translateY(-1px)}
+.plan-btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.plan-btn-yellow{background:var(--yellow);color:#000;border-color:var(--yellow)}
+.plan-btn-green{background:var(--green);color:#000;border-color:var(--green)}
+.plan-btn-ghost{background:transparent;color:var(--text3);border-color:var(--border)}
+.plan-btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.plan-btn-orange{background:rgba(245,166,35,.1);color:var(--yellow);border-color:rgba(245,166,35,.3)}
+
+/* ═══ Requisites row ═══ */
+.plan-reqs{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
+@media(max-width:800px){.plan-reqs{grid-template-columns:1fr 1fr}}
+.plan-req{display:flex;flex-direction:column;gap:3px}
+.plan-req label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.plan-req-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;outline:none;transition:border-color .15s}
+.plan-req-input:focus{border-color:var(--accent)}
+.plan-req-val{font-family:var(--mono);font-size:12px;color:var(--text2);padding:7px 0}
+
+/* ═══ PLAN: Summary Block ═══ */
+.plan-summary{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;box-shadow:var(--shadow-card),var(--highlight)}
+.plan-summary-title{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.plan-summary-title::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--orange);box-shadow:0 0 6px var(--orange)}
+.plan-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:700px){.plan-summary-grid{grid-template-columns:repeat(2,1fr)}}
+.plan-summary-item{text-align:center;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.plan-summary-label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.plan-summary-value{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text);line-height:1}
+.plan-summary-value.val-plan{color:var(--accent)}
+.plan-summary-value.val-fact{color:var(--green)}
+.plan-summary-value.val-diff-pos{color:var(--plan-green)}
+.plan-summary-value.val-diff-neg{color:var(--plan-red)}
+
+/* ═══ PLAN: Table Controls ═══ */
+.plan-table-controls{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.plan-search{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 12px;outline:none;transition:border-color .15s;width:200px}
+.plan-search:focus{border-color:var(--accent)}
+.plan-search::placeholder{color:var(--text3)}
+
+/* ═══ PLAN: Data Table ═══ */
+.plan-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);box-shadow:var(--shadow-card),var(--highlight)}
+.plan-table-wrap::-webkit-scrollbar{height:5px}
+.plan-table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.plan-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:900px}
+.plan-table th{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:10px 10px;text-align:left;border-bottom:1px solid var(--glass-border);background:rgba(18,21,31,.5);white-space:nowrap;user-select:none;position:sticky;top:0;z-index:2}
+.plan-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;font-family:var(--mono)}
+.plan-table tbody tr{transition:background .15s}
+.plan-table tbody tr:hover{background:var(--bg-hover)}
+.plan-table tbody tr.row-weekend{background:rgba(245,166,35,.03)}
+.plan-table tbody tr.row-weekend td{color:var(--text3)}
+.plan-table tfoot td{background:rgba(18,21,31,.5);font-weight:700;padding:12px 10px;border-bottom:none;font-family:var(--mono);font-size:12px;position:sticky;bottom:0;z-index:2}
+
+/* ═══ Cell styles ═══ */
+.cell-num{width:40px;text-align:center;color:var(--text3);font-size:11px}
+.cell-date{white-space:nowrap;color:var(--text2);font-size:12px}
+.cell-date .day-name{font-size:9px;color:var(--text3);margin-left:4px}
+.cell-money{text-align:right;font-size:12px;padding-right:14px!important}
+.cell-money.pos{color:var(--plan-green)}
+.cell-money.neg{color:var(--plan-red)}
+.cell-avg{text-align:right;color:var(--cyan);font-size:11px}
+.cell-comment{font-family:var(--sans);font-size:11px;color:var(--text2);line-height:1.4;max-width:320px;white-space:normal;word-wrap:break-word}
+
+/* ═══ Editable fact field ═══ */
+.plan-edit{background:rgba(18,21,31,.6);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 8px;outline:none;width:90px;text-align:right;transition:border-color .15s,background .15s}
+.plan-edit:focus{border-color:var(--accent);background:rgba(79,139,255,.06)}
+.plan-edit.changed{border-color:var(--yellow);background:rgba(245,166,35,.06)}
+.plan-edit.active-cell{background:rgba(245,166,35,.12);border-color:var(--yellow)}
+
+/* ═══ Comment textarea ═══ */
+.plan-comment-edit{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text2);font-family:var(--sans);font-size:11px;padding:4px 8px;outline:none;width:100%;min-height:28px;resize:vertical;transition:border-color .15s;line-height:1.4}
+.plan-comment-edit:focus{border-color:var(--accent)}
+
+/* ═══ PLAN: Footer ═══ */
+.plan-footer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin-top:16px;box-shadow:var(--shadow-card),var(--highlight)}
+.plan-footer-comment{margin-bottom:12px}
+.plan-footer-comment label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;display:block}
+.plan-footer-comment textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 12px;outline:none;min-height:60px;resize:vertical;transition:border-color .15s}
+.plan-footer-comment textarea:focus{border-color:var(--accent)}
+.plan-footer-totals{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.plan-total-item{display:flex;align-items:center;gap:6px}
+.plan-total-label{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
+.plan-total-value{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)}
+.plan-total-value.val-plan{color:var(--accent)}
+.plan-total-value.val-fact{color:var(--green)}
+.plan-total-value.val-diff-pos{color:var(--plan-green)}
+.plan-total-value.val-diff-neg{color:var(--plan-red)}
+
+/* ═══ PLAN: Admin Modal (shared with Обзор) ═══ */
+.plan-admin-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;background:rgba(245,166,35,.1);color:var(--yellow);border:1px solid rgba(245,166,35,.25);cursor:pointer;transition:all .15s;margin-left:8px}
+.plan-admin-badge:hover{background:rgba(245,166,35,.18);border-color:rgba(245,166,35,.4)}
+
+/* ═══ Modal overlay (same as pr-modal) ═══ */
+.modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg1);border:1px solid var(--border2);border-radius:var(--radius);width:100%;max-width:800px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);gap:12px}
+.modal-title{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.modal-close{background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:4px 8px;transition:color .15s;flex-shrink:0}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--border);align-items:center}
+
+/* ═══ Admin cards ═══ */
+.admin-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.admin-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;transition:border-color .2s}
+.admin-card:hover{border-color:var(--border2)}
+.admin-card-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.admin-card-avatar{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--bg3);border:1px solid var(--glass-border);color:var(--accent);flex-shrink:0}
+.admin-card-name{font-weight:600;font-size:12px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.admin-field{display:flex;flex-direction:column;gap:2px}
+.admin-field label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
+.admin-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;outline:none;width:100%;transition:border-color .15s}
+.admin-input:focus{border-color:var(--accent)}
+.admin-input.input-rate{color:var(--green)}
+.admin-input.input-client-rate{color:var(--cyan)}
+
+/* ═══ Responsive ═══ */
+@media(max-width:600px){
+  .plan-reqs{grid-template-columns:1fr}
+  .plan-summary-grid{grid-template-columns:1fr 1fr}
+  .plan-doc-header{padding:12px 14px}
+  .plan-actions{gap:4px}
+  .plan-btn{font-size:9px;padding:5px 10px}
+}
+
+/* ═══ Animations ═══ */
+@keyframes prspin{to{transform:rotate(360deg)}}
+@keyframes prpulse{0%,100%{opacity:1}50%{opacity:.5}}
+</style>
+</head>
+<body>
+
+<!-- ═══ Верхняя панель ═══ -->
+<div class="topbar">
+  <div class="brand">
+    <span class="bdot"></span>
+    Зарплатный обзор
+    <span class="version">ПР-7.3.0 MOCK</span>
+  </div>
+  <div class="topbar-r">
+    <div class="refresh-btn" onclick="refreshPlan()">&#8635; Данные</div>
+    <div class="tabs">
+      <button class="tab-btn" onclick="switchToTab('review')">Обзор</button>
+      <button class="tab-btn active">План</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Основное содержимое ═══ -->
+<div class="main">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ВКЛАДКА ПЛАН — Мокап v1.0
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="tab-content active" id="tabPlan">
+
+  <!-- ─── Document Header ─── -->
+  <div class="plan-doc-header">
+    <div class="plan-doc-title">
+      Планирование
+      <span class="plan-doc-num">000000047</span>
+      <span class="plan-doc-date">от 31.05.2026 12:00:00</span>
+      <span class="plan-dirty" title="Несохранённые изменения">*</span>
+    </div>
+
+    <div class="plan-actions">
+      <button class="plan-btn plan-btn-yellow" onclick="alert('Мок: Провести и закрыть')">Провести и закрыть</button>
+      <button class="plan-btn plan-btn-green" onclick="alert('Мок: Записать')">Записать</button>
+      <button class="plan-btn plan-btn-primary" onclick="alert('Мок: Провести')">Провести</button>
+      <button class="plan-btn plan-btn-ghost" onclick="refreshPlan()">&#8635; Обновить</button>
+      <button class="plan-btn plan-btn-ghost" onclick="alert('Мок: Ещё → экспорт, печать, история')">Ещё ▾</button>
+      <span class="plan-admin-badge" onclick="openPlanAdmin()">&#9881; Админка ставок</span>
+    </div>
+
+    <div class="plan-reqs">
+      <div class="plan-req">
+        <label>Номер</label>
+        <span class="plan-req-val">000000047</span>
+      </div>
+      <div class="plan-req">
+        <label>Дата</label>
+        <input class="plan-req-input" type="datetime-local" value="2026-05-31T12:00">
+      </div>
+      <div class="plan-req">
+        <label>Период</label>
+        <select class="plan-req-input">
+          <option>2026 Май</option>
+          <option>2026 Апрель</option>
+          <option>2026 Март</option>
+        </select>
+      </div>
+      <div class="plan-req">
+        <label>Ответственный</label>
+        <select class="plan-req-input">
+          <option>Макаров Владимир Николаевич</option>
+          <option>Приходько Константин</option>
+          <option>Соколовский Александр</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Summary Block ─── -->
+  <div class="plan-summary">
+    <div class="plan-summary-title">Итог на текущую дату</div>
+    <div class="plan-summary-grid">
+      <div class="plan-summary-item">
+        <div class="plan-summary-label">Дата среза</div>
+        <div class="plan-summary-value" style="font-size:16px;color:var(--text2)">31.05.2026</div>
+      </div>
+      <div class="plan-summary-item">
+        <div class="plan-summary-label">План</div>
+        <div class="plan-summary-value val-plan" id="summaryPlan">186 000,00</div>
+      </div>
+      <div class="plan-summary-item">
+        <div class="plan-summary-label">Факт</div>
+        <div class="plan-summary-value val-fact" id="summaryFact">234 600,00</div>
+      </div>
+      <div class="plan-summary-item">
+        <div class="plan-summary-label">Разница</div>
+        <div class="plan-summary-value val-diff-pos" id="summaryDiff">+ 48 600</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Table Controls ─── -->
+  <div class="plan-table-controls">
+    <button class="plan-btn plan-btn-green" onclick="addRow()">+ Добавить</button>
+    <button class="plan-btn plan-btn-ghost" onclick="moveRow(-1)">&#9650;</button>
+    <button class="plan-btn plan-btn-ghost" onclick="moveRow(1)">&#9660;</button>
+    <input class="plan-search" type="text" placeholder="Поиск (Ctrl+F)..." oninput="filterRows(this.value)">
+  </div>
+
+  <!-- ─── Data Table ─── -->
+  <div class="plan-table-wrap" style="max-height:520px;overflow-y:auto">
+    <table class="plan-table" id="planTable">
+      <thead>
+        <tr>
+          <th style="width:40px">N</th>
+          <th style="width:100px">Дата</th>
+          <th style="width:110px;text-align:right">Сумма план</th>
+          <th style="width:110px;text-align:right">Сумма факт</th>
+          <th style="width:110px;text-align:right">Разница</th>
+          <th style="width:120px;text-align:right">Сумма факт средняя</th>
+          <th>Комментарий</th>
+        </tr>
+      </thead>
+      <tbody id="planTableBody">
+        <!-- Filled by JS -->
+      </tbody>
+      <tfoot id="planTableFoot">
+        <tr>
+          <td colspan="2" style="font-weight:700;color:var(--text)">Итого:</td>
+          <td class="cell-money" id="footPlan" style="color:var(--accent)">186 000,00</td>
+          <td class="cell-money" id="footFact" style="color:var(--green)">234 600,00</td>
+          <td class="cell-money val-diff-pos" id="footDiff">+ 48 600,00</td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- ─── Footer ─── -->
+  <div class="plan-footer">
+    <div class="plan-footer-comment">
+      <label>Комментарий к документу</label>
+      <textarea placeholder="Общие примечания к плану за период..."></textarea>
+    </div>
+    <div class="plan-footer-totals">
+      <div class="plan-total-item">
+        <span class="plan-total-label">Итого план:</span>
+        <span class="plan-total-value val-plan">186 000,00</span>
+      </div>
+      <div class="plan-total-item">
+        <span class="plan-total-label">Факт:</span>
+        <span class="plan-total-value val-fact">234 600,00</span>
+      </div>
+      <div class="plan-total-item">
+        <span class="plan-total-label">Разница:</span>
+        <span class="plan-total-value val-diff-pos">+ 48 600,00</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tabPlan -->
+</div><!-- /main -->
+
+<!-- ═══ Admin Modal ═══ -->
+<div class="modal-overlay" id="planAdminModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">&#9881; Админка — Ставки разработчиков</span>
+      <button class="modal-close" onclick="closePlanAdmin()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="admin-cards-grid" id="adminCards">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="plan-btn plan-btn-ghost" onclick="closePlanAdmin()">Отмена</button>
+      <button class="plan-btn plan-btn-green" onclick="saveAdminRates()">Сохранить ставки</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   Моковые данные для вкладки ПЛАН
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Разработчики (те же, что в core.js) */
+var MOCK_DEVS = [
+  { id:'1',  name:'Владимир Макаров',      rate:1000, clientRate:1500, base:0 },
+  { id:'18', name:'Константин Приходько',   rate:1000, clientRate:1500, base:0 },
+  { id:'38', name:'Александр Соколовский',  rate:1000, clientRate:1500, base:0 },
+  { id:'54', name:'Александр Попов',        rate:1000, clientRate:1500, base:0 },
+  { id:'82', name:'Тимур Забиров',          rate:1000, clientRate:1500, base:0 },
+  { id:'92', name:'Елена Кашина',           rate:1000, clientRate:1500, base:0 },
+  { id:'98', name:'Ольга Замшина',          rate:1000, clientRate:1500, base:0 },
+  { id:'116',name:'Андрей Предеин',         rate:0,    clientRate:0,    base:200000 }
+];
+
+/* Моковые данные по дням (Май 2026, рабочие дни) */
+var MOCK_ROWS = [
+  { date:'01.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'02.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'05.05.2026', plan:6000, fact:8400,  comment:'Бигап: Обновление каталога — 4 800; ВДЛ: Фикс авторизации — 3 600' },
+  { date:'06.05.2026', plan:6000, fact:15200, comment:'Бигап: API интеграция — 7 600; Дакар: Настройка отчётов — 7 600' },
+  { date:'07.05.2026', plan:6000, fact:9800,  comment:'Медицина КЗ: Миграция БД — 5 200; Керамика: SEO аудит — 4 600' },
+  { date:'08.05.2026', plan:6000, fact:12100, comment:'Бигап: Мобильная адаптация — 6 800; ВДЛ: Дашборд — 5 300' },
+  { date:'09.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'12.05.2026', plan:6000, fact:16400, comment:'Дакар: Модуль отчётности — 9 200; ИП Иванов: 1С синхронизация — 7 200' },
+  { date:'13.05.2026', plan:6000, fact:11800, comment:'Бигап: Платёжный шлюз — 6 400; Нейс-Юг: Формы обратной связи — 5 400' },
+  { date:'14.05.2026', plan:6000, fact:18700, comment:'ВДЛ: Интеграция CRM — 10 500; Керамика Фабрика: Калькулятор — 8 200' },
+  { date:'15.05.2026', plan:6000, fact:13200, comment:'Бигап: Правки UI — 4 800; Дакар: API оптимизация — 5 200; МАРКДЖЕТ: Лендинг — 3 200' },
+  { date:'16.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'19.05.2026', plan:6000, fact:15600, comment:'Медицина КЗ: Телемедицина модуль — 8 400; ВДЛ: Мониторинг — 7 200' },
+  { date:'20.05.2026', plan:6000, fact:21400, comment:'Бигап: Мобильное приложение v2 — 12 000; ИП Белолапотко: Редизайн — 9 400' },
+  { date:'21.05.2026', plan:6000, fact:14300, comment:'Дакар: Аналитический модуль — 7 800; Керамика: Чат-бот — 6 500' },
+  { date:'22.05.2026', plan:6000, fact:17800, comment:'ВДЛ: Автоматизация отчётов — 9 600; Нейс-Юг: API v3 — 8 200' },
+  { date:'23.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'26.05.2026', plan:6000, fact:19200, comment:'Бигап: Multilang — 10 800; МАРКДЖЕТ: Интеграция склада — 8 400' },
+  { date:'27.05.2026', plan:6000, fact:22100, comment:'ВДЛ: BI дашборд — 12 400; Дакар: ML рекомендации — 9 700' },
+  { date:'28.05.2026', plan:6000, fact:0,     comment:'' },
+  { date:'29.05.2026', plan:6000, fact:9500,  comment:'Керамика Фабрика: 3D-просмотр — 5 200; 1с Разработка: Модуль обмена — 4 300' },
+];
+
+/* День недели по дате */
+function getDayName(dateStr) {
+  var parts = dateStr.split('.');
+  var d = new Date(parts[2], parts[1]-1, parts[0]);
+  var days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  return days[d.getDay()];
+}
+
+function isWeekend(dateStr) {
+  var dn = getDayName(dateStr);
+  return dn === 'Сб' || dn === 'Вс';
+}
+
+/* Форматирование денег */
+function fmtMoney(n) {
+  var neg = n < 0;
+  var abs = Math.abs(n);
+  var str = abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return neg ? ('- ' + str) : str;
+}
+
+/* Вычисление средней */
+function calcAvg(rows, idx) {
+  var sum = 0, count = 0;
+  for (var i = 0; i <= idx; i++) {
+    if (rows[i].fact > 0) {
+      sum += rows[i].fact;
+      count++;
+    }
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+/* ═══ Рендер таблицы ═══ */
+var planRows = JSON.parse(JSON.stringify(MOCK_ROWS));
+
+function renderPlanTable() {
+  var tbody = document.getElementById('planTableBody');
+  var h = '';
+  var totalPlan = 0, totalFact = 0;
+
+  planRows.forEach(function(row, idx) {
+    var diff = row.fact - row.plan;
+    var avg = calcAvg(planRows, idx);
+    var wkend = isWeekend(row.date);
+    var cls = wkend ? ' class="row-weekend"' : '';
+    var diffCls = diff >= 0 ? 'pos' : 'neg';
+    var diffPrefix = diff >= 0 ? '+' : '';
+
+    totalPlan += row.plan;
+    totalFact += row.fact;
+
+    h += '<tr' + cls + ' data-idx="' + idx + '">';
+    h += '<td class="cell-num">' + (idx + 1) + '</td>';
+    h += '<td class="cell-date">' + row.date + '<span class="day-name">' + getDayName(row.date) + '</span></td>';
+    h += '<td class="cell-money">' + fmtMoney(row.plan) + '</td>';
+    h += '<td style="text-align:right">';
+    h += '<input class="plan-edit' + (row.fact > 0 ? ' active-cell' : '') + '" type="text" value="' + fmtMoney(row.fact) + '" data-idx="' + idx + '" onchange="onFactChange(this)" onfocus="this.select()">';
+    h += '</td>';
+    h += '<td class="cell-money ' + diffCls + '">' + diffPrefix + fmtMoney(diff) + '</td>';
+    h += '<td class="cell-avg">' + (avg > 0 ? fmtMoney(avg) : '—') + '</td>';
+    h += '<td><textarea class="plan-comment-edit" rows="1" data-idx="' + idx + '" onchange="onCommentChange(this)">' + escHtml(row.comment) + '</textarea></td>';
+    h += '</tr>';
+  });
+
+  tbody.innerHTML = h;
+  updateTotals(totalPlan, totalFact);
+}
+
+function updateTotals(totalPlan, totalFact) {
+  var totalDiff = totalFact - totalPlan;
+  var diffCls = totalDiff >= 0 ? 'val-diff-pos' : 'val-diff-neg';
+  var diffPrefix = totalDiff >= 0 ? '+ ' : '';
+
+  document.getElementById('footPlan').textContent = fmtMoney(totalPlan);
+  document.getElementById('footFact').textContent = fmtMoney(totalFact);
+  document.getElementById('footDiff').textContent = diffPrefix + fmtMoney(totalDiff);
+  document.getElementById('footDiff').className = 'cell-money ' + (totalDiff >= 0 ? 'pos' : 'neg');
+
+  document.getElementById('summaryPlan').textContent = fmtMoney(totalPlan);
+  document.getElementById('summaryFact').textContent = fmtMoney(totalFact);
+  var sumDiff = document.getElementById('summaryDiff');
+  sumDiff.textContent = diffPrefix + fmtMoney(totalDiff);
+  sumDiff.className = 'plan-summary-value ' + diffCls;
+
+  /* Footer totals */
+  var ftEls = document.querySelectorAll('.plan-footer-totals .plan-total-value');
+  if (ftEls.length >= 3) {
+    ftEls[0].textContent = fmtMoney(totalPlan);
+    ftEls[0].className = 'plan-total-value val-plan';
+    ftEls[1].textContent = fmtMoney(totalFact);
+    ftEls[1].className = 'plan-total-value val-fact';
+    ftEls[2].textContent = diffPrefix + fmtMoney(totalDiff);
+    ftEls[2].className = 'plan-total-value ' + diffCls;
+  }
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ═══ Обработчики ═══ */
+function onFactChange(el) {
+  var idx = parseInt(el.getAttribute('data-idx'));
+  var raw = el.value.replace(/[^\d.,-]/g, '').replace(',', '.');
+  var val = parseFloat(raw) || 0;
+  planRows[idx].fact = val;
+  el.classList.add('changed');
+  renderPlanTable();
+}
+
+function onCommentChange(el) {
+  var idx = parseInt(el.getAttribute('data-idx'));
+  planRows[idx].comment = el.value;
+}
+
+function addRow() {
+  var lastDate = planRows.length > 0 ? planRows[planRows.length - 1].date : '31.05.2026';
+  planRows.push({ date: lastDate, plan: 6000, fact: 0, comment: '' });
+  renderPlanTable();
+}
+
+function moveRow(dir) {
+  alert('Мок: перемещение строки ' + (dir > 0 ? 'вниз' : 'вверх'));
+}
+
+function filterRows(q) {
+  var rows = document.querySelectorAll('#planTableBody tr');
+  var query = q.toLowerCase();
+  rows.forEach(function(tr) {
+    var text = tr.textContent.toLowerCase();
+    tr.style.display = !query || text.indexOf(query) >= 0 ? '' : 'none';
+  });
+}
+
+function refreshPlan() {
+  planRows = JSON.parse(JSON.stringify(MOCK_ROWS));
+  renderPlanTable();
+}
+
+/* ═══ Tab switching (mock) ═══ */
+function switchToTab(tab) {
+  alert('Мок: переключение на вкладку "' + tab + '" — в реальном проекте переключается в основном интерфейсе');
+}
+
+/* ═══ Admin Modal ═══ */
+function openPlanAdmin() {
+  renderAdminCards();
+  document.getElementById('planAdminModal').classList.add('open');
+}
+
+function closePlanAdmin() {
+  document.getElementById('planAdminModal').classList.remove('open');
+}
+
+function renderAdminCards() {
+  var container = document.getElementById('adminCards');
+  var h = '';
+  MOCK_DEVS.forEach(function(dev) {
+    h += '<div class="admin-card">';
+    h += '<div class="admin-card-hdr">';
+    h += '<div class="admin-card-avatar">' + escHtml(dev.name.split(' ').map(function(w){return w[0]}).join('')) + '</div>';
+    h += '<div class="admin-card-name">' + escHtml(dev.name) + '</div>';
+    h += '</div>';
+    h += '<div class="admin-card-fields">';
+    h += '<div class="admin-field"><label>Ставка разраб. (р/ч)</label><input class="admin-input input-rate" type="number" value="' + dev.rate + '" data-dev="' + dev.id + '" data-field="rate"></div>';
+    h += '<div class="admin-field"><label>Ставка клиента (р/ч)</label><input class="admin-input input-client-rate" type="number" value="' + dev.clientRate + '" data-dev="' + dev.id + '" data-field="clientRate"></div>';
+    h += '<div class="admin-field"><label>Базовая / Оклад</label><input class="admin-input" type="number" value="' + dev.base + '" data-dev="' + dev.id + '" data-field="base"></div>';
+    h += '<div class="admin-field"><label>Штраф</label><input class="admin-input" type="number" value="0" data-dev="' + dev.id + '" data-field="fine" style="color:var(--plan-red)"></div>';
+    h += '</div></div>';
+  });
+  container.innerHTML = h;
+}
+
+function saveAdminRates() {
+  var inputs = document.querySelectorAll('#adminCards .admin-input');
+  inputs.forEach(function(inp) {
+    var devId = inp.getAttribute('data-dev');
+    var field = inp.getAttribute('data-field');
+    var val = parseFloat(inp.value) || 0;
+    MOCK_DEVS.forEach(function(d) {
+      if (d.id === devId) d[field] = val;
+    });
+  });
+  alert('Мок: Ставки сохранены (в реальном проекте — в localStorage)');
+  closePlanAdmin();
+}
+
+/* Close modal on overlay click */
+document.getElementById('planAdminModal').addEventListener('click', function(e) {
+  if (e.target === this) closePlanAdmin();
+});
+
+/* ═══ Init ═══ */
+document.addEventListener('DOMContentLoaded', function() {
+  renderPlanTable();
+});
+</script>
+</body>
+</html>
