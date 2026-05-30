@@ -76,7 +76,23 @@
 
 Результаты: 711:39 часов, 137 задач — лучше чем v7.0.0, но НЕ ВСЕ задачи за май
 
-### ПР-7.2.0 — ELAPSED-FIRST DAY-BY-DAY (текущая)
+### ПР-7.3.0 — Bugfix: формула + штрафы (текущая)
+
+Два баг-фикса без изменения функциональности:
+
+1. **Формула calculatePayrollAmount** (payroll-projection.js:278)
+   - **Было**: `return Math.round(hours * rate) + (base || 0)` — добавляла base на КАЖДУЮ задачу
+   - **Стало**: `return Math.round(hours * rate)` — base учитывается ОДИН раз в buildMonthlyProjection/buildPeriodTotals
+   - **Важно**: В рабочем коде баг НЕ проявлялся, т.к. payroll-domain.js:142 уже не добавляет base. Но calculatePayrollAmount была опасна как мёртвый код — если бы кто-то начал её вызывать, баг вернулся бы.
+   - **Удалён**: payroll-review-calc.js (содержал `+ r.base` на L146) — уже не загружался в HTML
+
+2. **Цвет штрафов** (tab-payroll-review.js)
+   - **Было**: `var(--yellow)` на L964 (breakdown) и L1270 (fin footer) — штрафы отображались жёлтым
+   - **Стало**: `rgba(255,110,120,0.9)` — красный, как в футере карточки (L1052 уже использовал `var(--red)`)
+
+3. **Версии**: public/HTML → v7.3.0, static/HTML → v8.1.1
+
+### ПР-7.2.0 — ELAPSED-FIRST DAY-BY-DAY
 
 Архитектурный сдвиг: от tasks-first к elapsed-first pipeline.
 
@@ -245,7 +261,7 @@ public/js/
 ├── payroll-review-styles.js      — CSS стили
 ├── payroll-review-export.js      — CSV экспорт
 ├── payroll-review-storage.js     — localStorage обёртка
-├── payroll-review-calc.js        — Расчёты, domain model
+├── payroll-review-calc.js        — ⚠️ LEGACY, НЕ загружается (содержал баг +r.base на L146)
 ├── mock-data.js                  — (устаревший) моковые данные
 └── payroll/
     ├── payroll-review-engine.js  — Движок ревью, TaskReview builder
@@ -289,7 +305,7 @@ User 116 = Андрей Предеин
 ### 2. Сумма штрафа не отображается светло-красным
 - **Симптом**: В админке поле штрафа должно быть светло-красным
 - **Причина**: CSS не применяется корректно к input полю
-- **Статус**: Не исправлено. В мокапе v2 зафиксирован цвет: `rgba(255,110,120,0.9)`
+- **Статус**: ✅ ИСПРАВЛЕНО v7.3.0 — var(--yellow) → rgba(255,110,120,0.9) на L964 и L1270
 
 ### 3. Формула выгрузки: base добавляется на КАЖДУЮ задачу (КРИТИЧЕСКИЙ)
 - **Симптом**: 10800 вместо 10000 при ставке 1000 за 10 часов
@@ -297,7 +313,7 @@ User 116 = Андрей Предеин
   Добавляет `base` на каждую задачу. А `buildMonthlyProjection()` добавляет ЕЩЁ РАЗ на уровне разработчика.
   Итого: base × количество задач + base × 1 = двойной/множественный учёт
 - **Решение**: Убрать `+ r.base` из `buildTaskReviewRows()`. Base добавляется ОДИН раз в `buildMonthlyProjection()`
-- **Статус**: Не исправлено. Планируется в v10.0 Фаза 1
+- **Статус**: ✅ ИСПРАВЛЕНО v7.3.0 — calculatePayrollAmount больше не добавляет + base. payroll-review-calc.js удалён из загрузки.
 
 ## План микросервисной разбивки
 

@@ -276,7 +276,11 @@ function buildPeriodTotals(reviews) {
  * @returns {Number}
  */
 function calculatePayrollAmount(payrollHours, rate, base) {
-  return Math.round((payrollHours || 0) * (rate || 0)) + (base || 0);
+  /* base НЕ добавляется здесь — он учитывается ОДИН раз на уровне разработчика
+     в buildMonthlyProjection (L153) и buildPeriodTotals (L239).
+     Добавление + base здесь приводило к двойному учёту: N задач × base + 1× base.
+     См. баг-фикс v1.2.0. */
+  return Math.round((payrollHours || 0) * (rate || 0));
 }
 
 /**

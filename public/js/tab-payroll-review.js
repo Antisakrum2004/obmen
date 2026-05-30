@@ -961,7 +961,7 @@ function _prRenderOneDevCard(dev) {
   h += '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px;line-height:1.4">';
   h += _prFmtMoney(taskSum) + ' по задачам';
   if (baseVal > 0) h += ' + <span style="color:var(--green)">' + _prFmtMoney(baseVal) + ' ЗП/Бонус</span>';
-  if (fineVal > 0) h += ' | <span style="color:var(--yellow)">' + _prFmtMoney(fineVal) + ' штраф → прибыль</span>';
+  if (fineVal > 0) h += ' | <span style="color:rgba(255,110,120,0.9)">' + _prFmtMoney(fineVal) + ' штраф → прибыль</span>';
   h += '</div>';
   h += '</div>';
   h += '</div>';
@@ -1267,7 +1267,7 @@ function _prRenderFinFooter() {
     h += '<div class="pr-fin-item"><div class="pr-fin-label">Доп. доход</div><div class="pr-fin-val" style="color:var(--green)">+' + _prFmtMoney(serviceIncome) + '</div></div>';
   }
   if (fines > 0) {
-    h += '<div class="pr-fin-item"><div class="pr-fin-label">Штрафы</div><div class="pr-fin-val" style="color:var(--yellow)">+' + _prFmtMoney(fines) + '</div></div>';
+    h += '<div class="pr-fin-item"><div class="pr-fin-label">Штрафы</div><div class="pr-fin-val" style="color:rgba(255,110,120,0.9)">+' + _prFmtMoney(fines) + '</div></div>';
   }
   h += '<div class="pr-fin-spacer"></div>';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '% <span style="font-size:9px;color:var(--text3)">(' + _prFmtMoney(marginRub) + ')</span></div></div>';
