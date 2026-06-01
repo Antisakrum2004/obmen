@@ -19,7 +19,9 @@ var _plan = {
   period: null,          /* { year, month } */
   responsible: '',
   docComment: '',
-  adminOpen: false
+  adminOpen: false,
+  _factSum: 0,           /* running sum for average calculation */
+  _factCount: 0          /* running count for average calculation */
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -290,7 +292,7 @@ function _planRenderTable() {
   h += '<th style="width:110px;text-align:right">Разница</th>';
   h += '<th style="width:120px;text-align:right">Сумма факт средняя</th>';
   h += '<th>Комментарий</th>';
-  h += '</tr></thead><tbody>';
+  h += '</tr></thead><tbody id="planTableBody">';
 
   var totalPlan = 0, totalFact = 0, factCount = 0, factSum = 0;
 
