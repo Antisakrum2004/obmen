@@ -59,6 +59,7 @@ body>*{position:relative;z-index:1}
     </div>
     <div class="tabs">
       <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Обзор</button>
+      <button class="tab-btn" id="tabBtn1" onclick="switchTab(1)">План</button>
     </div>
     <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot" id="gd"></span></button>
   </div>
@@ -84,6 +85,9 @@ body>*{position:relative;z-index:1}
   <div class="tab-content active" id="tab0">
     <div id="pr-container"></div>
   </div>
+  <div class="tab-content" id="tab1">
+    <div id="plan-container"></div>
+  </div>
 </div>
 
 <!-- Скрипты: cache layer (v8.0.0 TRUE ELAPSED-FIRST) -->
@@ -102,11 +106,23 @@ body>*{position:relative;z-index:1}
 <script src="js/mock-data.js?v=8.1.0"></script>
 <script src="js/payroll-review-styles.js?v=8.5.0"></script>
 <script src="js/tab-payroll-review.js?v=8.5.0"></script>
+<script src="js/tab-plan.js?v=8.5.0"></script>
 
 <script>
 function switchTab(t) {
-  if (window.TabPayrollReview) {
+  var tabs = document.querySelectorAll('.tab-btn');
+  var contents = document.querySelectorAll('.tab-content');
+  tabs.forEach(function(btn, i) {
+    btn.classList.toggle('active', i === t);
+  });
+  contents.forEach(function(c, i) {
+    c.classList.toggle('active', i === t);
+  });
+  if (t === 0 && window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));
+  }
+  if (t === 1 && window.TabPlan) {
+    window.TabPlan.render(document.getElementById('plan-container'));
   }
 }
 

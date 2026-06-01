@@ -257,7 +257,8 @@ tasks.length > 0
 public/js/
 ├── core.js                      — Константы, API, утилиты (ПР-7.0.0)
 ├── data-loader.js                — Pipeline загрузки данных (v7.2.0 — elapsed-first day-by-day)
-├── tab-payroll-review.js         — UI модуль (v5.0.0+, Predein fix v7.1.0, pipeline v7.2.0)
+├── tab-payroll-review.js         — UI модуль Обзор (v5.0.0+, Predein fix v7.1.0, pipeline v7.2.0)
+├── tab-plan.js                   — UI модуль ПЛАН (v1.0.0 — планирование выработки)
 ├── payroll-review-styles.js      — CSS стили
 ├── payroll-review-export.js      — CSV экспорт
 ├── payroll-review-storage.js     — localStorage обёртка
