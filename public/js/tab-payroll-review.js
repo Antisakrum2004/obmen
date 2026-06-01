@@ -32,22 +32,19 @@ var _pr = {
   /* v4.0: new UI state */
   densityMode: 'comfortable',    /* 'comfortable' | 'compact' */
   viewMode: 'cards',             /* 'cards' | 'table' */
+  roleMode: 'finance',           /* 'dev' | 'finance' | 'audit' */
   expandedCards: {},              /* devId -> true if expanded */
   _renderScheduled: false,
+  _cacheBadge: null,              /* 'cached' | 'stale' | null — shows cache origin */
   /* v5.0: performance tracking */
-  _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0, cacheMisses: 0, cacheStale: 0, projectionRebuilds: 0, timelineDomCount: 0 },
+  _perf: { loadStart: 0, loadEnd: 0, renderStart: 0, renderEnd: 0, normStart: 0, normEnd: 0, apiCalls: 0, cacheHits: 0, projectionRebuilds: 0, timelineDomCount: 0 },
   _taskDateCache: {},             /* taskId -> dateStr cache for timeline */
-  adminSaveMsg: null,            /* green success message after admin save */
-  adminSaveTime: null,           /* timestamp of admin save for auto-close */
-  adminChangedDevs: {},          /* devId -> true, for green highlighting changed rows */
-  /* v5.1: role mode + cache badge */
-  roleMode: 'dev',               /* 'dev' | 'fin' | 'audit' */
-  _cacheBadge: null,             /* 'cache' | 'refreshing' | null */
-  _diagnosticsOpen: false,        /* diagnostics panel collapsed state */
-  /* v5.4: admin modal tabs + sub-modal + hours editor */
-  adminTab: 'devs',              /* 'devs' | 'projects' */
-  adminDetailDevId: null,        /* developerId string when sub-modal is open */
-  expandedTaskEdit: {}           /* taskId_userId -> true, tracks which timeline tasks have edit panel open */
+  adminSaveMsg: null,            /* legacy, kept for compat */
+  adminSaveTime: null,           /* legacy, kept for compat */
+  adminChangedDevs: {},          /* devId -> true, for green highlighting */
+  /* v8.1: new admin state */
+  adminSubModal: {open: false, devId: ''},  /* sub-modal state for dev settings */
+  _adminScrollTop: 0             /* preserved scroll position for admin modal */
 };
 
 /* ─── Density mode persistence ─── */
@@ -76,26 +73,20 @@ function _prSaveViewMode(mode) {
   try { localStorage.setItem('pr_view_mode', mode); } catch(e) {}
 }
 
-/* ─── Role mode persistence (v5.1) ─── */
+/* ─── Role mode persistence (dev/finance/audit) ─── */
 function _prLoadRoleMode() {
   try {
     var v = localStorage.getItem('pr_role_mode');
-    if (v === 'dev' || v === 'fin' || v === 'audit') return v;
+    if (v === 'dev' || v === 'finance' || v === 'audit') return v;
   } catch(e) {}
-  return 'dev';
+  return 'finance';
 }
 
 function _prSaveRoleMode(mode) {
   try { localStorage.setItem('pr_role_mode', mode); } catch(e) {}
 }
 
-function _prSetRoleMode(mode) {
-  _pr.roleMode = mode;
-  _prSaveRoleMode(mode);
-  _prScheduleRender();
-}
-
-/* Уничтожение */
+/* Уничтожение — full memory cleanup */
 function _prDestroy() {
   _pr.intervals.forEach(function(id) { clearInterval(id); });
   _pr.intervals = [];
@@ -109,13 +100,7 @@ function _prDestroy() {
   if (typeof PayrollEvents !== 'undefined') {
     PayrollEvents.off();
   }
-  /* Phase 9: полная очистка памяти */
-  _pr._taskDateCache = {};
-  _pr._cacheBadge = null;
-  _pr._renderScheduled = false;
-  if (typeof PayrollCache !== 'undefined' && typeof PayrollCache.clearExpired === 'function') {
-    PayrollCache.clearExpired();
-  }
+  /* Full cleanup: clear all state references to free memory */
   _pr.container = null;
   _pr.rows = [];
   _pr.projection = [];
@@ -125,6 +110,13 @@ function _prDestroy() {
   _pr.auditLog = [];
   _pr.qualityReport = null;
   _pr.expandedCards = {};
+  _pr._taskDateCache = {};
+  _pr._cacheBadge = null;
+  _pr._renderScheduled = false;
+  /* Clear stale cache entries on destroy */
+  if (typeof PayrollCache !== 'undefined') {
+    PayrollCache.clearExpired();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -145,8 +137,8 @@ window.TabPayrollReview = {
 
     _pr.filters = _prLoadFilters();
 
-    _prRenderLoading();
-    _prLoadData();
+    /* Try to show cached data immediately, load in background */
+    _prLoadData({ silent: true });
 
     _pr.intervals.push(setInterval(function() {
       if (!_pr.loading) _prLoadData();
@@ -172,16 +164,19 @@ window.TabPayrollReview = {
 /* ═══════════════════════════════════════════════════════════════
    ЗАГРУЗКА ДАННЫХ
    ═══════════════════════════════════════════════════════════════ */
-function _prLoadData() {
-  /* Мьютекс: если загрузка уже идёт — пропускаем */
-  if (_pr.loading) {
-    console.log('[PR] _prLoadData: загрузка уже идёт, пропускаем');
-    return;
-  }
+function _prLoadData(opts) {
+  var silent = (opts && opts.silent);
   _pr.loading = true;
   _pr._perf.loadStart = Date.now();
   _prLoadSteps = []; /* Reset step log */
-  _prRenderLoading();
+
+  /* Don't show full-page loading screen — just a subtle indicator */
+  if (!silent) {
+    /* Only show loading spinner if no data rendered yet */
+    if (!_pr.rows || !_pr.rows.length) {
+      _prRenderLoading();
+    }
+  }
 
   var year = prCurrentPeriod.year;
   var month = prCurrentPeriod.month;
@@ -192,16 +187,10 @@ function _prLoadData() {
 
   _prAddLoadStep('\u25B6', 'Загрузка данных за ' + МЕСЯЦЫ_ПОЛН[month - 1] + ' ' + year + '...');
 
-  /* Phase 3: Cache badge — показываем «обновление...» при загрузке */
-  _pr._cacheBadge = 'refreshing';
-
   prLoadPeriodData(year, month, _prLoadProgressCallback).then(function(data) {
     _pr._perf.loadEnd = Date.now();
     _pr.data = data;
     _pr._taskDateCache = {}; /* Clear date cache on new data */
-
-    /* Phase 3: Cache badge — данные загружены, показываем «кэш» */
-    _pr._cacheBadge = 'cache';
 
     var elapsedCount = (data && data.elapsed) ? data.elapsed.length : 0;
     var taskCount = (data && data.tasks) ? data.tasks.length : 0;
@@ -233,13 +222,6 @@ function _prLoadData() {
       _pr.modelSource = 'live_fallback';
     }
 
-    /* Убираем строки исключённых разработчиков (ID 80, 94, 96) из всех расчётов */
-    if (typeof EXCLUDED_DEV_IDS !== 'undefined') {
-      _pr.rows = _pr.rows.filter(function(r) {
-        return !EXCLUDED_DEV_IDS[String(r.developerId)];
-      });
-    }
-
     _pr._perf.normEnd = Date.now();
 
     var normMs = _pr._perf.normEnd - _pr._perf.normStart;
@@ -252,7 +234,14 @@ function _prLoadData() {
     }
 
     _prAddLoadStep('\u25B6', 'Построение прогнозов...');
-    _prRebuildAndRender({ markDirty: false, source: 'loadData' }); _pr._renderScheduled = false;
+    _pr._perf.projectionRebuilds++;
+    _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+      ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+    _pr.totals = typeof buildPeriodTotalsCached === 'function'
+      ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+
+    /* Ensure ALL developers appear in projection, even those with 0 elapsed */
+    _prEnsureAllDevsInProjection();
 
     _prAddLoadStep('\u2713', 'Прогнозы: ' + _pr.projection.length + ' разработчиков');
 
@@ -262,12 +251,10 @@ function _prLoadData() {
     var totalMs = _pr._perf.loadEnd - _pr._perf.loadStart + normMs;
     _prAddLoadStep('\u2713', 'Готово! Общее время: ' + totalMs + 'мс');
 
-
     _prScheduleRender();
   }).catch(function(e) {
     console.error('Ошибка загрузки', e);
     _pr.loading = false;
-
     _prAddLoadStep('\u2717', 'ОШИБКА: ' + (e.message || 'Неизвестная ошибка'));
     _prRenderError(e.message || 'Ошибка загрузки данных. Проверьте подключение и режим (МОК/ЖИВОЙ).');
   });
@@ -287,29 +274,38 @@ function _prScheduleRender() {
     _prRenderAll();
   });
 }
-/* ═══════════════════════════════════════════════════════════════
-   REBUILD + RENDER — Единая точка входа для мутаций данных
-   Заменяет 12× дублированный rebuild-каскад.
-   opts.invalidateCache: true если нужно сбросить memoization cache
-   opts.markDirty: true если есть несохранённые изменения (default: true)
-   opts.source: строка для аудита (кто вызвал rebuild)
-   ═══════════════════════════════════════════════════════════════ */
-function _prRebuildAndRender(opts) {
-  var o = opts || {};
-  if (o.invalidateCache && typeof invalidateProjectionCache === 'function') {
-    invalidateProjectionCache();
+
+/* ─── Soft refresh: update UI with fresh data without full reload ─── */
+function _prSoftRefresh(freshData) {
+  if (!freshData || _pr.loading) return;
+  console.log('_prSoftRefresh: applying fresh data from background refresh');
+  _pr.data = freshData;
+  _pr._taskDateCache = {};
+
+  var savedReviews = _prLoadReviews(prCurrentPeriod.year, prCurrentPeriod.month);
+  if (typeof buildNormalizedModel === 'function') {
+    var model = buildNormalizedModel({
+      periodKey: prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month),
+      periodStatus: _pr.periodStatus,
+      rawData: freshData,
+      savedReviews: savedReviews,
+      rateProvider: _prRateProvider()
+    });
+    _pr.rows = model.rows;
+  } else {
+    var result = buildReviewRows(freshData, savedReviews, _prRateProvider());
+    _pr.rows = result.rows;
   }
-  _pr._perf.projectionRebuilds++;
+
+  if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
   _pr.projection = typeof buildMonthlyProjectionCached === 'function'
     ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
   _pr.totals = typeof buildPeriodTotalsCached === 'function'
     ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
   _prEnsureAllDevsInProjection();
-  if (o.markDirty !== false) _pr.dirty = true;
+
+  _pr._cacheBadge = null; /* data is now fresh */
   _prScheduleRender();
-  if (typeof PayrollEvents !== 'undefined') {
-    PayrollEvents.emit('rows:mutated', { source: o.source || 'unknown' });
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -409,9 +405,9 @@ function _prAppendAuditLog(periodKey, entries) {
 function _prRateProvider() {
   return {
     getRate: function(devId) { return prGetRate(devId); },
+    getClientRate: function(devId) { return prGetClientRate(devId); },
     getBase: function(devId) { return prGetBase(devId); },
-    getName: function(devId) { return prGetDevName(devId); },
-    getClientRate: function(devId) { return prGetClientRate(devId); }
+    getName: function(devId) { return prGetDevName(devId); }
   };
 }
 
@@ -448,14 +444,14 @@ function _prRenderLoadingSteps() {
 function _prRenderLoading() {
   if (!_pr.container) return;
   _prLoadSteps = [];
-  var modeLabel = 'ЖИВОЙ';
+  var modeLabel = PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ';
   _pr.container.innerHTML =
     '<div class="pr-loading" style="gap:14px;align-items:flex-start;max-width:500px;margin:0 auto;padding:32px 24px">' +
     '<div style="display:flex;align-items:center;gap:10px;width:100%">' +
       '<div class="pr-ring"></div>' +
       '<div>' +
         '<div id="pr-loading-msg" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">Загрузка данных за ' + esc(МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year) + '</div>' +
-        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-first-daybyday v7.2.0</div>' +
+        '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:2px">Режим: ' + modeLabel + ' | Pipeline: elapsed-first v5.0</div>' +
       '</div>' +
     '</div>' +
     '<div id="pr-loading-steps" style="width:100%;max-height:200px;overflow-y:hidden;padding:8px 12px;background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:8px;margin-top:4px"></div>' +
@@ -471,6 +467,13 @@ function _prRenderError(msg) {
 function _prRenderAll() {
   if (!_pr.container) return;
   _pr._perf.renderStart = Date.now();
+
+  /* Preserve admin modal scroll position across re-renders */
+  var _adminScrollEl = document.querySelector('.pr-modal-body');
+  if (_adminScrollEl) {
+    _pr._adminScrollTop = _adminScrollEl.scrollTop;
+  }
+
   var h = '';
   h += _prRenderHeader();
   h += _prRenderKPIs();
@@ -486,9 +489,21 @@ function _prRenderAll() {
   h += _prRenderFinFooter();
   h += _prRenderSaveBar();
   h += _prRenderDebug();
-  h += _prRenderDiagnostics();
   h += _prRenderAdminModal();
   _pr.container.innerHTML = h;
+
+  /* Restore admin modal scroll position after DOM is painted */
+  if (_pr._adminScrollTop > 0) {
+    var savedTop = _pr._adminScrollTop;
+    /* Double RAF to ensure layout is complete before restoring scroll */
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        var el = document.querySelector('.pr-modal-body');
+        if (el) el.scrollTop = savedTop;
+      });
+    });
+  }
+
   _pr._perf.renderEnd = Date.now();
 }
 
@@ -533,7 +548,13 @@ function _prRenderSafetyBanner() {
    ШАПКА
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderHeader() {
-  var modeBadge = '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
+  var modeBadge = PR_MOCK_MODE
+    ? '<span class="pr-badge pr-badge-mock">МОК</span>'
+    : '<span class="pr-badge pr-badge-live">ЖИВОЙ</span>';
+
+  var cacheBadge = '';
+  if (_pr._cacheBadge === 'cached') cacheBadge = ' <span style="font-size:9px;color:var(--green);font-family:var(--mono)">(кэш)</span>';
+  else if (_pr._cacheBadge === 'stale') cacheBadge = ' <span style="font-size:9px;color:var(--yellow);font-family:var(--mono)">(обновление...)</span>';
 
   var devCount = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS.length : Object.keys(DEVELOPERS).length;
   var taskCount = _pr.rows.length;
@@ -543,20 +564,13 @@ function _prRenderHeader() {
     : _pr.periodStatus;
 
   var h = '<div class="pr-header">';
-  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
+  h += '<div class="pr-title">Зарплатный обзор ' + modeBadge + cacheBadge + ' <span class="pr-version">v' + APP_VERSION + '</span></div>';
   h += '<div class="pr-header-info">';
   h += '<span class="pr-header-stat">' + devCount + ' разраб.</span>';
   h += '<span class="pr-header-stat">' + taskCount + ' задач</span>';
   h += '<span class="pr-header-stat" style="color:var(--cyan)">' + esc(psLabel) + '</span>';
   h += '</div>';
   h += '<div class="pr-controls">';
-
-  /* Phase 3: Cache badge */
-  if (_pr._cacheBadge === 'cache') {
-    h += '<span class="pr-badge pr-badge-cache">кэш</span>';
-  } else if (_pr._cacheBadge === 'refreshing') {
-    h += '<span class="pr-badge pr-badge-refreshing">обновление...</span>';
-  }
 
   /* Выбор периода — только текущий + предыдущий (Stage 2: period boundaries) */
   h += '<select class="pr-select" id="prPeriodSelect" onchange="_prOnPeriodChange()">';
@@ -571,35 +585,36 @@ function _prRenderHeader() {
 
   h += '<button class="pr-btn pr-btn-ghost" onclick="window.TabPayrollReview.refresh()" title="Обновить данные">&#8635;</button>';
 
+  /* Role mode toggle: DEV | FINANCE | AUDIT */
+  h += '<div class="pr-view-toggle">';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'dev' ? ' active' : '') + '" onclick="_prSetRoleMode(\'dev\')" title="Часы, выплаты, загрузка">Разраб</button>';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'finance' ? ' active' : '') + '" onclick="_prSetRoleMode(\'finance\')" title="Маржа, выручка, рентабельность">Фин.</button>';
+  h += '<button class="pr-view-btn' + (_pr.roleMode === 'audit' ? ' active' : '') + '" onclick="_prSetRoleMode(\'audit\')" title="Снимки, версия, аудит">Аудит</button>';
+  h += '</div>';
+
   /* View toggle: Cards / Table */
   h += '<div class="pr-view-toggle">';
   h += '<button class="pr-view-btn' + (_pr.viewMode === 'cards' ? ' active' : '') + '" onclick="_prSetViewMode(\'cards\')">Карточки</button>';
   h += '<button class="pr-view-btn' + (_pr.viewMode === 'table' ? ' active' : '') + '" onclick="_prSetViewMode(\'table\')">Таблица</button>';
   h += '</div>';
 
-  /* Phase 5: Role mode toggle */
-  h += '<div class="pr-role-toggle">';
-  h += '<button class="pr-role-btn' + (_pr.roleMode === 'dev' ? ' active' : '') + '" onclick="_prSetRoleMode(\'dev\')" title="Режим разработчика: часы, оплата, загрузка">Разраб</button>';
-  h += '<button class="pr-role-btn' + (_pr.roleMode === 'fin' ? ' active' : '') + '" onclick="_prSetRoleMode(\'fin\')" title="Финансовый режим: маржа, оплата клиента, cut">Фин.</button>';
-  h += '<button class="pr-role-btn' + (_pr.roleMode === 'audit' ? ' active' : '') + '" onclick="_prSetRoleMode(\'audit\')" title="Режим аудита: снимок, источник, версия, контрольная сумма">Аудит</button>';
-  h += '</div>';
-
   /* Density toggle */
   h += '<div class="pr-density-toggle">';
-  h += '<button class="pr-density-btn' + (_pr.densityMode === 'compact' ? ' active' : '') + '" onclick="_prSetDensity(\'compact\')">Компактно</button>';
-  h += '<button class="pr-density-btn' + (_pr.densityMode === 'comfortable' ? ' active' : '') + '" onclick="_prSetDensity(\'comfortable\')">Плотно</button>';
+  h += '<button class="pr-density-btn' + (_pr.densityMode === 'comfortable' ? ' active' : '') + '" onclick="_prSetDensity(\'comfortable\')">Компактно</button>';
+  h += '<button class="pr-density-btn' + (_pr.densityMode === 'compact' ? ' active' : '') + '" onclick="_prSetDensity(\'compact\')">Плотно</button>';
   h += '</div>';
 
   h += '<button class="pr-btn pr-btn-orange" onclick="_prOpenAdmin()">&#9881; Админка</button>';
   h += '<button class="pr-btn pr-btn-green" onclick="_prExport()">&#11015; CSV</button>';
   h += '<button class="pr-btn pr-btn-ghost" onclick="_prExportDetailed()" title="Детальный CSV">CSV+</button>';
   h += '<button class="pr-btn pr-btn-primary" onclick="_prApproveAll()">&#10003; Подтвердить все</button>';
+  h += '<button class="pr-btn pr-btn-ghost" onclick="_prUndoApproveAll()" title="Вернуть все подтверждённые в ожидание">&#8634; Отменить подтв.</button>';
 
   h += '</div></div>';
   return h;
 }
 
-/* ─── View/Density handlers ─── */
+/* ─── View/Density/Role handlers ─── */
 function _prSetViewMode(mode) {
   _pr.viewMode = mode;
   _prSaveViewMode(mode);
@@ -612,50 +627,40 @@ function _prSetDensity(mode) {
   _prRenderAll();
 }
 
+function _prSetRoleMode(mode) {
+  _pr.roleMode = mode;
+  _prSaveRoleMode(mode);
+  _prRenderAll();
+}
+
 /* ═══════════════════════════════════════════════════════════════
    KPI КАРТОЧКИ (top overview)
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderKPIs() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
-  var rm = _pr.roleMode;
+  var marginColor = t.totalMarginPct >= 30 ? 'var(--green)' : t.totalMarginPct >= 10 ? 'var(--yellow)' : t.totalMarginPct >= 0 ? 'var(--accent)' : 'var(--red)';
+  var marginSign = t.totalMarginPct >= 0 ? '+' : '';
+  var role = _pr.roleMode;
   var h = '<div class="pr-kpi-grid">';
-
-  /* Phase 5: KPIs зависят от режима */
-  if (rm === 'dev') {
+  /* DEV view: hours, payout, workload */
+  if (role === 'dev') {
     h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-    h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
-    h += _prKpiCard('К выплате', t.totalPayroll.toFixed(1), 'var(--yellow)', t.pendingTasks + ' ожидает');
-    h += _prKpiCard('Сумма выплат', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.disputedTasks + ' споров');
-  } else if (rm === 'fin') {
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
+    h += _prKpiCard('Базовых', _prFmtMoney(t.totalBase || 0), 'var(--green)', (t.totalFine || 0) > 0 ? _prFmtMoney(t.totalFine) + ' штраф' : 'без штрафов');
+  /* FINANCE view: margin, client revenue, payout */
+  } else if (role === 'finance') {
+    h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1) + 'ч', 'var(--cyan)', _prFmtMoney(t.totalClientRevenue || 0) + ' р');
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', t.pendingTasks + ' ожидает');
+    h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
     h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-    h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
-    var finTotalRevenue = (t.totalClientRevenue || 0) + (t.totalServiceIncome || 0);
-    h += _prKpiCard('Выручка', _prFmtMoney(finTotalRevenue), 'var(--cyan)', (t.totalServiceIncome || 0) > 0 ? 'клиент + доп. доход' : 'от клиента');
-    h += _prKpiCard('Затраты', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', 'ЗП + баз.');
-    if ((t.totalServiceIncome || 0) > 0) {
-      h += _prKpiCard('Доп. доход', '+' + _prFmtMoney(t.totalServiceIncome || 0), 'var(--green)', (t.serviceProjectCount || 0) + ' проектов');
-    }
-    var finFines = t.totalFine || 0;
-    var finMargin = finTotalRevenue > 0
-      ? safeRound((finTotalRevenue - t.totalPayrollAmount + finFines) / finTotalRevenue * 100, 0)
-      : 0;
-    var finMarginCls = finMargin >= 0 ? 'var(--green)' : 'var(--red)';
-    var finMarginRub = safeRound(finTotalRevenue - t.totalPayrollAmount + finFines, 0);
-    h += _prKpiCard('Маржа', (finMargin >= 0 ? '+' : '') + finMargin + '%', finMarginCls, _prFmtMoney(finMarginRub) + ' р');
-  } else if (rm === 'audit') {
+  /* AUDIT view: snapshot, version, data source */
+  } else {
     h += _prKpiCard('Факт часы', t.totalFactHours.toFixed(1), 'var(--accent)', t.totalTasks + ' задач');
-    h += _prKpiCard('Опл. клиента', t.totalBillable.toFixed(1), 'var(--green)', t.approvedTasks + ' подтв.');
-    var auditFines = t.totalFine || 0;
-    var auditMargin = (t.totalClientRevenue || 0) > 0
-      ? safeRound(((t.totalClientRevenue || 0) - t.totalPayrollAmount + auditFines) / (t.totalClientRevenue || 0) * 100, 0)
-      : 0;
-    var auditMarginCls = auditMargin >= 0 ? 'var(--green)' : 'var(--red)';
-    h += _prKpiCard('Маржа', (auditMargin >= 0 ? '+' : '') + auditMargin + '%', auditMarginCls, 'прибыльность');
-    var sourceLabel = _pr.modelSource === 'live' ? 'живые данные' : _pr.modelSource;
-    h += _prKpiCard('Источник', sourceLabel, 'var(--cyan)', _pr.snapshotId ? 'снимок ' + _pr.snapshotId.substring(0, 12) : 'без снимка');
+    h += _prKpiCard('К выплате', _prFmtMoney(t.totalPayrollAmount), 'var(--orange)', _pr.modelSource);
+    h += _prKpiCard('Маржа', marginSign + t.totalMarginPct + '%', marginColor, _prFmtMoney(t.totalMargin || 0) + ' р');
+    h += _prKpiCard('Снимок', _pr.snapshotId ? _pr.snapshotId.substring(0, 8) : 'нет', 'var(--text3)', _pr.snapshotChecksum ? _pr.snapshotChecksum.substring(0, 8) : '—');
   }
-
   h += '</div>';
   return h;
 }
@@ -674,34 +679,34 @@ function _prKpiCard(label, value, color, sub) {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderHeatmap() {
   if (!_pr.projection.length) return '';
+  var role = _pr.roleMode;
   var h = '<div class="pr-heatmap">';
   h += '<div class="pr-heatmap-title">Команда</div>';
   h += '<div class="pr-heatmap-row">';
 
   _pr.projection.forEach(function(dev) {
     var risks = _prCalcDevRisks(dev);
-    var riskLevel = risks.length > 0 ? (risks.indexOf('OVERBURN') >= 0 || risks.indexOf('NEGATIVE MARGIN') >= 0 ? 'red' : 'yellow') : 'green';
+    var riskLevel = risks.length > 0 ? (risks.indexOf('ПЕРЕРАБОТКА') >= 0 || risks.indexOf('УБЫТОК') >= 0 ? 'red' : 'yellow') : 'green';
     var marginPct = _prCalcMarginPct(dev);
     var marginCls = marginPct >= 0 ? 'pos' : 'neg';
     var marginTxt = marginPct >= 0 ? ('+' + marginPct + '%') : (marginPct + '%');
     var firstName = getFirstName(dev.developerName);
+    /* Hover tooltip with extra details */
+    var cutHours = safeRound(dev.totalFactHours - dev.totalBillable, 1);
+    var tipParts = [dev.totalFactHours.toFixed(0) + 'ч факт', _prFmtMoney(dev.totalAmount) + ' к выплате'];
+    if (role !== 'dev') tipParts.push('Маржа ' + marginTxt);
+    if (cutHours > 0) tipParts.push('Срез ' + cutHours.toFixed(1) + 'ч');
+    if (risks.length > 0) tipParts.push(risks.join(', '));
+    var tip = esc(tipParts.join(' | '));
 
-    /* Phase 6: title tooltip с полной информацией */
-    var tooltipParts = [firstName + ': ' + dev.totalFactHours.toFixed(0) + 'h'];
-    tooltipParts.push('Billable: ' + dev.totalBillable.toFixed(1) + 'h');
-    tooltipParts.push('Маржа: ' + marginTxt);
-    if (risks.length > 0) tooltipParts.push('Риски: ' + risks.join(', '));
-    var tooltipText = esc(tooltipParts.join(' | '));
-
-    h += '<div class="pr-heatmap-chip" onclick="_prScrollToDev(\'' + esc(dev.developerId) + '\')" title="' + tooltipText + '">';
+    h += '<div class="pr-heatmap-chip" onclick="_prScrollToDev(\'' + esc(dev.developerId) + '\')" title="' + tip + '">';
     h += '<span class="pr-heatmap-dot ' + riskLevel + '"></span>';
     h += '<span class="pr-heatmap-name">' + esc(firstName) + '</span>';
-    h += '<span class="pr-heatmap-hours">' + dev.totalFactHours.toFixed(0) + 'h</span>';
-    /* Phase 6: Margin показываем только в Фин./Аудит режиме */
-    if (_pr.roleMode === 'fin' || _pr.roleMode === 'audit') {
+    h += '<span class="pr-heatmap-hours">' + dev.totalFactHours.toFixed(0) + 'ч</span>';
+    /* Margin only shown in finance/audit mode */
+    if (role !== 'dev') {
       h += '<span class="pr-heatmap-margin ' + marginCls + '">' + marginTxt + '</span>';
     }
-    /* Phase 6: Risk badge убран из чипа, перенесён в title tooltip */
     h += '</div>';
   });
 
@@ -772,17 +777,6 @@ function _prRenderDevCards() {
   if (!_pr.projection.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет данных за выбранный период</div></div>';
 
   var filtered = _prGetFilteredProjection();
-
-  /* v7.1.0: Диагностика — логируем какие разработчики рендерятся */
-  console.log('[PR] _prRenderDevCards: projection=' + _pr.projection.length +
-    ', filtered=' + filtered.length +
-    ', filters=' + JSON.stringify(_pr.filters));
-  filtered.forEach(function(dev) {
-    console.log('[PR]   Рендер: ' + dev.developerName +
-      ' (id=' + dev.developerId + ', fact=' + dev.totalFactHours.toFixed(1) +
-      'h, base=' + (dev.totalBase || 0) + ', amount=' + dev.totalAmount + ')');
-  });
-
   if (!filtered.length) return '<div class="pr-empty"><div style="font-size:24px">&#128203;</div><div>Нет задач за выбранный период</div></div>';
 
   var densityCls = _pr.densityMode === 'compact' ? ' pr-compact' : '';
@@ -808,7 +802,8 @@ function _prEnsureAllDevsInProjection() {
     return activeSet[String(dev.developerId)];
   });
 
-  /* Step 2: Add missing active developers with 0 hours */
+  /* Step 2: Add missing active developers with 0 hours
+     Even devs with 0 tasks can have base/fine — their totalAmount includes those */
   var existingDevs = {};
   _pr.projection.forEach(function(dev) {
     existingDevs[String(dev.developerId)] = true;
@@ -820,7 +815,6 @@ function _prEnsureAllDevsInProjection() {
       /* This developer has no elapsed in the current period — add empty entry */
       var baseSalary = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
       var fine = (typeof prGetFine === 'function') ? prGetFine(devId) : 0;
-      var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(devId) : 0;
       _pr.projection.push({
         developerId: devId,
         developerName: prGetDevName(devId),
@@ -836,10 +830,7 @@ function _prEnsureAllDevsInProjection() {
         disputedCount: 0,
         excludedCount: 0,
         approvalRate: 0,
-        clientRate: clientRate,
-        clientRevenue: 0,
-        margin: -baseSalary + fine,
-        marginPct: 0,
+        margin: 0,
         projectCount: 0,
         projectNames: '',
         projects: {}
@@ -848,15 +839,7 @@ function _prEnsureAllDevsInProjection() {
     }
   });
   if (missingCount > 0) {
-    console.log('[PR] _prEnsureAllDevsInProjection: добавлено ' + missingCount + ' разработчиков с 0 часов');
-    /* Лог добавленных разработчиков */
-    activeIds.forEach(function(id) {
-      var devId = String(id);
-      if (!existingDevs[devId]) {
-        var base = (typeof prGetBase === 'function') ? prGetBase(devId) : 0;
-        console.log('[PR]   Добавлен: ' + prGetDevName(devId) + ' (id=' + devId + ', base=' + base + ')');
-      }
-    });
+    console.log('_prEnsureAllDevsInProjection: добавлено ' + missingCount + ' разработчиков с 0 часов');
     /* Re-sort: by totalAmount desc, then by name */
     _pr.projection.sort(function(a, b) {
       if (b.totalAmount !== a.totalAmount) return b.totalAmount - a.totalAmount;
@@ -868,15 +851,6 @@ function _prEnsureAllDevsInProjection() {
 function _prGetFilteredProjection() {
   var f = _pr.filters;
   return _pr.projection.filter(function(dev) {
-    /* v7.1.0: Разработчики с baseSalary > 0 или payrollAmount > 0
-       ВСЕГДА видимы, даже если у них 0 часов.
-       Без этого фильтр по проекту/статусу скрывает Предеина и др. */
-    var hasVisiblePayroll = dev.totalBase > 0 || dev.totalAmount > 0;
-    var hasRows = false;
-    _pr.rows.forEach(function(r) {
-      if (String(r.developerId) === String(dev.developerId)) hasRows = true;
-    });
-
     if (f.developer && String(dev.developerId) !== String(f.developer)) return false;
     if (f.project) {
       /* Check if this developer has tasks in this project */
@@ -886,10 +860,11 @@ function _prGetFilteredProjection() {
           hasProject = true;
         }
       });
-      /* v7.1.0: Разработчики с baseSalary > 0 всегда проходят проектный фильтр */
-      if (!hasProject && !hasVisiblePayroll) return false;
+      if (!hasProject) return false;
     }
     if (f.status) {
+      /* Devs with base/fine but no tasks always show */
+      if (dev.taskCount === 0 && dev.totalAmount > 0) return true;
       /* Check if this developer has tasks with this status */
       var hasStatus = false;
       _pr.rows.forEach(function(r) {
@@ -897,8 +872,7 @@ function _prGetFilteredProjection() {
           hasStatus = true;
         }
       });
-      /* v7.1.0: Разработчики с baseSalary > 0 всегда проходят статусный фильтр */
-      if (!hasStatus && !hasVisiblePayroll) return false;
+      if (!hasStatus) return false;
     }
     return true;
   });
@@ -914,9 +888,9 @@ function _prRenderOneDevCard(dev) {
   var firstName = getFirstName(dev.developerName);
   var rate = prGetRate(dev.developerId);
   var avgPerTask = dev.taskCount > 0 ? safeRound(dev.totalFactHours / dev.taskCount, 1) : 0;
-  var rm = _pr.roleMode;
-  var showFinancial = (rm === 'fin' || rm === 'audit');
-  var showAudit = (rm === 'audit');
+
+  /* v8.0: Предеин (rate=0) показывает базовую выплату вместо ставки */
+  var rateDisplay = rate > 0 ? (rate + ' р/ч') : ('БАЗОВАЯ ' + _prFmtMoney(prGetBase(dev.developerId)));
 
   /* Calculate weekend/overtime from raw data */
   var weekendH = 0;
@@ -934,79 +908,71 @@ function _prRenderOneDevCard(dev) {
   h += '<div class="pr-card-avatar">' + esc(firstName.charAt(0)) + '</div>';
   h += '<div class="pr-card-identity">';
   h += '<div class="pr-card-name">' + esc(dev.developerName) + '</div>';
-  /* Phase 5: показываем ставку клиента только в Фин./Аудит */
-  if (showFinancial) {
-    var clientRate = prGetClientRate(dev.developerId);
-    h += '<div class="pr-card-role">' + rate + ' р/ч | клиент: ' + clientRate + ' р/ч</div>';
-  } else {
-    h += '<div class="pr-card-role">' + rate + ' р/ч</div>';
-  }
+  h += '<div class="pr-card-role">' + rateDisplay + '</div>';
   h += '</div>';
   h += '<span class="pr-card-status ' + cardStatus.cls + '">' + cardStatus.label + '</span>';
   h += '</div>';
 
-  /* ─── PRIMARY KPI (L1) ─── */
+  /* ─── PRIMARY KPI (L1) — только общая сумма и часы ─── */
+  var taskSum = dev.totalAmount - (dev.totalBase || 0) + (dev.totalFine || 0);
+  var baseVal = dev.totalBase || 0;
+  var fineVal = dev.totalFine || 0;
+
   h += '<div class="pr-card-kpi">';
+  h += '<div class="pr-kpi-primary">';
+  h += '<div class="pr-kpi-money">' + _prFmtMoney(dev.totalAmount) + '</div>';
+  h += '<div class="pr-kpi-money-label">К выплате</div>';
+  h += '</div>';
   h += '<div class="pr-kpi-primary">';
   h += '<div class="pr-kpi-hours">' + dev.totalFactHours.toFixed(1) + '</div>';
   h += '<div class="pr-kpi-hours-label">Факт часов</div>';
   h += '</div>';
-  h += '<div class="pr-kpi-primary">';
-  h += '<div class="pr-kpi-money">' + _prFmtMoney(dev.totalAmount) + '</div>';
-  h += '<div class="pr-kpi-money-label">Затраты</div>';
-  /* Breakdown: задачи + базовая, штрафы отдельно (идут в прибыль) */
-  var taskSum = dev.totalAmount - (dev.totalBase || 0);
-  var baseVal = dev.totalBase || 0;
-  var fineVal = dev.totalFine || 0;
-  h += '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px;line-height:1.4">';
-  h += _prFmtMoney(taskSum) + ' по задачам';
-  if (baseVal > 0) h += ' + <span style="color:var(--green)">' + _prFmtMoney(baseVal) + ' ЗП/Бонус</span>';
-  if (fineVal > 0) h += ' | <span style="color:rgba(255,110,120,0.9)">' + _prFmtMoney(fineVal) + ' штраф → прибыль</span>';
-  h += '</div>';
-  h += '</div>';
   h += '</div>';
 
-  /* ─── SECONDARY METRICS (L2) — Phase 5: зависит от режима ─── */
+  /* ─── SECONDARY METRICS (L2) — role-dependent ─── */
   h += '<div class="pr-card-secondary">';
-  h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Billable</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'h</span></div>';
-  h += '<div class="pr-sec-divider"></div>';
-  /* Phase 5: Cut показываем всегда, но в Разраб без цвета */
-  if (cutHours > 0) {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'h</span></div>';
+  if (_pr.roleMode === 'dev') {
+    /* DEV: hours + workload only */
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
+    h += '<div class="pr-sec-divider"></div>';
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Загрузка</span><span class="pr-sec-val">' + Math.round(dev.totalFactHours / 160 * 100) + '%</span></div>';
   } else {
-    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Cut</span><span class="pr-sec-val" style="color:var(--text3)">0h</span></div>';
-  }
-  /* Phase 5: Margin показываем только в Фин./Аудит */
-  if (showFinancial) {
+    /* FINANCE/AUDIT: billable, cut, margin */
+    h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Опл. клиента</span><span class="pr-sec-val billable">' + dev.totalBillable.toFixed(1) + 'ч</span></div>';
+    h += '<div class="pr-sec-divider"></div>';
+    if (cutHours > 0) {
+      h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val cut">-' + cutHours.toFixed(1) + 'ч</span></div>';
+    } else {
+      h += '<div class="pr-sec-item primary-sec"><span class="pr-sec-label">Срез</span><span class="pr-sec-val" style="color:var(--text3)">0ч</span></div>';
+    }
     h += '<div class="pr-sec-divider"></div>';
     var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
-    h += '<div class="pr-sec-item"><span class="pr-sec-label">Margin</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
+    h += '<div class="pr-sec-item"><span class="pr-sec-label">Маржа</span><span class="pr-sec-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%</span></div>';
   }
   h += '</div>';
 
-  /* ─── PROGRESS BARS (L3) ─── */
+  /* ─── PROGRESS BARS (L3) — role-dependent ─── */
   h += '<div class="pr-card-progress">';
 
-  /* Workload: fact / 160 */
+  /* Workload: always shown */
   var workloadPct = Math.min(safeRound(dev.totalFactHours / 160 * 100, 0), 100);
   var workloadColor = workloadPct > 100 ? 'red' : workloadPct > 80 ? 'green' : workloadPct > 50 ? 'yellow' : 'red';
   h += '<div class="pr-progress-row">';
   h += '<span class="pr-progress-label">Загрузка</span>';
   h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + workloadColor + '" style="width:' + workloadPct + '%"></div></div>';
-  h += '<span class="pr-progress-val">' + dev.totalFactHours.toFixed(0) + '/160h</span>';
+  h += '<span class="pr-progress-val">' + dev.totalFactHours.toFixed(0) + '/160ч</span>';
   h += '</div>';
 
-  /* Billable efficiency: billable / fact */
-  var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
-  var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
-  h += '<div class="pr-progress-row">';
-  h += '<span class="pr-progress-label">Billable</span>';
-  h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
-  h += '<span class="pr-progress-val">' + billPct + '%</span>';
-  h += '</div>';
+  /* Billable + Margin only in finance/audit mode */
+  if (_pr.roleMode !== 'dev') {
+    var billPct = dev.totalFactHours > 0 ? Math.min(safeRound(dev.totalBillable / dev.totalFactHours * 100, 0), 100) : 0;
+    var billColor = billPct >= 95 ? 'green' : billPct >= 80 ? 'yellow' : 'red';
+    h += '<div class="pr-progress-row">';
+    h += '<span class="pr-progress-label">Опл. клиента</span>';
+    h += '<div class="pr-progress-track"><div class="pr-progress-fill ' + billColor + '" style="width:' + billPct + '%"></div></div>';
+    h += '<span class="pr-progress-val">' + billPct + '%</span>';
+    h += '</div>';
 
-  /* Phase 5: Margin progress bar — только в Фин./Аудит */
-  if (showFinancial) {
     var marginBarPct = Math.min(Math.abs(marginPct), 100);
     var marginBarColor = marginPct >= 30 ? 'green' : marginPct >= 10 ? 'yellow' : marginPct >= 0 ? 'accent' : 'red';
     h += '<div class="pr-progress-row">';
@@ -1021,36 +987,34 @@ function _prRenderOneDevCard(dev) {
   /* ─── RISK BADGES ─── */
   if (risks.length > 0) {
     h += '<div class="pr-card-risks">';
+    var _riskCssMap = {'ПЕРЕРАБОТКА':'risk-overburn','МАЛО НАГРУЗКИ':'risk-lowload','СРЕЗ':'risk-cuthours','НЕТ СТАВКИ':'risk-norate','НЕ ПРОВЕРЕН':'risk-unreviewed','УБЫТОК':'risk-negmargin'};
     risks.forEach(function(risk) {
-      var riskCls2 = 'risk-' + risk.toLowerCase().replace(/\s+/g, '');
+      var riskCls2 = _riskCssMap[risk] || ('risk-' + risk.toLowerCase().replace(/[\s]+/g, ''));
       h += '<span class="pr-risk-pill ' + riskCls2 + '">' + risk + '</span>';
     });
     h += '</div>';
   }
 
-  /* Phase 5: Аудит инфо — только в режиме Аудит */
-  if (showAudit) {
-    h += '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);margin-bottom:8px;padding:6px 8px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1);border-radius:4px">';
-    h += '<div>Источник: ' + esc(_pr.modelSource || 'live') + '</div>';
-    h += '<div>Версия: ' + APP_VERSION + '</div>';
-    h += '<div>Контрольная сумма: ' + esc(_pr.snapshotChecksum || 'нет') + '</div>';
-    h += '<div>Снимок: ' + esc(_pr.snapshotId || 'нет') + '</div>';
+  h += '</div>'; /* end .pr-card-inner */
+
+  /* ─── BREAKDOWN: по задачам + базовая − штраф (внизу карточки) ─── */
+  if (baseVal > 0 || fineVal > 0) {
+    h += '<div class="pr-card-breakdown">';
+    h += '<span class="pr-bd-item">' + _prFmtMoney(taskSum) + ' по задачам</span>';
+    if (baseVal > 0) h += ' <span class="pr-bd-sep">+</span> <span class="pr-bd-item pr-bd-green">' + _prFmtMoney(baseVal) + ' баз.</span>';
+    if (fineVal > 0) {
+      var fineComment = prGetFineComment(dev.developerId);
+      h += ' <span class="pr-bd-sep">−</span> <span class="pr-bd-item pr-bd-red">' + _prFmtMoney(fineVal) + ' штраф' + (fineComment ? ' (' + esc(truncate(fineComment, 20)) + ')' : '') + '</span>';
+    }
     h += '</div>';
   }
-
-  h += '</div>'; /* end .pr-card-inner */
 
   /* ─── FOOTER METRICS ─── */
   h += '<div class="pr-card-footer">';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + dev.taskCount + '</div><div class="pr-footer-label">Задач</div></div>';
-  h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'h</div><div class="pr-footer-label">Ср/зад</div></div>';
+  h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + avgPerTask.toFixed(1) + 'ч</div><div class="pr-footer-label">Ср/зад</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + weekendH.toFixed(0) + '</div><div class="pr-footer-label">Выходн</div></div>';
   h += '<div class="pr-footer-metric"><div class="pr-footer-val">' + overtimeH.toFixed(0) + '</div><div class="pr-footer-label">Сверхур</div></div>';
-  /* Штраф в футере, если есть */
-  if (fineVal > 0) {
-    var fineComment = prGetFineComment(dev.developerId);
-    h += '<div class="pr-footer-metric" style="color:var(--red)"><div class="pr-footer-val" style="color:var(--red)">-' + _prFmtMoney(fineVal) + '</div><div class="pr-footer-label" style="color:var(--red)">Штраф' + (fineComment ? ' (' + esc(truncate(fineComment, 15)) + ')' : '') + '</div></div>';
-  }
   h += '</div>';
 
   /* ─── EXPAND / TIMELINE ─── */
@@ -1075,39 +1039,46 @@ function _prCalcDevRisks(dev) {
   var marginPct = _prCalcMarginPct(dev);
   var rate = prGetRate(dev.developerId);
 
-  if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('OVERBURN');
-  if (dev.totalFactHours < 80) risks.push('LOW LOAD');
-  if (cutHours > 5) risks.push('CUT HOURS');
-  if (!rate || rate <= 0) risks.push('RATE=0');
-  if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('UNREVIEWED');
-  if (marginPct < 0) risks.push('NEGATIVE MARGIN');
+  if (dev.totalFactHours > dev.totalBillable * 1.3) risks.push('ПЕРЕРАБОТКА');
+  /* Skip LOW LOAD for devs with no tasks but base salary */
+  if (dev.totalFactHours < 80 && dev.taskCount > 0) risks.push('МАЛО НАГРУЗКИ');
+  if (cutHours > 5) risks.push('СРЕЗ');
+  if (!rate || rate <= 0) risks.push('НЕТ СТАВКИ');
+  if (dev.pendingCount > 0 && dev.approvedCount === 0) risks.push('НЕ ПРОВЕРЕН');
+  if (marginPct < 0) risks.push('УБЫТОК');
 
   return risks;
 }
 
 function _prCalcMarginPct(dev) {
-  if (dev.totalBillable <= 0) return 0;
-  var clientRate = prGetClientRate(dev.developerId) || 0;
-  var clientRevenue = dev.totalBillable * clientRate;
-  /* v5.4: Добавляем доп. доход от проектов */
-  var serviceIncome = dev.serviceIncome || 0;
-  if (!serviceIncome && typeof prGetProjectServiceIncome === 'function') {
-    var devProjects = dev.projects ? Object.keys(dev.projects) : [];
-    devProjects.forEach(function(pid) {
-      serviceIncome += prGetProjectServiceIncome(pid);
+  /* v8.0: Margin рассчитывается из клиентских ставок ПО ПРОЕКТАМ,
+     а не из единой ставки разработчика.
+     Клиентская выручка = сумма по всем проектам: billable_hours_in_project × project_client_rate
+     Если у проекта нет клиентской ставки — используется ставка разработчика */
+  var clientRevenue = 0;
+  if (dev.projects && typeof prGetProjectClientRate === 'function') {
+    Object.keys(dev.projects).forEach(function(pid) {
+      var projInfo = dev.projects[pid];
+      if (!projInfo || !projInfo.billableHours) return;
+      var projClientRate = prGetProjectClientRate(pid);
+      if (projClientRate <= 0) projClientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : prGetRate(dev.developerId);
+      clientRevenue += projInfo.billableHours * projClientRate;
     });
+  } else {
+    /* Fallback: единая ставка разработчика */
+    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(dev.developerId) : prGetRate(dev.developerId);
+    clientRevenue = dev.totalBillable * clientRate;
   }
-  /* Затраты = totalAmount (taskEarnings + base, БЕЗ штрафов)
-     Штрафы идут обратно в прибыль */
   var payrollCost = dev.totalAmount;
-  var fineBack = dev.totalFine || 0;
-  if (clientRevenue <= 0 && serviceIncome <= 0) return 0;
-  var totalRevenue = clientRevenue + serviceIncome;
-  if (totalRevenue <= 0) return 0;
-  return safeRound((totalRevenue - payrollCost + fineBack) / totalRevenue * 100, 0);
+  if (clientRevenue <= 0) return 0;
+  return safeRound((clientRevenue - payrollCost) / clientRevenue * 100, 0);
 }
 
 function _prCalcDevStatus(dev) {
+  if (dev.taskCount === 0) {
+    /* Dev with base/fine but no tasks */
+    return dev.totalAmount > 0 ? {label: 'БАЗОВАЯ', cls: 's-approved'} : {label: 'DRAFT', cls: 's-draft'};
+  }
   if (dev.approvedCount === dev.taskCount && dev.taskCount > 0) {
     return {label: 'APPROVED', cls: 's-approved'};
   }
@@ -1119,8 +1090,8 @@ function _prCalcDevStatus(dev) {
 
 function _prToggleCard(devId) {
   _pr.expandedCards[devId] = !_pr.expandedCards[devId];
-  /* STABILIZATION: Full deterministic render instead of partial card patching */
-  _prRenderAll();
+  /* Stage 7: Partial render — only re-render the affected card, not the whole dashboard */
+  _prRenderCardPartial(devId);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1182,38 +1153,112 @@ function _prRenderTimeline(devId) {
 function _prRenderTimelineItem(r, realIdx) {
   var cutHours = safeRound(r.factHours - r.billableHours, 1);
   var isCut = cutHours > 0;
-  var editKey = r.taskId + '_' + r.developerId;
-  var isEditOpen = _pr.expandedTaskEdit[editKey];
 
-  var h = '<div class="pr-tl-item" style="cursor:pointer" onclick="_prToggleTaskEdit(\'' + editKey + '\')">';
-  h += '<span class="pr-tl-hours">+' + r.factHours.toFixed(1) + 'h</span>';
-  h += '<span class="pr-tl-task" title="' + esc(r.taskTitle) + '">' + esc(truncate(r.taskTitle, 40)) + '</span>';
+  /* v8.2: Simple timeline item — just view, no sliders */
+  var h = '<div class="pr-tl-item">';
+  h += '<span class="pr-tl-hours">' + r.factHours.toFixed(1) + 'ч</span>';
+  h += '<span class="pr-tl-task" title="' + esc(r.taskTitle) + '">' + esc(truncate(r.taskTitle, 30)) + '</span>';
   if (isCut) {
-    h += '<span class="pr-tl-cut">-' + cutHours.toFixed(1) + 'h</span>';
+    h += '<span class="pr-tl-cut">-' + cutHours.toFixed(1) + 'ч</span>';
   }
-  h += '<span class="pr-tl-status ' + r.reviewStatus + '" onclick="event.stopPropagation();_prCycleStatus(' + realIdx + ')">' + _prStatusLabel(r.reviewStatus) + '</span>';
+  h += '<span class="pr-tl-status ' + r.reviewStatus + '" onclick="_prCycleStatus(' + realIdx + ')">' + _prStatusLabel(r.reviewStatus) + '</span>';
   h += '</div>';
-  /* v5.4: Inline hours editor panel */
-  if (isEditOpen) {
-    h += '<div class="pr-hours-editor">';
-    h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHours(\'' + editKey + '\',' + realIdx + ',1)">100%</button>';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHours(\'' + editKey + '\',' + realIdx + ',0.5)">50%</button>';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHours(\'' + editKey + '\',' + realIdx + ',0)">0%</button>';
-    h += '</div>';
-    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
-    h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);min-width:70px">Опл. клиенту</span>';
-    h += '<input type="range" class="pr-hours-slider" min="0" max="' + r.factHours + '" step="0.5" value="' + r.billableHours + '" oninput="event.stopPropagation();_prSliderBillable(this,' + realIdx + ')" style="flex:1">';
-    h += '<span style="font-family:var(--mono);font-size:10px;color:var(--text);min-width:60px">' + r.billableHours.toFixed(1) + 'ч из ' + r.factHours.toFixed(1) + 'ч</span>';
-    h += '</div>';
-    h += '<div style="display:flex;align-items:center;gap:6px">';
-    h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);min-width:70px">К выплате</span>';
-    h += '<input type="range" class="pr-hours-slider" min="0" max="' + r.billableHours + '" step="0.5" value="' + r.payrollHours + '" oninput="event.stopPropagation();_prSliderPayroll(this,' + realIdx + ')" style="flex:1">';
-    h += '<span style="font-family:var(--mono);font-size:10px;color:var(--yellow);min-width:60px">' + r.payrollHours.toFixed(1) + 'ч</span>';
-    h += '</div>';
-    h += '</div>';
-  }
   return h;
+}
+
+/* v8.1: Preset click handler — sets payrollHours based on billableHours * pct/100 */
+function _prOnPresetClick(idx, pct) {
+  var filtered = _prGetFilteredRows();
+  if (idx < 0 || idx >= filtered.length) return;
+  var row = filtered[idx];
+  var realIdx = _pr.rows.indexOf(row);
+  if (realIdx < 0) return;
+
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) return;
+
+  var newPayrollHours = safeRound(row.billableHours * pct / 100, 1);
+  _pr.rows[realIdx].payrollHours = newPayrollHours;
+  _pr.rows[realIdx].payrollAmount = Math.round(newPayrollHours * _pr.rows[realIdx].rate);
+
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
+}
+
+/* v8.1: Slider change handler — same as preset but with slider value */
+function _prOnSliderChange(idx, value) {
+  var filtered = _prGetFilteredRows();
+  if (idx < 0 || idx >= filtered.length) return;
+  var row = filtered[idx];
+  var realIdx = _pr.rows.indexOf(row);
+  if (realIdx < 0) return;
+
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) return;
+
+  var pct = parseInt(value) || 0;
+  var newPayrollHours = safeRound(row.billableHours * pct / 100, 1);
+  _pr.rows[realIdx].payrollHours = newPayrollHours;
+  _pr.rows[realIdx].payrollAmount = Math.round(newPayrollHours * _pr.rows[realIdx].rate);
+
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
+}
+
+/* v8.3: Billable (Опл. клиента) slider/preset handlers */
+function _prOnBillPresetClick(idx, pct) {
+  var filtered = _prGetFilteredRows();
+  if (idx < 0 || idx >= filtered.length) return;
+  var row = filtered[idx];
+  var realIdx = _pr.rows.indexOf(row);
+  if (realIdx < 0) return;
+
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) return;
+
+  var newBillable = safeRound(row.factHours * pct / 100, 1);
+  _pr.rows[realIdx].billableHours = newBillable;
+  /* Recalc payroll based on current payout pct */
+  var payoutPct = row.billableHours > 0 ? Math.round(row.payrollHours / row.billableHours * 100) : 100;
+  _pr.rows[realIdx].payrollHours = safeRound(newBillable * payoutPct / 100, 1);
+  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate);
+
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
+}
+
+function _prOnBillSliderChange(idx, value) {
+  var filtered = _prGetFilteredRows();
+  if (idx < 0 || idx >= filtered.length) return;
+  var row = filtered[idx];
+  var realIdx = _pr.rows.indexOf(row);
+  if (realIdx < 0) return;
+
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) return;
+
+  var pct = parseInt(value) || 0;
+  var newBillable = safeRound(row.factHours * pct / 100, 1);
+  _pr.rows[realIdx].billableHours = newBillable;
+  /* Recalc payroll based on current payout pct */
+  var payoutPct = row.billableHours > 0 ? Math.round(row.payrollHours / row.billableHours * 100) : 100;
+  _pr.rows[realIdx].payrollHours = safeRound(newBillable * payoutPct / 100, 1);
+  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate);
+
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
 }
 
 function _prGetTaskDate(taskId) {
@@ -1248,29 +1293,16 @@ function _prFormatDate(dateStr) {
 function _prRenderFinFooter() {
   if (!_pr.totals) return '';
   var t = _pr.totals;
-  var clientRevenue = t.totalClientRevenue || 0;
-  var serviceIncome = t.totalServiceIncome || 0;
-  var totalRevenue = clientRevenue + serviceIncome;
-  var fines = t.totalFine || 0;
-  var marginPct = totalRevenue > 0
-    ? safeRound((totalRevenue - t.totalPayrollAmount + fines) / totalRevenue * 100, 0)
-    : 0;
+  var marginPct = t.totalMarginPct || 0;
   var marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
-  var marginRub = safeRound(totalRevenue - t.totalPayrollAmount + fines, 0);
 
   var h = '<div class="pr-fin-footer">';
   h += '<div class="pr-fin-item"><div class="pr-fin-label">Факт часы</div><div class="pr-fin-val fact">' + t.totalFactHours.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Billable</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Выручка</div><div class="pr-fin-val" style="color:var(--cyan)">' + _prFmtMoney(totalRevenue) + '</div></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Затраты</div><div class="pr-fin-val" style="color:var(--orange)">' + _prFmtMoney(t.totalPayrollAmount) + '</div></div>';
-  if (serviceIncome > 0) {
-    h += '<div class="pr-fin-item"><div class="pr-fin-label">Доп. доход</div><div class="pr-fin-val" style="color:var(--green)">+' + _prFmtMoney(serviceIncome) + '</div></div>';
-  }
-  if (fines > 0) {
-    h += '<div class="pr-fin-item"><div class="pr-fin-label">Штрафы</div><div class="pr-fin-val" style="color:rgba(255,110,120,0.9)">+' + _prFmtMoney(fines) + '</div></div>';
-  }
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">Опл. клиента</div><div class="pr-fin-val billable">' + t.totalBillable.toFixed(1) + 'ч</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">От клиента</div><div class="pr-fin-val" style="color:var(--cyan)">' + _prFmtMoney(t.totalClientRevenue || 0) + ' р</div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">К выплате</div><div class="pr-fin-val" style="color:var(--orange)">' + _prFmtMoney(t.totalPayrollAmount) + ' р</div></div>';
   h += '<div class="pr-fin-spacer"></div>';
-  h += '<div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '% <span style="font-size:9px;color:var(--text3)">(' + _prFmtMoney(marginRub) + ')</span></div></div>';
+  h += '<div class="pr-fin-item"><div class="pr-fin-label">Маржа</div><div class="pr-fin-val ' + marginCls + '">' + (marginPct >= 0 ? '+' : '') + marginPct + '%  ' + _prFmtMoney(t.totalMargin || 0) + ' р</div></div>';
   h += '</div>';
   return h;
 }
@@ -1287,7 +1319,8 @@ function _prRenderTable() {
   h += '<th onclick="_prSort(\'projectName\')">Проект ' + _prSortInd('projectName') + '</th>';
   h += '<th onclick="_prSort(\'developerName\')">Разработчик ' + _prSortInd('developerName') + '</th>';
   h += '<th class="c-num" onclick="_prSort(\'factHours\')">Факт\u00A0(ч) ' + _prSortInd('factHours') + '</th>';
-  h += '<th class="c-num">Опл.\u00A0клиенту\u00A0(ч)</th>';
+  h += '<th class="c-num">Опл.\u00A0клиента\u00A0%</th>';
+  h += '<th class="c-num">Выплата\u00A0%</th>';
   h += '<th class="c-num">К\u00A0выплате\u00A0(ч)</th>';
   h += '<th class="c-num">Ставка\u00A0(р/ч)</th>';
   h += '<th class="c-num" onclick="_prSort(\'payrollAmount\')">Сумма\u00A0(р) ' + _prSortInd('payrollAmount') + '</th>';
@@ -1299,6 +1332,15 @@ function _prRenderTable() {
     var rowCls = r.reviewStatus === 'approved' ? ' row-approved' : '';
     rowCls += r.reviewStatus === 'excluded' ? ' row-excluded' : '';
 
+    /* v8.2: Calculate slider pct */
+    var sliderPct = r.billableHours > 0 ? Math.round(r.payrollHours / r.billableHours * 100) : 0;
+    if (sliderPct < 0) sliderPct = 0;
+    if (sliderPct > 100) sliderPct = 100;
+    var activePreset = '';
+    if (sliderPct === 0) activePreset = '0';
+    else if (sliderPct === 50) activePreset = '50';
+    else if (sliderPct === 100) activePreset = '100';
+
     h += '<tr class="' + rowCls.trim() + '">';
     h += '<td><span class="pr-task-link" title="' + esc(r.taskTitle) + '">' + esc(truncate(r.taskTitle, 35)) + '</span></td>';
     h += '<td><span class="pr-proj-tag">' + esc(truncate(r.projectName, 18)) + '</span></td>';
@@ -1308,27 +1350,33 @@ function _prRenderTable() {
 
     h += '<td class="c-num"><span class="pr-readonly">' + r.factHours.toFixed(1) + '</span></td>';
 
-    var billChanged = r.billableHours !== r.factHours;
-    /* v5.4: Compact inline editor with preset buttons + slider */
-    h += '<td class="c-num"><div class="pr-hours-editor pr-hours-editor-table">';
-    h += '<div style="display:flex;gap:2px;margin-bottom:2px">';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHoursTable(' + idx + ',1)">100%</button>';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHoursTable(' + idx + ',0.5)">50%</button>';
-    h += '<button class="pr-preset-btn" onclick="event.stopPropagation();_prPresetHoursTable(' + idx + ',0)">0%</button>';
-    h += '</div>';
-    h += '<div style="display:flex;align-items:center;gap:3px">';
-    h += '<input type="range" class="pr-hours-slider" min="0" max="' + r.factHours + '" step="0.5" value="' + r.billableHours + '" oninput="_prSliderBillableTable(this,' + idx + ')" style="flex:1;width:50px">';
-    h += '<span style="font-family:var(--mono);font-size:9px;min-width:30px">' + r.billableHours.toFixed(1) + '</span>';
-    h += '</div>';
+    /* v8.3: Опл. клиента — пресеты 0/50/100% + ползунок от factHours */
+    var billPct = r.factHours > 0 ? Math.round(r.billableHours / r.factHours * 100) : 0;
+    if (billPct < 0) billPct = 0;
+    if (billPct > 100) billPct = 100;
+    var billActivePreset = '';
+    if (billPct === 0) billActivePreset = '0';
+    else if (billPct === 50) billActivePreset = '50';
+    else if (billPct === 100) billActivePreset = '100';
+
+    h += '<td class="c-num pr-table-slider-cell"><div class="pr-table-slider">';
+    h += '<span class="pr-tl-preset' + (billActivePreset === '0' ? ' active' : '') + '" onclick="_prOnBillPresetClick(' + idx + ',0)">0%</span>';
+    h += '<span class="pr-tl-preset' + (billActivePreset === '50' ? ' active' : '') + '" onclick="_prOnBillPresetClick(' + idx + ',50)">50%</span>';
+    h += '<input type="range" class="pr-tl-slider" min="0" max="100" step="1" value="' + billPct + '" onchange="_prOnBillSliderChange(' + idx + ',this.value)" oninput="_prOnBillSliderChange(' + idx + ',this.value)">';
+    h += '<span class="pr-tl-preset' + (billActivePreset === '100' ? ' active' : '') + '" onclick="_prOnBillPresetClick(' + idx + ',100)">100%</span>';
+    h += '<span class="pr-table-slider-val">' + billPct + '%</span>';
     h += '</div></td>';
 
-    var payChanged = r.payrollHours !== r.factHours;
-    h += '<td class="c-num"><div class="pr-hours-editor pr-hours-editor-table">';
-    h += '<div style="display:flex;align-items:center;gap:3px">';
-    h += '<input type="range" class="pr-hours-slider" min="0" max="' + r.billableHours + '" step="0.5" value="' + r.payrollHours + '" oninput="_prSliderPayrollTable(this,' + idx + ')" style="flex:1;width:70px">';
-    h += '<span style="font-family:var(--mono);font-size:9px;min-width:30px;color:var(--yellow)">' + r.payrollHours.toFixed(1) + '</span>';
-    h += '</div>';
+    /* v8.2: Slider + presets for payout % */
+    h += '<td class="c-num pr-table-slider-cell"><div class="pr-table-slider">';
+    h += '<span class="pr-tl-preset' + (activePreset === '0' ? ' active' : '') + '" onclick="_prOnPresetClick(' + idx + ',0)">0%</span>';
+    h += '<span class="pr-tl-preset' + (activePreset === '50' ? ' active' : '') + '" onclick="_prOnPresetClick(' + idx + ',50)">50%</span>';
+    h += '<input type="range" class="pr-tl-slider" min="0" max="100" step="1" value="' + sliderPct + '" onchange="_prOnSliderChange(' + idx + ',this.value)" oninput="_prOnSliderChange(' + idx + ',this.value)">';
+    h += '<span class="pr-tl-preset' + (activePreset === '100' ? ' active' : '') + '" onclick="_prOnPresetClick(' + idx + ',100)">100%</span>';
+    h += '<span class="pr-table-slider-val">' + sliderPct + '%</span>';
     h += '</div></td>';
+
+    h += '<td class="c-num"><span class="pr-readonly">' + r.payrollHours.toFixed(1) + '</span></td>';
 
     h += '<td class="c-num"><span class="pr-readonly pr-rate-display">' + r.rate + '</span></td>';
     h += '<td class="c-num"><span class="pr-readonly pr-amount">' + _prFmtMoney(r.payrollAmount) + '</span></td>';
@@ -1343,7 +1391,8 @@ function _prRenderTable() {
   h += '</tbody><tfoot><tr>';
   h += '<td colspan="3">ИТОГО (' + filtered.length + ')</td>';
   h += '<td class="c-num">' + sumReviewField(filtered, 'factHours').toFixed(1) + '</td>';
-  h += '<td class="c-num">' + sumReviewField(filtered, 'billableHours').toFixed(1) + '</td>';
+  h += '<td class="c-num">' + sumReviewField(filtered, 'billableHours').toFixed(1) + 'ч</td>';
+  h += '<td></td>';
   h += '<td class="c-num">' + sumReviewField(filtered, 'payrollHours').toFixed(1) + '</td>';
   h += '<td></td>';
   h += '<td class="c-num">' + _prFmtMoney(sumReviewField(filtered, 'payrollAmount')) + '</td>';
@@ -1374,23 +1423,8 @@ function _prRenderSaveBar() {
    ═══════════════════════════════════════════════════════════════ */
 function _prRenderDebug() {
   var h = '<div class="pr-debug">';
-  h += '<div class="pr-debug-title">ОТЛАДКА (ЖИВОЙ)</div>';
-  h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + '</div>';
-  h += '<div class="pr-debug-row">Pipeline: activity-filtered v7.0.0 (DATE_ACTIVITY)</div>';
-
-  /* v7.0.0: Before/After pipeline metrics */
-  if (_pr.data && _pr.data._metrics) {
-    var m = _pr.data._metrics;
-    var loadTimeSec = m.loadEndMs > 0 ? ((m.loadEndMs - m.loadStartMs) / 1000).toFixed(1) : '?';
-    h += '<div class="pr-debug-row" style="color:var(--cyan);font-weight:600">PIPELINE v7.0.0 METRICS:</div>';
-    h += '<div class="pr-debug-row">Задачи: ДО=' + m.oldTasksLoaded + ' → ПОСЛЕ=' + m.newTasksLoaded +
-      ' (-' + Math.round((1 - m.newTasksLoaded / m.oldTasksLoaded) * 100) + '%)</div>';
-    h += '<div class="pr-debug-row">Elapsed checks: ДО=' + m.oldElapsedChecks + ' → ПОСЛЕ=' + m.newElapsedChecks +
-      ' (-' + Math.round((1 - m.newElapsedChecks / m.oldElapsedChecks) * 100) + '%)</div>';
-    h += '<div class="pr-debug-row">API calls: ДО=' + m.oldApiCalls + ' → ПОСЛЕ=' + m.newApiCalls +
-      ' (-' + Math.round((1 - m.newApiCalls / m.oldApiCalls) * 100) + '%)</div>';
-    h += '<div class="pr-debug-row">Load time: ДО=минуты → ПОСЛЕ=' + loadTimeSec + 'с</div>';
-  }
+  h += '<div class="pr-debug-title">ДИАГНОСТИКА (' + (PR_MOCK_MODE ? 'МОК' : 'ЖИВОЙ') + ')</div>';
+  h += '<div class="pr-debug-row">Версия: ' + APP_VERSION + ' | Pipeline: elapsed-first v5.1</div>';
 
   /* ── Performance metrics ── */
   var loadMs = _pr._perf.loadEnd > 0 ? (_pr._perf.loadEnd - _pr._perf.loadStart) : 0;
@@ -1402,21 +1436,17 @@ function _prRenderDebug() {
   /* Cache stats */
   if (typeof PayrollCache !== 'undefined') {
     var cs = PayrollCache.stats();
-    h += '<div class="pr-debug-row">Cache: hits=' + cs.hits + ' misses=' + cs.misses + ' stale=' + cs.staleHits + ' rate=' + cs.hitRate + '</div>';
+    h += '<div class="pr-debug-row">Cache: hits=' + cs.hits + ' misses=' + cs.misses + ' stale=' + cs.staleHits + ' rate=' + cs.hitRate + ' | keys=' + cs.memoryKeys + '</div>';
   }
 
-  h += '<div class="pr-debug-row">Elapsed записей: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + '</div>';
-  h += '<div class="pr-debug-row">Строк обзора: ' + _pr.rows.length + '</div>';
-  h += '<div class="pr-debug-row">Task date cache: ' + Object.keys(_pr._taskDateCache).length + ' entries</div>';
-  h += '<div class="pr-debug-row">Разработчики: ' + Object.keys(DEVELOPERS).length + '</div>';
-  h += '<div class="pr-debug-row">Проекты (не исключённые): ' + Object.keys(PROJECTS).filter(function(gid) { return !EXCLUDE_GROUPS[gid]; }).length + '</div>';
-  h += '<div class="pr-debug-row">Вебхук: ' + esc(HOOK ? HOOK.substring(0, 50) + '...' : 'не задан') + '</div>';
-  h += '<div class="pr-debug-row">Режим: ЖИВОЙ (Bitrix24 API)</div>';
-  h += '<div class="pr-debug-row">Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
-  h += '<div class="pr-debug-row">Статус периода: ' + esc(_pr.periodStatus) + '</div>';
-  h += '<div class="pr-debug-row">Источник данных: ' + esc(_pr.modelSource || 'live') + '</div>';
-  h += '<div class="pr-debug-row">Ставка по умолчанию: ' + СТАВКА_ПО_УМОЛЧ + ' р/час</div>';
-  h += '<div class="pr-debug-row">Вид: ' + _pr.viewMode + ' | Плотность: ' + _pr.densityMode + '</div>';
+  /* Timeline DOM count */
+  var tlCount = document.querySelectorAll('.pr-tl-day').length;
+  _pr._perf.timelineDomCount = tlCount;
+
+  h += '<div class="pr-debug-row">Elapsed: ' + (_pr.data && _pr.data.elapsed ? _pr.data.elapsed.length : 0) + ' | Rows: ' + _pr.rows.length + ' | Timeline DOM: ' + tlCount + '</div>';
+  h += '<div class="pr-debug-row">Projection rebuilds: ' + _pr._perf.projectionRebuilds + ' | Task date cache: ' + Object.keys(_pr._taskDateCache).length + '</div>';
+  h += '<div class="pr-debug-row">Режим: ' + _pr.roleMode + '/' + _pr.viewMode + '/' + _pr.densityMode + ' | Период: ' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</div>';
+  h += '<div class="pr-debug-row">Источник: ' + esc(_pr.modelSource || 'live') + ' | Статус: ' + esc(_pr.periodStatus) + ' | Кэш: ' + (_pr._cacheBadge || 'live') + '</div>';
 
   /* Safety warnings */
   if (_pr.rows.length > 300) {
@@ -1471,35 +1501,232 @@ function _prRenderDebug() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   МОДАЛКА АДМИНКА — ДЕЛЕГИРОВАНО В pr-admin.js
-   
-   Функции перемещены в pr-admin.js:
-   - _prRenderAdminModal()
-   - _prRenderAdminBody()
-   - _prRenderDevDetailSubmodal()
-   - _prAdminPartialRender()
-   - _prOpenAdmin()
-   - _prCloseAdmin()
-   - _prSetAdminTab()
-   - _prOpenDevDetail()
-   - _prCloseDevDetail()
-   - _prSaveAdmin()
-   - _prApplyRateToSavedReviews()
-   
-   Если pr-admin.js не подключён — fallback на встроенные заглушки.
+   МОДАЛКА АДМИНКА v2 — Разделение: Разработчики / Клиенты
    ═══════════════════════════════════════════════════════════════ */
+var _prAdminTab = 'devs'; /* 'devs' | 'clients' */
 
-/* Fallback: если pr-admin.js НЕ подключён — минимальные заглушки */
-if (typeof _prRenderAdminModal !== 'function') {
-  window._prRenderAdminModal = function() { return _pr.modalOpen ? '<div>Админка: подключите pr-admin.js</div>' : ''; };
-  window._prOpenAdmin = function() { _pr.modalOpen = true; _prScheduleRender(); };
-  window._prCloseAdmin = function() { _pr.modalOpen = false; _prScheduleRender(); };
-  window._prSetAdminTab = function() { _prScheduleRender(); };
-  window._prOpenDevDetail = function() { _prScheduleRender(); };
-  window._prCloseDevDetail = function() { _prScheduleRender(); };
-  window._prSaveAdmin = function() { console.warn('pr-admin.js не подключён'); };
+function _prRenderAdminModal() {
+  if (!_pr.modalOpen) return '';
+  var h = '<div class="pr-modal-overlay" onclick="_prCloseAdmin(event)">';
+  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:1200px">';
+
+  h += '<div class="pr-modal-header">';
+  h += '<span class="pr-modal-title">&#9881; Админка</span>';
+  h += '<button class="pr-modal-close" onclick="_prCloseAdmin()">&times;</button>';
+  h += '</div>';
+
+  h += '<div class="pr-modal-body">';
+
+  /* ── Табы: Разработчики / Клиенты ── */
+  var activeDevs = _prAdminTab === 'devs';
+  var activeClients = _prAdminTab === 'clients';
+  h += '<div style="display:flex;gap:4px;margin-bottom:16px">';
+  h += '<button class="pr-btn ' + (activeDevs ? 'pr-btn-primary' : 'pr-btn-ghost') + '" onclick="_prAdminTab=\'devs\';_prScheduleRender()" style="font-size:12px;padding:6px 16px">Разработчики</button>';
+  h += '<button class="pr-btn ' + (activeClients ? 'pr-btn-primary' : 'pr-btn-ghost') + '" onclick="_prAdminTab=\'clients\';_prScheduleRender()" style="font-size:12px;padding:6px 16px">Клиенты (проекты)</button>';
+  h += '</div>';
+
+  if (activeDevs) {
+    h += _prRenderAdminDevsSection();
+  } else {
+    h += _prRenderAdminClientsSection();
+  }
+
+  h += '</div>'; /* end pr-modal-body */
+
+  h += '</div></div>';
+
+  /* ── Sub-modal overlay (on top of admin) ── */
+  if (_pr.adminSubModal.open) {
+    h += _prRenderSubModal();
+  }
+
+  return h;
 }
 
+/* ─── Секция: Разработчики (CLEAN INPUT LAYOUT v8.4) ─── */
+function _prRenderAdminDevsSection() {
+  var h = '';
+  var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : DEV_IDS;
+
+  h += '<div style="font-family:var(--mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid var(--border)">Активные разработчики</div>';
+
+  activeIds.forEach(function(id) {
+    var sid = String(id);
+    var name = prGetDevName(sid);
+    var rate = prGetRate(sid);
+    var base = prGetBase(sid);
+    var fines = prGetFines(sid);
+    var firstName = getFirstName(name);
+
+    h += '<div class="pr-admin-card" id="pr-admin-card-' + sid + '">';
+
+    /* ── Header: name + settings chip ── */
+    h += '<div class="pr-admin-card-top">';
+    h += '<div class="pr-card-avatar" style="width:28px;height:28px;font-size:11px;border-radius:6px">' + esc(firstName.charAt(0)) + '</div>';
+    h += '<div class="pr-admin-card-name">' + esc(name) + '</div>';
+    h += '<span class="pr-admin-chip" onclick="_prOpenSubModal(\'' + sid + '\')">&#9881;</span>';
+    h += '</div>';
+
+    /* ── Ставка ── */
+    h += '<div class="pr-admin-row">';
+    h += '<span class="pr-admin-row-label">Ставка</span>';
+    h += '<input class="pr-admin-row-input" type="number" id="pr-rate-' + sid + '" value="' + rate + '">';
+    h += '<span class="pr-admin-row-unit">р/ч</span>';
+    h += '<button type="button" class="pr-admin-confirm" id="pr-rate-btn-' + sid + '" onclick="_prSaveField(\'rate\',\'' + sid + '\')">&#10003;</button>';
+    h += '</div>';
+
+    /* ── Фикс сумма ── */
+    h += '<div class="pr-admin-row">';
+    h += '<span class="pr-admin-row-label">Фикс</span>';
+    h += '<input class="pr-admin-row-input" type="number" id="pr-base-' + sid + '" value="' + base + '">';
+    h += '<span class="pr-admin-row-unit">р</span>';
+    h += '<button type="button" class="pr-admin-confirm" id="pr-base-btn-' + sid + '" onclick="_prSaveField(\'base\',\'' + sid + '\')">&#10003;</button>';
+    h += '</div>';
+
+    /* ── Штрафы ── */
+    h += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.04)">';
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
+    h += '<span class="pr-admin-row-label" style="color:var(--red)">&#9888; Штрафы</span>';
+    h += '<button type="button" class="pr-admin-fine-add" onclick="_prAddFine(\'' + sid + '\')">+</button>';
+    h += '</div>';
+    fines.forEach(function(fine, fIdx) {
+      h += '<div class="pr-admin-row">';
+      h += '<input class="pr-admin-row-input pr-admin-fine-amount" type="number" id="pr-fine-' + sid + '-' + fIdx + '" value="' + (fine.amount || 0) + '" style="max-width:90px;color:#ff8a94">';
+      h += '<input class="pr-admin-row-input" type="text" id="pr-finecomment-' + sid + '-' + fIdx + '" value="' + esc(fine.comment || '') + '" placeholder="Комментарий" style="max-width:200px">';
+      h += '<button type="button" class="pr-admin-confirm" onclick="_prSaveFine(\'' + sid + '\',' + fIdx + ')">&#10003;</button>';
+      h += '<button type="button" class="pr-admin-fine-remove" onclick="_prRemoveFine(\'' + sid + '\',' + fIdx + ')">&#10005;</button>';
+      h += '</div>';
+    });
+    h += '</div>';
+
+    h += '</div>'; /* end pr-admin-card */
+  });
+
+  /* ── Исключённые разработчики ── */
+  var excludedIds = (typeof EXCLUDED_DEV_IDS !== 'undefined') ? Object.keys(EXCLUDED_DEV_IDS) : [];
+  if (excludedIds.length > 0) {
+    h += '<div style="margin-top:12px">';
+    h += '<div style="font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">Исключённые (не в расчётах)</div>';
+    excludedIds.forEach(function(id) {
+      var sid = String(id);
+      var name = DEVELOPERS[sid] || ('ID ' + sid);
+      h += '<div style="opacity:0.5;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text3)">' + esc(name) + '</div>';
+    });
+    h += '</div>';
+  }
+
+  return h;
+}
+
+/* ─── Секция: Клиенты (CLEAN INPUT LAYOUT v8.4) ─── */
+function _prRenderAdminClientsSection() {
+  var h = '';
+  h += '<div style="margin-bottom:8px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.04em">';
+  h += 'Ставка клиента — сколько клиент платит за час. По умолчанию 2500 р/ч.';
+  h += '</div>';
+
+  /* Список проектов: сначала оплачиваемые, затем неоплачиваемые */
+  var projectIds = Object.keys(PROJECTS).sort(function(a, b) {
+    var aUnpaid = !!UNPAID_GROUPS[a];
+    var bUnpaid = !!UNPAID_GROUPS[b];
+    if (aUnpaid && !bUnpaid) return 1;
+    if (!aUnpaid && bUnpaid) return -1;
+    return (PROJECTS[a] || '').localeCompare(PROJECTS[b] || '');
+  });
+
+  projectIds.forEach(function(pid) {
+    var pname = PROJECTS[pid] || ('Проект ' + pid);
+    var isUnpaid = !!UNPAID_GROUPS[pid];
+    var clientRate = prGetProjectClientRate(pid);
+    var fixSumma = prGetProjectFixSumma(pid);
+
+    h += '<div class="pr-admin-card">';
+
+    /* ── Header ── */
+    h += '<div class="pr-admin-card-top">';
+    h += '<div class="pr-admin-card-name">' + esc(pname) + '</div>';
+    if (isUnpaid) {
+      h += '<span style="font-family:var(--mono);font-size:9px;color:var(--yellow);background:rgba(245,166,35,.1);padding:2px 8px;border-radius:4px">НЕ ОПЛ.</span>';
+    } else {
+      h += '<span style="font-family:var(--mono);font-size:9px;color:var(--green);background:rgba(34,212,126,.1);padding:2px 8px;border-radius:4px">ОПЛ.</span>';
+    }
+    h += '</div>';
+
+    /* ── Ставка клиента ── */
+    if (isUnpaid) {
+      h += '<div class="pr-admin-row" style="opacity:0.4">';
+      h += '<span class="pr-admin-row-label">Ставка</span>';
+      h += '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">—</span>';
+      h += '</div>';
+    } else {
+      h += '<div class="pr-admin-row">';
+      h += '<span class="pr-admin-row-label">Ставка</span>';
+      h += '<input class="pr-admin-row-input" type="number" id="pr-clientrate-' + pid + '" value="' + clientRate + '">';
+      h += '<span class="pr-admin-row-unit">р/ч</span>';
+      h += '<button type="button" class="pr-admin-confirm" onclick="_prSaveField(\'clientRate\',\'' + pid + '\')">&#10003;</button>';
+      h += '</div>';
+    }
+
+    /* ── Фикс сумма ── */
+    h += '<div class="pr-admin-row">';
+    h += '<span class="pr-admin-row-label">Фикс</span>';
+    h += '<input class="pr-admin-row-input" type="number" id="pr-fixsumma-' + pid + '" value="' + fixSumma + '">';
+    h += '<span class="pr-admin-row-unit">р</span>';
+    h += '<button type="button" class="pr-admin-confirm" onclick="_prSaveField(\'fixSumma\',\'' + pid + '\')">&#10003;</button>';
+    h += '</div>';
+
+    h += '</div>'; /* end pr-admin-card */
+  });
+
+  return h;
+}
+
+/* ─── Sub-modal: Настройки разработчика (v8.1) ─── */
+function _prRenderSubModal() {
+  var devId = _pr.adminSubModal.devId;
+  var name = prGetDevName(devId);
+  var fullname = prGetFullname(devId);
+  var inn = prGetInn(devId);
+  var contract = prGetContract(devId);
+  var contractDate = prGetContractDate(devId);
+  var selfEmployed = prGetSelfEmployed(devId);
+  var bank = prGetBank(devId);
+  var notes = prGetNotes(devId);
+
+  var h = '<div class="pr-sub-modal-overlay" onclick="_prCloseSubModal(event)">';
+  h += '<div class="pr-sub-modal" onclick="event.stopPropagation()">';
+
+  h += '<div class="pr-sub-modal-header">';
+  h += '<span class="pr-sub-modal-title">\uD83D\uDCCB ' + esc(name) + '</span>';
+  h += '<button class="pr-modal-close" onclick="_prCloseSubModal()">&times;</button>';
+  h += '</div>';
+
+  h += '<div class="pr-sub-modal-body">';
+  h += '<div class="pr-sub-modal-field"><label>ФИО полностью</label><input class="pr-admin-input" type="text" value="' + esc(fullname) + '" data-devid="' + devId + '" data-field="fullname" data-section="dev"></div>';
+  h += '<div class="pr-sub-modal-field"><label>ИНН</label><input class="pr-admin-input" type="text" value="' + esc(inn) + '" data-devid="' + devId + '" data-field="inn" data-section="dev" placeholder="ИНН"></div>';
+  h += '<div class="pr-sub-modal-field"><label>Номер договора</label><input class="pr-admin-input" type="text" value="' + esc(contract) + '" data-devid="' + devId + '" data-field="contract" data-section="dev" placeholder="Договор №"></div>';
+  h += '<div class="pr-sub-modal-field"><label>Дата договора</label><input class="pr-admin-input" type="text" value="' + esc(contractDate) + '" data-devid="' + devId + '" data-field="contractDate" data-section="dev" placeholder="ДД.ММ.ГГГГ"></div>';
+  h += '<div class="pr-sub-modal-field"><label>Самозанятый</label><select class="pr-admin-input" data-devid="' + devId + '" data-field="selfEmployed" data-section="dev">';
+  h += '<option value="Нет"' + (selfEmployed === 'Нет' ? ' selected' : '') + '>Нет</option>';
+  h += '<option value="Да"' + (selfEmployed === 'Да' ? ' selected' : '') + '>Да</option>';
+  h += '<option value="ИП"' + (selfEmployed === 'ИП' ? ' selected' : '') + '>ИП</option>';
+  h += '</select></div>';
+  h += '<div class="pr-sub-modal-field"><label>Банк / Реквизиты</label><input class="pr-admin-input" type="text" value="' + esc(bank) + '" data-devid="' + devId + '" data-field="bank" data-section="dev" placeholder="Банк, р/с"></div>';
+  h += '<div class="pr-sub-modal-field"><label>Примечание</label><input class="pr-admin-input" type="text" value="' + esc(notes) + '" data-devid="' + devId + '" data-field="notes" data-section="dev" placeholder="Заметки"></div>';
+  h += '</div>';
+
+  h += '<div class="pr-sub-modal-footer">';
+  h += '<button class="pr-btn pr-btn-ghost" onclick="_prCloseSubModal()">Отмена</button>';
+  h += '<button class="pr-btn pr-btn-primary" onclick="_prSaveSubModal()">Сохранить</button>';
+  h += '</div>';
+
+  h += '</div></div>';
+  return h;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ОБРАБОТЧИКИ СОБЫТИЙ
+   ═══════════════════════════════════════════════════════════════ */
 function _prOnPeriodChange() {
   var sel = document.getElementById('prPeriodSelect');
   if (!sel) return;
@@ -1563,18 +1790,25 @@ function _prOnEdit(input) {
     _prAppendAuditLog(periodKey, result.audit);
   }
 
-  _prRebuildAndRender({ source: 'onEdit' });
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
 }
 
 function _prCycleStatus(idx) {
-  if (idx < 0 || idx >= _pr.rows.length) return;
+  var filtered = _prGetFilteredRows();
+  if (idx < 0 || idx >= filtered.length) return;
 
   if (typeof isPeriodSnapshotImmutable === 'function' &&
       isPeriodSnapshotImmutable(_pr.periodStatus)) {
     return;
   }
 
-  var realIdx = idx;
+  var row = filtered[idx];
+  var realIdx = _pr.rows.indexOf(row);
+  if (realIdx < 0) return;
 
   var currentStatus = _pr.rows[realIdx].reviewStatus;
   var statusFlow = ['pending', 'approved', 'disputed', 'excluded'];
@@ -1595,7 +1829,11 @@ function _prCycleStatus(idx) {
     _prAppendAuditLog(periodKey, result.audit);
   }
 
-  _prRebuildAndRender({ source: 'cycleStatus' });
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  _prScheduleRender();
 }
 
 function _prSort(field) {
@@ -1690,8 +1928,65 @@ function _prApproveAll() {
     }
   }
 
-  _prRebuildAndRender({ source: 'approveAll' });
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   /* Stage 12: Invalidate data cache on review approve */
+  if (typeof PayrollCache !== 'undefined') {
+    var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    PayrollCache.invalidate('data:' + pk);
+  }
+  _prScheduleRender();
+}
+
+function _prUndoApproveAll() {
+  if (!_pr.rows.length) return;
+
+  if (typeof isPeriodSnapshotImmutable === 'function' &&
+      isPeriodSnapshotImmutable(_pr.periodStatus)) {
+    alert('Невозможно изменить: период находится в статусе "' +
+      (typeof PR_PERIOD_STATUS_LABELS !== 'undefined' ? PR_PERIOD_STATUS_LABELS[_pr.periodStatus] : _pr.periodStatus) +
+      '". Сначала верните период в редактируемое состояние.');
+    return;
+  }
+
+  /* Count approved tasks */
+  var approvedCount = 0;
+  _pr.rows.forEach(function(r) {
+    if (r.reviewStatus === PR_REVIEW_STATUS.APPROVED) approvedCount++;
+  });
+  if (!approvedCount) {
+    alert('Нет подтверждённых задач для отмены.');
+    return;
+  }
+
+  if (!confirm('Вернуть ' + approvedCount + ' подтверждённых задач в статус "Ожидает"?')) return;
+
+  var auditEntries = [];
+  _pr.rows.forEach(function(r) {
+    if (r.reviewStatus === PR_REVIEW_STATUS.APPROVED) {
+      var result = transitionReviewStatus(r, PR_REVIEW_STATUS.PENDING, _pr.periodStatus);
+      if (result.review) {
+        /* Copy updated fields back */
+        r.reviewStatus = result.review.reviewStatus;
+        r.updatedAt = result.review.updatedAt;
+        r.version = result.review.version;
+        r.revisionId = result.review.revisionId;
+      }
+      if (result.audit) auditEntries.push(result.audit);
+    }
+  });
+
+  if (auditEntries.length > 0) {
+    var periodKey = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
+    _prAppendAuditLog(periodKey, auditEntries);
+  }
+
+  _pr.dirty = true;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function' ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function' ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   if (typeof PayrollCache !== 'undefined') {
     var pk = prGetPeriodKey(prCurrentPeriod.year, prCurrentPeriod.month);
     PayrollCache.invalidate('data:' + pk);
@@ -1740,86 +2035,277 @@ function _prExportDetailed() {
   }
 }
 
-/* ─── Админка ─── */
-function _prToggleTaskEdit(editKey) {
-  _pr.expandedTaskEdit[editKey] = !_pr.expandedTaskEdit[editKey];
+/* ─── Админка (v8.1) ─── */
+function _prOpenAdmin() {
+  _pr.modalOpen = true;
+  _pr.adminSubModal = {open: false, devId: ''};
   _prScheduleRender();
 }
 
-/* v5.4: Preset hours buttons for timeline */
-function _prPresetHours(editKey, realIdx, pct) {
-  if (realIdx < 0 || realIdx >= _pr.rows.length) return;
-  var fact = _pr.rows[realIdx].factHours;
-  var newBill = safeRound(fact * pct, 1);
-  var newPay = newBill;
-  _pr.rows[realIdx].billableHours = newBill;
-  _pr.rows[realIdx].payrollHours = newPay;
-  _pr.rows[realIdx].payrollAmount = Math.round(newPay * _pr.rows[realIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'presetHours' });
+function _prCloseAdmin(e) {
+  if (e && e.target && !e.target.classList.contains('pr-modal-overlay')) return;
+  _pr.modalOpen = false;
+  _pr.adminSubModal = {open: false, devId: ''};
+  _prScheduleRender();
 }
 
-/* v5.4: Preset hours buttons for table view */
-function _prPresetHoursTable(idx, pct) {
-  var filtered = _prGetFilteredRows();
-  if (idx < 0 || idx >= filtered.length) return;
-  var row = filtered[idx];
-  var rIdx = _pr.rows.indexOf(row);
-  if (rIdx < 0) return;
-  var fact = _pr.rows[rIdx].factHours;
-  var newBill = safeRound(fact * pct, 1);
-  var newPay = newBill;
-  _pr.rows[rIdx].billableHours = newBill;
-  _pr.rows[rIdx].payrollHours = newPay;
-  _pr.rows[rIdx].payrollAmount = Math.round(newPay * _pr.rows[rIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'presetHoursTable' });
+/* ─── v8.1: Sub-modal handlers ─── */
+function _prOpenSubModal(devId) {
+  _pr.adminSubModal = {open: true, devId: devId};
+  _prScheduleRender();
 }
 
-/* v5.4: Slider handlers for timeline */
-function _prSliderBillable(slider, realIdx) {
-  if (realIdx < 0 || realIdx >= _pr.rows.length) return;
-  var val = parseFloat(slider.value) || 0;
-  _pr.rows[realIdx].billableHours = val;
-  if (_pr.rows[realIdx].payrollHours > val) {
-    _pr.rows[realIdx].payrollHours = val;
+function _prCloseSubModal(e) {
+  if (e && e.target && !e.target.classList.contains('pr-sub-modal-overlay')) return;
+  _pr.adminSubModal = {open: false, devId: ''};
+  _prScheduleRender();
+}
+
+function _prSaveSubModal() {
+  var devId = _pr.adminSubModal.devId;
+  var settings = _prLoadDevSettings(devId) || {};
+  var inputs = document.querySelectorAll('.pr-sub-modal .pr-admin-input');
+  inputs.forEach(function(inp) {
+    var field = inp.getAttribute('data-field');
+    if (field) settings[field] = inp.value;
+  });
+  _prSaveDevSettings(devId, settings);
+  _pr.adminSubModal = {open: false, devId: ''};
+  _pr.adminChangedDevs[devId] = true;
+  _prScheduleRender();
+}
+
+/* ─── v8.5: Fines add/remove — partial re-render of admin card only ─── */
+function _prAddFine(devId) {
+  var settings = _prLoadDevSettings(devId) || {};
+  if (!settings.fines) settings.fines = [];
+  settings.fines.push({amount: 0, comment: ''});
+  var totalFine = 0;
+  settings.fines.forEach(function(f) { totalFine += (f.amount || 0); });
+  settings.fine = totalFine;
+  _prSaveDevSettings(devId, settings);
+  /* Partial re-render: only update this dev's card in admin */
+  _prRenderAdminCardPartial(devId);
+}
+
+function _prRemoveFine(devId, fIdx) {
+  var settings = _prLoadDevSettings(devId) || {};
+  if (!settings.fines || fIdx >= settings.fines.length) return;
+  settings.fines.splice(fIdx, 1);
+  var totalFine = 0;
+  settings.fines.forEach(function(f) { totalFine += (f.amount || 0); });
+  settings.fine = totalFine;
+  settings.fineComment = settings.fines.length > 0 ? settings.fines[0].comment : '';
+  _prSaveDevSettings(devId, settings);
+  /* Partial re-render: only update this dev's card in admin */
+  _prRenderAdminCardPartial(devId);
+}
+
+/* ─── Partial re-render of a single admin card (preserves scroll) ─── */
+function _prRenderAdminCardPartial(devId) {
+  var cardEl = document.getElementById('pr-admin-card-' + devId);
+  if (!cardEl) {
+    /* Fallback: full re-render with scroll preservation */
+    var scrollEl = document.querySelector('.pr-modal-body');
+    if (scrollEl) _pr._adminScrollTop = scrollEl.scrollTop;
+    _prScheduleRender();
+    return;
   }
-  _pr.rows[realIdx].payrollAmount = Math.round(_pr.rows[realIdx].payrollHours * _pr.rows[realIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'sliderBillable' });
+
+  /* Re-render just this one card */
+  var sid = String(devId);
+  var name = prGetDevName(sid);
+  var rate = prGetRate(sid);
+  var base = prGetBase(sid);
+  var fines = prGetFines(sid);
+  var firstName = getFirstName(name);
+
+  var h = '';
+  h += '<div class="pr-admin-card-top">';
+  h += '<div class="pr-card-avatar" style="width:28px;height:28px;font-size:11px;border-radius:6px">' + esc(firstName.charAt(0)) + '</div>';
+  h += '<div class="pr-admin-card-name">' + esc(name) + '</div>';
+  h += '<span class="pr-admin-chip" onclick="_prOpenSubModal(\'' + sid + '\')">&#9881;</span>';
+  h += '</div>';
+
+  h += '<div class="pr-admin-row">';
+  h += '<span class="pr-admin-row-label">Ставка</span>';
+  h += '<input class="pr-admin-row-input" type="number" id="pr-rate-' + sid + '" value="' + rate + '">';
+  h += '<span class="pr-admin-row-unit">р/ч</span>';
+  h += '<button type="button" class="pr-admin-confirm" id="pr-rate-btn-' + sid + '" onclick="_prSaveField(\'rate\',\'' + sid + '\')">&#10003;</button>';
+  h += '</div>';
+
+  h += '<div class="pr-admin-row">';
+  h += '<span class="pr-admin-row-label">Фикс</span>';
+  h += '<input class="pr-admin-row-input" type="number" id="pr-base-' + sid + '" value="' + base + '">';
+  h += '<span class="pr-admin-row-unit">р</span>';
+  h += '<button type="button" class="pr-admin-confirm" id="pr-base-btn-' + sid + '" onclick="_prSaveField(\'base\',\'' + sid + '\')">&#10003;</button>';
+  h += '</div>';
+
+  h += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.04)">';
+  h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
+  h += '<span class="pr-admin-row-label" style="color:var(--red)">&#9888; Штрафы</span>';
+  h += '<button type="button" class="pr-admin-fine-add" onclick="_prAddFine(\'' + sid + '\')">+</button>';
+  h += '</div>';
+  fines.forEach(function(fine, fIdx) {
+    h += '<div class="pr-admin-row">';
+    h += '<input class="pr-admin-row-input pr-admin-fine-amount" type="number" id="pr-fine-' + sid + '-' + fIdx + '" value="' + (fine.amount || 0) + '" style="max-width:90px;color:#ff8a94">';
+    h += '<input class="pr-admin-row-input" type="text" id="pr-finecomment-' + sid + '-' + fIdx + '" value="' + esc(fine.comment || '') + '" placeholder="Комментарий" style="max-width:200px">';
+    h += '<button type="button" class="pr-admin-confirm" onclick="_prSaveFine(\'' + sid + '\',' + fIdx + ')">&#10003;</button>';
+    h += '<button type="button" class="pr-admin-fine-remove" onclick="_prRemoveFine(\'' + sid + '\',' + fIdx + ')">&#10005;</button>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  cardEl.innerHTML = h;
 }
 
-function _prSliderPayroll(slider, realIdx) {
-  if (realIdx < 0 || realIdx >= _pr.rows.length) return;
-  var val = parseFloat(slider.value) || 0;
-  _pr.rows[realIdx].payrollHours = val;
-  _pr.rows[realIdx].payrollAmount = Math.round(val * _pr.rows[realIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'sliderPayroll' });
-}
+/* ─── v8.5: Admin — save individual field (NO re-render, scroll preserved) ─── */
+function _prSaveField(field, id) {
+  var val;
 
-/* v5.4: Slider handlers for table view */
-function _prSliderBillableTable(slider, idx) {
-  var filtered = _prGetFilteredRows();
-  if (idx < 0 || idx >= filtered.length) return;
-  var row = filtered[idx];
-  var rIdx = _pr.rows.indexOf(row);
-  if (rIdx < 0) return;
-  var val = parseFloat(slider.value) || 0;
-  _pr.rows[rIdx].billableHours = val;
-  if (_pr.rows[rIdx].payrollHours > val) {
-    _pr.rows[rIdx].payrollHours = val;
+  if (field === 'rate') {
+    var inp = document.getElementById('pr-rate-' + id);
+    if (!inp) return;
+    val = parseInt(inp.value) || 0;
+    var settings = _prLoadDevSettings(id) || {};
+    settings.rate = val;
+    _prSaveDevSettings(id, settings);
+    /* Also update runtime */
+    if (typeof DEV_RATES !== 'undefined') DEV_RATES[String(id)] = val;
+    /* Flash the confirm button green */
+    var btn = document.getElementById('pr-rate-btn-' + id);
+    if (btn) { btn.classList.add('saved'); setTimeout(function() { btn.classList.remove('saved'); }, 1200); }
+    /* Update rows with new rate */
+    _pr.rows.forEach(function(r) {
+      if (String(r.developerId) === String(id)) {
+        r.rate = val;
+        r.payrollAmount = Math.round(r.payrollHours * r.rate);
+      }
+    });
+    if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
+    _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+      ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+    _pr.totals = typeof buildPeriodTotalsCached === 'function'
+      ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+    _prEnsureAllDevsInProjection();
+
+  } else if (field === 'base') {
+    var inp = document.getElementById('pr-base-' + id);
+    if (!inp) return;
+    val = parseInt(inp.value) || 0;
+    var settings = _prLoadDevSettings(id) || {};
+    settings.base = val;
+    _prSaveDevSettings(id, settings);
+    if (typeof DEV_BASE !== 'undefined') DEV_BASE[String(id)] = val;
+    var btn = document.getElementById('pr-base-btn-' + id);
+    if (btn) { btn.classList.add('saved'); setTimeout(function() { btn.classList.remove('saved'); }, 1200); }
+    if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
+    _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+      ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+    _pr.totals = typeof buildPeriodTotalsCached === 'function'
+      ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+    _prEnsureAllDevsInProjection();
+
+  } else if (field === 'clientRate') {
+    var inp = document.getElementById('pr-clientrate-' + id);
+    if (!inp) return;
+    val = parseInt(inp.value) || 0;
+    if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveProjectSettings) {
+      var existing = PayrollStorage.loadProjectSettings(String(id)) || {};
+      existing.clientRate = val;
+      PayrollStorage.saveProjectSettings(String(id), existing);
+    }
+    if (typeof PROJECT_CLIENT_RATES !== 'undefined') PROJECT_CLIENT_RATES[String(id)] = val;
+    /* Flash confirm button */
+    var btn = document.getElementById('pr-clientrate-btn-' + id);
+    if (btn) { btn.classList.add('saved'); setTimeout(function() { btn.classList.remove('saved'); }, 1200); }
+
+  } else if (field === 'fixSumma') {
+    var inp = document.getElementById('pr-fixsumma-' + id);
+    if (!inp) return;
+    val = parseInt(inp.value) || 0;
+    if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveProjectSettings) {
+      var existing = PayrollStorage.loadProjectSettings(String(id)) || {};
+      existing.fixSumma = val;
+      PayrollStorage.saveProjectSettings(String(id), existing);
+    }
+    if (typeof PROJECT_FIX_SUMMA !== 'undefined') PROJECT_FIX_SUMMA[String(id)] = val;
+    /* Flash confirm button */
+    var btn = document.getElementById('pr-fixsumma-btn-' + id);
+    if (btn) { btn.classList.add('saved'); setTimeout(function() { btn.classList.remove('saved'); }, 1200); }
   }
-  _pr.rows[rIdx].payrollAmount = Math.round(_pr.rows[rIdx].payrollHours * _pr.rows[rIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'sliderBillableTable' });
+
+  /* No full re-render — just update projection in memory.
+     Data is saved, button flashes green, scroll stays in place. */
 }
 
-function _prSliderPayrollTable(slider, idx) {
-  var filtered = _prGetFilteredRows();
-  if (idx < 0 || idx >= filtered.length) return;
-  var row = filtered[idx];
-  var rIdx = _pr.rows.indexOf(row);
-  if (rIdx < 0) return;
-  var val = parseFloat(slider.value) || 0;
-  _pr.rows[rIdx].payrollHours = val;
-  _pr.rows[rIdx].payrollAmount = Math.round(val * _pr.rows[rIdx].rate);
-  _prRebuildAndRender({ invalidateCache: true, source: 'sliderPayrollTable' });
+/* ─── v8.4: Save individual fine ─── */
+function _prSaveFine(devId, fIdx) {
+  var amountInp = document.getElementById('pr-fine-' + devId + '-' + fIdx);
+  var commentInp = document.getElementById('pr-finecomment-' + devId + '-' + fIdx);
+  if (!amountInp) return;
+
+  var amount = parseInt(amountInp.value) || 0;
+  var comment = commentInp ? commentInp.value : '';
+
+  var settings = _prLoadDevSettings(devId) || {};
+  var fines = settings.fines || [];
+  if (fIdx < fines.length) {
+    fines[fIdx] = {amount: amount, comment: comment};
+  } else {
+    fines.push({amount: amount, comment: comment});
+  }
+  /* Recalc total fine */
+  var totalFine = 0;
+  fines.forEach(function(f) { totalFine += (f.amount || 0); });
+  settings.fines = fines;
+  settings.fine = totalFine;
+  settings.fineComment = fines.length > 0 ? fines[0].comment : '';
+  _prSaveDevSettings(devId, settings);
+
+  /* Flash green on the confirm button */
+  var row = amountInp.closest('.pr-admin-row');
+  if (row) {
+    var btn = row.querySelector('.pr-admin-confirm');
+    if (btn) { btn.classList.add('saved'); setTimeout(function() { btn.classList.remove('saved'); }, 1200); }
+  }
+
+  /* Update projection */
+  if (typeof invalidateProjectionCache === 'function') invalidateProjectionCache();
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+    ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function'
+    ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
+  /* No full re-render — data saved, button flashes, scroll stays */
+}
+
+/* Apply new rate/base to all saved reviews for specified developers */
+function _prApplyRateToSavedReviews(devIds) {
+  var year = prCurrentPeriod.year;
+  var month = prCurrentPeriod.month;
+  var savedReviews = _prLoadReviews(year, month);
+  if (!savedReviews || typeof savedReviews !== 'object') return;
+
+  var devSet = {};
+  devIds.forEach(function(id) { devSet[String(id)] = true; });
+
+  var changed = false;
+  Object.keys(savedReviews).forEach(function(reviewKey) {
+    var review = savedReviews[reviewKey];
+    if (!review || !devSet[String(review.developerId)]) return;
+    var newRate = prGetRate(review.developerId);
+    if (review.rate !== newRate) {
+      review.rate = newRate;
+      /* Recalculate payroll amount per task (base is NOT per-task, it's added once in projection) */
+      review.payrollAmount = Math.round((review.payrollHours || 0) * newRate);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    _prSaveReviews(year, month, savedReviews);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1866,91 +2352,13 @@ function _prSoftRefresh(freshData) {
     });
     _pr.rows = model.rows;
   }
-  _prRebuildAndRender({ markDirty: false, source: 'softRefresh' });
-  /* Phase 3: Cache badge — обновление завершено */
-  _pr._cacheBadge = 'cache';
-  console.log('PR: soft refresh applied from background revalidation');
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   Phase 7: ДИАГНОСТИЧЕСКАЯ ПАНЕЛЬ
-   ═══════════════════════════════════════════════════════════════ */
-function _prRenderDiagnostics() {
-  var isOpen = _pr._diagnosticsOpen;
-  var h = '<div class="pr-diag-panel">';
-  h += '<div class="pr-diag-header" onclick="_prToggleDiagnostics()">';
-  h += '<span class="pr-diag-title">ДИАГНОСТИКА</span>';
-  h += '<span class="pr-diag-toggle">' + (isOpen ? '▲' : '▼') + '</span>';
-  h += '</div>';
-
-  if (!isOpen) {
-    h += '</div>';
-    return h;
-  }
-
-  h += '<div class="pr-diag-body">';
-
-  /* Timing */
-  var p = _pr._perf;
-  var loadMs = p.loadEnd > 0 ? (p.loadEnd - p.loadStart) : 0;
-  var normMs = p.normEnd > 0 ? (p.normEnd - p.normStart) : 0;
-  var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
-  h += '<div class="pr-diag-section">';
-  h += '<div class="pr-diag-section-title">Тайминг</div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Load</span><span class="pr-diag-val">' + loadMs + ' ms</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Norm</span><span class="pr-diag-val">' + normMs + ' ms</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Render</span><span class="pr-diag-val">' + renderMs + ' ms</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Total</span><span class="pr-diag-val" style="color:var(--cyan)">' + (loadMs + normMs + renderMs) + ' ms</span></div>';
-  h += '</div>';
-
-  /* Cache stats */
-  h += '<div class="pr-diag-section">';
-  h += '<div class="pr-diag-section-title">Кэш</div>';
-  if (typeof PayrollCache !== 'undefined') {
-    var cs = PayrollCache.stats();
-    h += '<div class="pr-diag-row"><span class="pr-diag-key">Hits</span><span class="pr-diag-val" style="color:var(--green)">' + cs.hits + '</span></div>';
-    h += '<div class="pr-diag-row"><span class="pr-diag-key">Misses</span><span class="pr-diag-val" style="color:var(--red)">' + cs.misses + '</span></div>';
-    h += '<div class="pr-diag-row"><span class="pr-diag-key">Stale</span><span class="pr-diag-val" style="color:var(--yellow)">' + cs.staleHits + '</span></div>';
-    h += '<div class="pr-diag-row"><span class="pr-diag-key">Rate</span><span class="pr-diag-val">' + cs.hitRate + '</span></div>';
-    h += '<div class="pr-diag-row"><span class="pr-diag-key">Keys in memory</span><span class="pr-diag-val">' + cs.memoryKeys + '</span></div>';
-  } else {
-    h += '<div class="pr-diag-row">PayrollCache не загружен</div>';
-  }
-  h += '</div>';
-
-  /* Projection */
-  h += '<div class="pr-diag-section">';
-  h += '<div class="pr-diag-section-title">Данные</div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Projection rebuilds</span><span class="pr-diag-val">' + p.projectionRebuilds + '</span></div>';
-  /* Timeline DOM count */
-  var tlDomCount = 0;
-  var tlEls = document.querySelectorAll('.pr-tl-item');
-  if (tlEls) tlDomCount = tlEls.length;
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Timeline DOM</span><span class="pr-diag-val">' + tlDomCount + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Task date cache</span><span class="pr-diag-val">' + Object.keys(_pr._taskDateCache).length + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Elapsed records</span><span class="pr-diag-val">' + ((_pr.data && _pr.data.elapsed) ? _pr.data.elapsed.length : 0) + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Review rows</span><span class="pr-diag-val">' + _pr.rows.length + '</span></div>';
-  h += '</div>';
-
-  /* Mode & status */
-  h += '<div class="pr-diag-section">';
-  h += '<div class="pr-diag-section-title">Состояние</div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Режим</span><span class="pr-diag-val">' + _pr.roleMode + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Кэш статус</span><span class="pr-diag-val">' + (_pr._cacheBadge || 'нет') + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Вид</span><span class="pr-diag-val">' + _pr.viewMode + ' / ' + _pr.densityMode + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Период</span><span class="pr-diag-val">' + prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0') + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Статус периода</span><span class="pr-diag-val">' + esc(_pr.periodStatus) + '</span></div>';
-  h += '<div class="pr-diag-row"><span class="pr-diag-key">Источник</span><span class="pr-diag-val">' + esc(_pr.modelSource || 'live') + '</span></div>';
-  h += '</div>';
-
-  h += '</div>'; /* end .pr-diag-body */
-  h += '</div>'; /* end .pr-diag-panel */
-  return h;
-}
-
-function _prToggleDiagnostics() {
-  _pr._diagnosticsOpen = !_pr._diagnosticsOpen;
+  _pr.projection = typeof buildMonthlyProjectionCached === 'function'
+    ? buildMonthlyProjectionCached(_pr.rows) : buildMonthlyProjection(_pr.rows);
+  _pr.totals = typeof buildPeriodTotalsCached === 'function'
+    ? buildPeriodTotalsCached(_pr.rows) : buildPeriodTotals(_pr.rows);
+  _prEnsureAllDevsInProjection();
   _prScheduleRender();
+  console.log('PR: soft refresh applied from background revalidation');
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1964,7 +2372,7 @@ window.__PAYROLL_PERF = function() {
   var renderMs = p.renderEnd > 0 ? (p.renderEnd - p.renderStart) : 0;
   var result = {
     version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'unknown',
-    pipeline: 'activity-filtered v6.12.0',
+    pipeline: 'elapsed-first v5.0',
     timing: {
       loadData: loadMs + 'ms',
       normalization: normMs + 'ms',

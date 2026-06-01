@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-7.2.1';
+var APP_VERSION = 'ПР-8.5.0';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -32,6 +32,16 @@ var DEVELOPERS = {
 };
 var DEV_IDS = Object.keys(DEVELOPERS).map(Number);
 
+/* ─── Исключённые разработчики (не работают, убраны из расчётов) ─── */
+var EXCLUDED_DEV_IDS = {
+  '80': true,  /* Сергей Приходько */
+  '94': true,  /* Denius Coder */
+  '96': true   /* Марина Савчук */
+};
+
+/* Активные разработчики (все, кроме исключённых) */
+var ACTIVE_DEV_IDS = DEV_IDS.filter(function(id) { return !EXCLUDED_DEV_IDS[String(id)]; });
+
 /* ─── Ставка по умолчанию (1000 р/час) ─── */
 var СТАВКА_ПО_УМОЛЧ = 1000;
 
@@ -50,7 +60,22 @@ var DEV_RATES = {
   '116': 0   /* Предеин: ставка по задачам = 0, оклад 200к */
 };
 
-/* ─── Базовая часть (оклад/премия) — можно менять в админке ─── */
+/* ─── Клиентская ставка (сколько клиент платит за час). Если 0 — берётся ставка разраба ─── */
+var DEV_CLIENT_RATE = {
+  '1':   0,
+  '18':  0,
+  '38':  0,
+  '54':  0,
+  '80':  0,
+  '82':  0,
+  '92':  0,
+  '94':  0,
+  '96':  0,
+  '98':  0,
+  '116': 0   /* Предеин: клиентская ставка 0 */
+};
+
+/* ─── Базовая часть (оклад/премия) — единовременно, НЕ на задачу ─── */
 var DEV_BASE = {
   '1':   0,
   '18':  0,
@@ -64,6 +89,80 @@ var DEV_BASE = {
   '98':  0,
   '116': 200000   /* Предеин: оклад 200к (3П) */
 };
+
+/* ─── Штрафы (вычитаются из общей суммы) ─── */
+var DEV_FINE = {
+  '1':   0,
+  '18':  0,
+  '38':  0,
+  '54':  0,
+  '80':  0,
+  '82':  0,
+  '92':  0,
+  '94':  0,
+  '96':  0,
+  '98':  0,
+  '116': 0
+};
+
+/* ─── Комментарии к штрафам (устаревшее, для обратной совместимости) ─── */
+var DEV_FINE_COMMENT = {
+  '1':   '',
+  '18':  '',
+  '38':  '',
+  '54':  '',
+  '80':  '',
+  '82':  '',
+  '92':  '',
+  '94':  '',
+  '96':  '',
+  '98':  '',
+  '116': ''
+};
+
+/* ─── Штрафы (массив, v8.1) — несколько штрафов на разработчика ─── */
+var DEV_FINES = {
+  '1':   [],
+  '18':  [],
+  '38':  [],
+  '54':  [],
+  '80':  [],
+  '82':  [],
+  '92':  [],
+  '94':  [],
+  '96':  [],
+  '98':  [],
+  '116': []
+};
+
+/* ─── Расширенные настройки разработчиков (v8.1) ─── */
+var DEV_FULLNAME = {
+  '1':   '', '18':  '', '38':  '', '54':  '', '80':  '',
+  '82':  '', '92':  '', '94':  '', '96':  '', '98':  '', '116': ''
+};
+var DEV_CONTRACT = {
+  '1':   '', '18':  '', '38':  '', '54':  '', '80':  '',
+  '82':  '', '92':  '', '94':  '', '96':  '', '98':  '', '116': ''
+};
+var DEV_CONTRACT_DATE = {
+  '1':   '', '18':  '', '38':  '', '54':  '', '80':  '',
+  '82':  '', '92':  '', '94':  '', '96':  '', '98':  '', '116': ''
+};
+var DEV_SELF_EMPLOYED = {
+  '1':   'Нет', '18':  'Нет', '38':  'Нет', '54':  'Нет', '80':  'Нет',
+  '82':  'Нет', '92':  'Нет', '94':  'Нет', '96':  'Нет', '98':  'Нет', '116': 'Нет'
+};
+var DEV_BANK = {
+  '1':   '', '18':  '', '38':  '', '54':  '', '80':  '',
+  '82':  '', '92':  '', '94':  '', '96':  '', '98':  '', '116': ''
+};
+var DEV_NOTES = {
+  '1':   '', '18':  '', '38':  '', '54':  '', '80':  '',
+  '82':  '', '92':  '', '94':  '', '96':  '', '98':  '', '116': ''
+};
+
+/* ─── Фиксированная сумма по проекту (поддержка и т.п.) ─── */
+var PROJECT_FIX_SUMMA = {};
 
 /* ─── ИНН разработчиков ─── */
 var DEV_INN = {
@@ -148,40 +247,62 @@ var STAGE_MAP = {
 };
 /* ⚠️ Проекты БЕЗ STAGE_MAP (нет пайплайнов): 8,10,12,14,16,26,30,34,38,40,44,54,58,68 */
 
-/* ─── Исключённые проекты (служебные группы)
-   ⚠️ v6.6.0: EXCLUDE_GROUPS влияет ТОЛЬКО на UI-отображение
-   (какие проекты показывать в Projects tab).
-   На загрузку данных НЕ влияет — задачи из этих групп
-   загружаются и обрабатываются полностью, т.к. Предеин
-   списывает время в группе 26 «Текущие задачи 1с». ─── */
-var EXCLUDE_GROUPS = {
-  '2':1,  /* Обучение 1с */
-  '22':1, /* Тацинка */
-  '24':1, /* Обучение 1с скрам */
-  '26':1, /* Текущие задачи 1с — Предеин списывает время здесь! */
-  '42':1, /* ИТ Контроль */
-  '48':1, /* [APP GBL] Просроченные */
-  '78':1, /* Backlog */
-  '80':1  /* Все проекты */
+/* ─── Исключённые проекты (служебные группы) ─── */
+/* ПРИМЕЧАНИЕ v7.3.2: EXCLUDE_GROUPS больше НЕ используется для фильтрации часов.
+   Все служебные группы перенесены в UNPAID_GROUPS (часы видны, оплата=0).
+   Это нужно чтобы Факт часы совпадали с дашбордом Bitrix24. */
+var EXCLUDE_GROUPS = {};
+
+
+/* ─── Неоплачиваемые проекты (часы видны, оплата = 0) ─── */
+/* v7.3.2: Все служебные группы перенесены сюда из EXCLUDE_GROUPS.
+   Часы показываются в Факт часах, но оплата за них = 0.
+   Это обеспечивает совпадение Факт часов с дашбордом Bitrix24. */
+var UNPAID_GROUPS = {
+  '2': true,   /* Обучение 1с — внутренний проект, не оплачивается */
+  '22': true,  /* Тацинка — служебная группа */
+  '24': true,  /* Обучение 1с скрам — внутренний проект, не оплачивается */
+  '26': true,  /* Текущие задачи 1с — служебная группа */
+  '42': true,  /* ИТ Контроль — служебная группа */
+  '48': true,  /* [APP GBL] Просроченные — служебная группа */
+  '80': true   /* Все проекты — мета-группа */
 };
+
+/* ─── Клиентские ставки по проектам ─── */
+var PROJECT_CLIENT_RATES = {};
+
+function prGetProjectClientRate(pid) {
+  /* Сначала из сохранённых настроек */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadProjectSettings) {
+    var saved = PayrollStorage.loadProjectSettings(String(pid));
+    if (saved && saved.clientRate !== undefined) return saved.clientRate;
+  }
+  return PROJECT_CLIENT_RATES[String(pid)] || 0;
+}
+
+function prIsUnpaidGroup(groupId) {
+  return !!UNPAID_GROUPS[String(groupId)];
+}
 
 /* ─── Вебхук (зашит прямо в код) ─── */
 var PR_DEFAULT_HOOK = 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/';
 var HOOK = '';
-try { HOOK = localStorage.getItem('bx_hook') || PR_DEFAULT_HOOK; } catch(e) { HOOK = PR_DEFAULT_HOOK; }
+/* Чтение хука через PayrollStorage (единственная точка доступа) */
+try {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadHook) {
+    HOOK = PayrollStorage.loadHook() || PR_DEFAULT_HOOK;
+  } else {
+    HOOK = PR_DEFAULT_HOOK;
+  }
+} catch(e) { HOOK = PR_DEFAULT_HOOK; }
 
-/* ─── Режим данных ───
-   Моковые данные УДАЛЕНЫ (v6.5.0) — всегда живые данные из Bitrix24.
-   PR_MOCK_MODE оставлен для совместимости, всегда false.
+/* ─── Режим мок ───
+   PR_FORCE_MOCK = true  → всегда мок (тест без API)
+   PR_FORCE_MOCK = false → живые данные через Bitrix24 API
+   Переключатель в UI: кнопка МОК/ЖИВОЙ в топбаре
 */
-/* ─── Конфигурация нормализации ───
-   v6.6.0: excludeGroups = {} — НЕ исключаем группы из расчётов!
-   Предеин списывает время в группе 26 «Текущие задачи 1с».
-   EXCLUDE_GROUPS влияет только на UI, не на данные. ─── */
-var PR_NORM_CONFIG_OVERRIDE = {
-  excludeGroups: {}   /* Пустой объект = не исключать никакие группы из расчётов */
-};
-var PR_MOCK_MODE = false;
+var PR_FORCE_MOCK = false;
+var PR_MOCK_MODE = PR_FORCE_MOCK || !HOOK;
 
 /* ─── Утилиты ─── */
 function fmt(d) {
@@ -219,42 +340,203 @@ function parseBitrixDate(s) {
 }
 
 function prGetRate(developerId) {
-  /* Сначала из сохранённых настроек, потом из конфига */
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.rate !== undefined && saved.rate !== null) return saved.rate;
-  return DEV_RATES[String(developerId)] !== undefined ? DEV_RATES[String(developerId)] : СТАВКА_ПО_УМОЛЧ;
+  /* Единственная точка доступа — PayrollStorage */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.rate) return saved.rate;
+  }
+  return DEV_RATES[String(developerId)] || СТАВКА_ПО_УМОЛЧ;
+}
+
+function prGetClientRate(developerId) {
+  /* Клиентская ставка. Если явно задана как 0 (Предеин) — возвращаем 0 */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.clientRate !== undefined && saved.clientRate !== null) return saved.clientRate;
+  }
+  var cr = DEV_CLIENT_RATE[String(developerId)];
+  /* Если ставка явно задана как 0 (Предеин) — возвращаем 0 */
+  if (cr === 0) return 0;
+  return cr > 0 ? cr : prGetRate(developerId);
 }
 
 function prGetBase(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.base !== undefined && saved.base !== null) return saved.base;
-  return DEV_BASE[String(developerId)] !== undefined ? DEV_BASE[String(developerId)] : 0;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.base) return saved.base;
+  }
+  return DEV_BASE[String(developerId)] || 0;
 }
 
 function prGetInn(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.inn !== undefined && saved.inn !== null) return saved.inn;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.inn) return saved.inn;
+  }
   return DEV_INN[String(developerId)] || '';
 }
 
 function prGetDevName(developerId) {
-  var saved = prLoadDevSettings(developerId);
-  if (saved && saved.name) return saved.name;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.name) return saved.name;
+  }
   return DEVELOPERS[String(developerId)] || ('ID ' + developerId);
 }
 
+function prGetFine(developerId) {
+  /* v8.1: Сумма всех штрафов из массива (обратная совместимость) */
+  var fines = prGetFines(developerId);
+  if (fines.length > 0) {
+    var total = 0;
+    for (var i = 0; i < fines.length; i++) total += (fines[i].amount || 0);
+    return total;
+  }
+  /* Fallback: старый формат единого штрафа */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fine !== undefined) return saved.fine;
+  }
+  return DEV_FINE[String(developerId)] || 0;
+}
+
+function prGetFines(developerId) {
+  /* v8.1: Возвращает массив штрафов [{amount, comment}] */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fines && Array.isArray(saved.fines) && saved.fines.length > 0) return saved.fines;
+  }
+  var local = DEV_FINES[String(developerId)];
+  if (local && Array.isArray(local) && local.length > 0) return local;
+  /* Fallback: конвертируем старый формат в массив */
+  var oldFine = DEV_FINE[String(developerId)] || 0;
+  var oldComment = DEV_FINE_COMMENT[String(developerId)] || '';
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved2 = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved2 && saved2.fine !== undefined) oldFine = saved2.fine;
+    if (saved2 && saved2.fineComment) oldComment = saved2.fineComment;
+  }
+  if (oldFine > 0) return [{amount: oldFine, comment: oldComment}];
+  return [];
+}
+
+function prGetFineComment(developerId) {
+  /* v8.1: Обратная совместимость — комментарий первого штрафа */
+  var fines = prGetFines(developerId);
+  if (fines.length > 0 && fines[0].comment) return fines[0].comment;
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fineComment) return saved.fineComment;
+  }
+  return DEV_FINE_COMMENT[String(developerId)] || '';
+}
+
+/* ─── v8.1: Расширенные геттеры настроек ─── */
+function prGetFullname(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.fullname) return saved.fullname;
+  }
+  return DEV_FULLNAME[String(developerId)] || '';
+}
+
+function prGetContract(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.contract) return saved.contract;
+  }
+  return DEV_CONTRACT[String(developerId)] || '';
+}
+
+function prGetContractDate(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.contractDate) return saved.contractDate;
+  }
+  return DEV_CONTRACT_DATE[String(developerId)] || '';
+}
+
+function prGetSelfEmployed(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.selfEmployed) return saved.selfEmployed;
+  }
+  return DEV_SELF_EMPLOYED[String(developerId)] || 'Нет';
+}
+
+function prGetBank(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.bank) return saved.bank;
+  }
+  return DEV_BANK[String(developerId)] || '';
+}
+
+function prGetNotes(developerId) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.notes) return saved.notes;
+  }
+  return DEV_NOTES[String(developerId)] || '';
+}
+
+function prGetProjectFixSumma(pid) {
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadProjectSettings) {
+    var saved = PayrollStorage.loadProjectSettings(String(pid));
+    if (saved && saved.fixSumma !== undefined) return saved.fixSumma;
+  }
+  return PROJECT_FIX_SUMMA[String(pid)] || 0;
+}
+
+function prGetPayoutPct(developerId) {
+  /* v8.2: Доля выплаты разрабу от оплаты клиента (по умолчанию 100%) */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadDevSettings) {
+    var saved = PayrollStorage.loadDevSettings(String(developerId));
+    if (saved && saved.payoutPct !== undefined && saved.payoutPct !== null) return saved.payoutPct;
+  }
+  return 100;
+}
+
+function prGetPaymentPct(projId) {
+  /* v8.2: Доля оплаты клиента от фактических часов (по умолчанию 100%) */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.loadProjectSettings) {
+    var saved = PayrollStorage.loadProjectSettings(String(projId));
+    if (saved && saved.paymentPct !== undefined && saved.paymentPct !== null) return saved.paymentPct;
+  }
+  return 100;
+}
+
+function prIsExcludedDev(developerId) {
+  return !!EXCLUDED_DEV_IDS[String(developerId)];
+}
+
 /* ─── API ─── */
-function bxPost(method, body) {
+var _bxAbortControllers = {};
+
+function bxPost(method, body, timeoutMs) {
   body = body || {};
   if (!HOOK) return Promise.resolve(null);
   var u = '/api/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
+  var tMs = timeoutMs || 30000;
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, tMs);
   return fetch(u, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
-  }).then(function(r) { return r.json(); })
-    .then(function(d) { if (d.error) { console.error('BX', method, d.error); return d; } return d; })
-    .catch(function(e) { console.error('СЕТЬ', method, e); return {error: e.message}; });
+    body: JSON.stringify(body),
+    signal: controller.signal
+  }).then(function(r) {
+    clearTimeout(timer);
+    return r.json();
+  }).then(function(d) {
+    if (d && d.error) { console.error('BX', method, d.error, d.error_description || ''); }
+    return d;
+  }).catch(function(e) {
+    clearTimeout(timer);
+    var msg = (e && e.name === 'AbortError') ? 'timeout ' + tMs + 'ms' : (e && e.message || String(e));
+    console.error('СЕТЬ', method, msg);
+    return {error: msg};
+  });
 }
 
 function bxPostAsDev(method, body, devId) {
@@ -281,6 +563,7 @@ function fetchTasksPaginated(body, maxPages) {
       return all;
     }
     return bxPost('tasks.task.list', Object.assign({start: start}, body)).then(function(r) {
+      if (r && r.error) { console.error('fetchTasksPaginated ERROR', r.error); return all; }
       var tasks = (r && r.result && r.result.tasks) || [];
       all = all.concat(tasks);
       if (r && r.next && tasks.length >= 50) { start = r.next; return step(); }
@@ -288,6 +571,302 @@ function fetchTasksPaginated(body, maxPages) {
     });
   }
   return step();
+}
+
+/* ─── Batch API helper — группирует вызовы по 50, с задержкой и таймаутом ─── */
+function bxBatchCall(cmdMap, options) {
+  if (!cmdMap || !Object.keys(cmdMap).length) return Promise.resolve({});
+  var opts = options || {};
+  var chunkSize = opts.chunkSize || 50;
+  var delayMs = opts.delayMs !== undefined ? opts.delayMs : 500;
+  var timeoutMs = opts.timeoutMs || 60000;
+  var onProgress = opts.onProgress || null;
+  var keys = Object.keys(cmdMap);
+  var chunks = [];
+  for (var i = 0; i < keys.length; i += chunkSize) {
+    var chunk = {};
+    for (var j = i; j < Math.min(i + chunkSize, keys.length); j++) {
+      chunk[keys[j]] = cmdMap[keys[j]];
+    }
+    chunks.push(chunk);
+  }
+  var results = {};
+  var resultErrors = 0;
+  var chain = Promise.resolve();
+  chunks.forEach(function(chunk, chunkIdx) {
+    chain = chain.then(function() {
+      if (onProgress) onProgress(chunkIdx, chunks.length, Object.keys(results).length);
+      return bxPost('batch', {halt: 0, cmd: chunk}, timeoutMs).then(function(r) {
+        if (r && r.result && r.result.result) {
+          Object.keys(r.result.result).forEach(function(k) {
+            results[k] = r.result.result[k];
+          });
+        }
+        if (r && r.result && r.result.result_error) {
+          Object.keys(r.result.result_error).forEach(function(k) {
+            resultErrors++;
+            if (resultErrors <= 5) {
+              console.warn('batch error for', k, r.result.result_error[k]);
+            }
+          });
+        }
+        if (r && r.error && !r.result) {
+          console.warn('bxBatchCall: chunk ' + chunkIdx + ' failed:', r.error);
+        }
+      });
+    }).then(function() {
+      /* Задержка между чанками чтобы не упереться в rate limit */
+      if (delayMs > 0 && chunkIdx < chunks.length - 1) {
+        return new Promise(function(resolve) { setTimeout(resolve, delayMs); });
+      }
+    });
+  });
+  return chain.then(function() {
+    console.log('bxBatchCall: завершено, ' + Object.keys(results).length + ' результатов, ' + resultErrors + ' ошибок');
+    return results;
+  });
+}
+
+/* ─── Загрузка разработчиков из Bitrix24 (с пагинацией) ─── */
+function bxLoadDevelopers() {
+  var allUsers = [];
+  var start = 0;
+
+  function loadPage() {
+    return bxPost('user.get', {
+      FILTER: {ACTIVE: true},
+      SELECT: ['ID', 'NAME', 'LAST_NAME', 'SECOND_NAME'],
+      start: start
+    }).then(function(r) {
+      var users = (r && r.result) || [];
+      if (!Array.isArray(users)) users = [];
+      allUsers = allUsers.concat(users);
+      /* Пагинация: если есть next и вернулась полная страница */
+      if (r && r.next && users.length >= 50) {
+        start = r.next;
+        return loadPage();
+      }
+      return allUsers;
+    });
+  }
+
+  return loadPage().then(function(allUsers) {
+    var updated = false;
+    allUsers.forEach(function(u) {
+      var uid = String(u.ID);
+      var fullName = ((u.LAST_NAME || '') + ' ' + (u.NAME || '')).trim();
+      if (u.SECOND_NAME) fullName = ((u.LAST_NAME || '') + ' ' + (u.SECOND_NAME || '')).trim();
+      if (!fullName) fullName = 'Пользователь ' + uid;
+      if (DEVELOPERS[uid] && DEVELOPERS[uid] !== fullName) {
+        DEVELOPERS[uid] = fullName;
+        updated = true;
+      } else if (!DEVELOPERS[uid]) {
+        DEVELOPERS[uid] = fullName;
+        if (!DEV_RATES[uid]) DEV_RATES[uid] = СТАВКА_ПО_УМОЛЧ;
+        if (!DEV_BASE[uid]) DEV_BASE[uid] = 0;
+        if (!DEV_CLIENT_RATE[uid]) DEV_CLIENT_RATE[uid] = 0;
+        updated = true;
+      }
+    });
+    if (updated) {
+      DEV_IDS = Object.keys(DEVELOPERS).map(Number);
+      console.log('bxLoadDevelopers: загружено ' + allUsers.length + ' пользователей, ' + DEV_IDS.length + ' разработчиков');
+    } else {
+      console.log('bxLoadDevelopers: использованы кэшированные разработчики (' + DEV_IDS.length + ')');
+    }
+    return DEVELOPERS;
+  }).catch(function(e) {
+    console.warn('bxLoadDevelopers: не удалось загрузить пользователей', e);
+    return DEVELOPERS;
+  });
+}
+
+/* ─── Загрузка elapsed через batch API (улучшенная v3.2) ─── */
+function bxLoadElapsedBatch(taskIds, fromStr, toStr) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadElapsedBatch: загрузка elapsed для ' + taskIds.length + ' задач через batch');
+
+  /* Стратегия 1: batch через task.elapseditem.getlist */
+  var cmdMap = {};
+  taskIds.forEach(function(tid, idx) {
+    cmdMap['e' + idx] = 'task.elapseditem.getlist?TASK_ID=' + tid;
+  });
+
+  return bxBatchCall(cmdMap, {
+    delayMs: 500,
+    timeoutMs: 60000,
+    onProgress: function(chunkIdx, totalChunks, elapsedSoFar) {
+      console.log('bxLoadElapsedBatch: чанк ' + (chunkIdx + 1) + '/' + totalChunks + ', накоплено ' + elapsedSoFar + ' результатов');
+    }
+  }).then(function(results) {
+    var allElapsed = [];
+    var batchErrors = 0;
+    Object.keys(results).forEach(function(key) {
+      var items = results[key];
+      if (Array.isArray(items)) {
+        allElapsed = allElapsed.concat(items);
+      } else if (items && items.result && Array.isArray(items.result)) {
+        allElapsed = allElapsed.concat(items.result);
+      } else if (items && !items.error) {
+        if (typeof items === 'object') {
+          var vals = Object.values(items);
+          if (vals.length && vals[0] && vals[0].TASK_ID) {
+            allElapsed = allElapsed.concat(vals);
+          }
+        }
+      } else {
+        batchErrors++;
+      }
+    });
+
+    if (batchErrors > 0) {
+      console.warn('bxLoadElapsedBatch: ' + batchErrors + '/' + taskIds.length + ' вызовов вернули ошибки');
+    }
+
+    if (allElapsed.length > 0) {
+      console.log('bxLoadElapsedBatch: получено ' + allElapsed.length + ' elapsed записей через batch');
+      return allElapsed;
+    }
+
+    /* Стратегия 2: fallback — прямые запросы с throttling */
+    console.log('bxLoadElapsedBatch: batch вернул 0 записей, пробуем прямые запросы с throttling...');
+    return bxLoadElapsedThrottled(taskIds);
+  });
+}
+
+/* ─── Загрузка elapsed с throttling (fallback v3.2) ───
+   Вызывает task.elapseditem.getlist напрямую с пагинацией.
+   Надёжнее batch, но медленнее. 
+   Использует группы по 5 параллельных запросов с задержкой между группами. */
+function bxLoadElapsedThrottled(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadElapsedThrottled: загрузка elapsed для ' + taskIds.length + ' задач (группы по 5)');
+
+  var allElapsed = [];
+  var groupSize = 5;
+  var chain = Promise.resolve();
+
+  for (var g = 0; g < taskIds.length; g += groupSize) {
+    (function(groupStart) {
+      var group = taskIds.slice(groupStart, groupStart + groupSize);
+      chain = chain.then(function() {
+        var proms = group.map(function(tid) {
+          return bxPost('task.elapseditem.getlist', {
+            TASK_ID: parseInt(tid)
+          }, 15000).then(function(r) {
+            if (r && r.error) return [];
+            var items = [];
+            if (r && r.result) {
+              if (Array.isArray(r.result)) items = r.result;
+              else if (r.result.items && Array.isArray(r.result.items)) items = r.result.items;
+              else if (r.result.list && Array.isArray(r.result.list)) items = r.result.list;
+            }
+            if (r && r.next && items.length >= 50) {
+              return _paginateElapsedDirect(tid, r.next, items);
+            }
+            return items;
+          }).catch(function() { return []; });
+        });
+        return Promise.all(proms).then(function(batches) {
+          batches.forEach(function(b) { allElapsed = allElapsed.concat(b); });
+        });
+      }).then(function() {
+        /* Задержка 300ms между группами */
+        return new Promise(function(resolve) { setTimeout(resolve, 300); });
+      });
+    })(g);
+  }
+
+  return chain.then(function() {
+    console.log('bxLoadElapsedThrottled: получено ' + allElapsed.length + ' elapsed записей');
+    return allElapsed;
+  });
+}
+
+/* ─── Legacy: bxLoadElapsedDirect — все запросы параллельно (ОПАСНО для 700+ задач) ─── */
+function bxLoadElapsedDirect(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadElapsedDirect: ВНИМАНИЕ — параллельные запросы для ' + taskIds.length + ' задач');
+  if (taskIds.length > 100) {
+    console.warn('bxLoadElapsedDirect: слишком много задач, используем throttled fallback');
+    return bxLoadElapsedThrottled(taskIds);
+  }
+  var proms = taskIds.map(function(tid) {
+    return bxPost('task.elapseditem.getlist', {
+      TASK_ID: parseInt(tid)
+    }, 15000).then(function(r) {
+      if (r && r.error) return [];
+      var items = [];
+      if (r && r.result) {
+        if (Array.isArray(r.result)) items = r.result;
+        else if (r.result.items && Array.isArray(r.result.items)) items = r.result.items;
+        else if (r.result.list && Array.isArray(r.result.list)) items = r.result.list;
+      }
+      if (r && r.next && items.length >= 50) {
+        return _paginateElapsedDirect(tid, r.next, items);
+      }
+      return items;
+    }).catch(function() { return []; });
+  });
+  return Promise.all(proms).then(function(batches) {
+    var all = [];
+    batches.forEach(function(b) { all = all.concat(b); });
+    console.log('bxLoadElapsedDirect: получено ' + all.length + ' elapsed записей');
+    return all;
+  });
+}
+
+function _paginateElapsedDirect(tid, start, accumulated) {
+  return bxPost('task.elapseditem.getlist', {
+    TASK_ID: parseInt(tid),
+    start: start
+  }).then(function(r) {
+    var items = [];
+    if (r && r.result) {
+      if (Array.isArray(r.result)) items = r.result;
+      else if (r.result.items) items = r.result.items;
+      else if (r.result.list) items = r.result.list;
+    }
+    accumulated = accumulated.concat(items);
+    if (r && r.next && items.length >= 50) {
+      return _paginateElapsedDirect(tid, r.next, accumulated);
+    }
+    return accumulated;
+  }).catch(function() {
+    return accumulated;
+  });
+}
+
+/* ─── Загрузка задач по списку ID (batch) ───
+   Используется для догрузки задач, ID которых найдены в elapsed,
+   но сами задачи не попали в основной запрос по CREATED_DATE. */
+function bxLoadTasksByIds(taskIds) {
+  if (!taskIds || !taskIds.length) return Promise.resolve([]);
+  console.log('bxLoadTasksByIds: загрузка ' + taskIds.length + ' задач по ID');
+
+  /* Используем batch для эффективности: до 50 задач за один запрос */
+  var cmdMap = {};
+  taskIds.forEach(function(tid, idx) {
+    cmdMap['t' + idx] = 'tasks.task.list?filter[ID]=' + tid + '&select[]=ID&select[]=TITLE&select[]=GROUP_ID&select[]=STATUS&select[]=RESPONSIBLE_ID&select[]=CREATED_DATE&select[]=CLOSED_DATE';
+  });
+
+  return bxBatchCall(cmdMap).then(function(results) {
+    var allTasks = [];
+    Object.keys(results).forEach(function(key) {
+      var data = results[key];
+      var tasks = [];
+      if (data && data.tasks && Array.isArray(data.tasks)) {
+        tasks = data.tasks;
+      } else if (data && data.result && data.result.tasks && Array.isArray(data.result.tasks)) {
+        tasks = data.result.tasks;
+      } else if (Array.isArray(data)) {
+        tasks = data;
+      }
+      allTasks = allTasks.concat(tasks);
+    });
+    console.log('bxLoadTasksByIds: загружено ' + allTasks.length + ' задач');
+    return allTasks;
+  });
 }
 
 /* ─── Помощники периода ─── */
@@ -304,89 +883,6 @@ function prGetMonthRange(year, month) {
 
 function prGetPeriodKey(year, month) {
   return year + '-' + String(month).padStart(2, '0');
-}
-
-/* ─── Исключённые разработчики (не участвуют в расчётах) ─── */
-var EXCLUDED_DEV_IDS = { '80': true, '94': true, '96': true };
-
-/* ─── Активные разработчики (все кроме исключённых) ─── */
-var ACTIVE_DEV_IDS = DEV_IDS.filter(function(id) { return !EXCLUDED_DEV_IDS[String(id)]; });
-
-/* ─── Клиентские ставки (р/ч) — доход от клиента за час работы разработчика ─── */
-var DEV_CLIENT_RATES = {
-  '1':   1500,
-  '18':  1500,
-  '38':  1500,
-  '54':  1500,
-  '82':  1500,
-  '92':  1500,
-  '98':  1500,
-  '116': 0   /* Предеин: клиентская ставка 0 (ставка по задачам = 0) */
-};
-
-/* ─── Штрафы разработчиков ─── */
-var DEV_FINES = {};
-
-/* ─── Комментарии к штрафам ─── */
-var DEV_FINE_COMMENTS = {};
-
-/* ─── Доп. доход проектов (сервисное обслуживание) ─── */
-var PROJECT_SERVICE_INCOME = {};
-
-/* ─── Заметки к доп. доходу проектов ─── */
-var PROJECT_SERVICE_NOTES = {};
-
-/* ─── Клиентские ставки по проектам (переопределение) ─── */
-var PROJECT_CLIENT_RATES = {};
-
-/* ─── Whitelist проектов (только эти показывать в Projects tab) ─── */
-var PR_WHITELIST_PROJECTS = {
-  '6':  'Бигап',
-  '20': 'ВДЛ',
-  '32': 'Дакар',
-  '36': 'Медицина КЗ',
-  '78': 'Backlog',
-  '82': 'ЮРИСТЫ БИГАП',
-  '66': 'ИП Иванов',
-  '4':  'Живое пиво',
-  '50': 'ИП Белолапотко',
-  '62': 'Нейс-Юг',
-  '72': 'Керамика Фабрика',
-  '18': 'Самокаты центр',
-  '70': 'МАРКДЖЕТ',
-  '76': '1с Разработка',
-  '80': 'Все проекты'
-};
-
-/* ─── Помощники для ставок/штрафов ─── */
-function prGetClientRate(devId) {
-  var saved = prLoadDevSettings(devId);
-  if (saved && saved.clientRate !== undefined && saved.clientRate !== null) return saved.clientRate;
-  return DEV_CLIENT_RATES[String(devId)] !== undefined ? DEV_CLIENT_RATES[String(devId)] : prGetRate(devId);
-}
-
-function prGetFine(devId) {
-  var saved = prLoadDevSettings(devId);
-  if (saved && saved.fine !== undefined && saved.fine !== null) return saved.fine;
-  return DEV_FINES[String(devId)] || 0;
-}
-
-function prGetFineComment(devId) {
-  var saved = prLoadDevSettings(devId);
-  if (saved && saved.fineComment !== undefined && saved.fineComment !== null) return saved.fineComment;
-  return DEV_FINE_COMMENTS[String(devId)] || '';
-}
-
-function prGetProjectServiceIncome(pid) {
-  return PROJECT_SERVICE_INCOME[String(pid)] || 0;
-}
-
-function prGetProjectServiceNote(pid) {
-  return PROJECT_SERVICE_NOTES[String(pid)] || '';
-}
-
-function prGetProjectClientRate(pid) {
-  return PROJECT_CLIENT_RATES[String(pid)] || 0;
 }
 
 /* ─── Глобальное состояние ─── */

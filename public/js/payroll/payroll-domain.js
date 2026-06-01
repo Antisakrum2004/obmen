@@ -598,9 +598,9 @@ function validateTaskReview(review, options) {
     });
   }
 
-  /* Zero rate — warning (rate=0 is allowed, e.g. for internal/non-billable work) */
+  /* Missing rate */
   if (review.rate <= 0 && review.payrollHours > 0) {
-    addValidationWarning(report, 'zero_rate', 'Ставка = 0 при наличии payroll hours — это корректно для внутренних/неоплачиваемых задач', {
+    addValidationError(report, 'missing_rate', 'Ставка не задана при наличии payroll hours', {
       rate: review.rate, payrollHours: review.payrollHours, reviewKey: review._reviewKey
     });
   }

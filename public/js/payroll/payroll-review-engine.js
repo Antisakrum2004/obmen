@@ -239,10 +239,24 @@ function buildReviewRows(data, savedReviews, rateProvider) {
     rows.push(review);
   });
 
-  /* Шаг 5: Фильтр исключённых проектов */
-  var exGroups = _normGetExcludeGroups();
-  rows = rows.filter(function(r) {
-    return !exGroups[String(r.projectId)];
+  /* v7.3.2: Убран фильтр по EXCLUDE_GROUPS — строки НЕ удаляются.
+     Исключение из оплаты обрабатывается через UNPAID_GROUPS ниже (Шаг 5b).
+     Это обеспечивает совпадение Факт часов с дашбордом Bitrix24. */
+
+  /* Шаг 5b: Неоплачиваемые проекты: часы видны, но оплата = 0 */
+  rows.forEach(function(row) {
+    var isUnpaid = (typeof prIsUnpaidGroup === 'function') ? prIsUnpaidGroup(row.projectId) : false;
+    if (isUnpaid) {
+      row.billableHours = 0;
+      row.payrollHours = 0;
+      row.payrollAmount = 0;
+      row.clientRevenue = 0;
+      row.clientRate = 0;
+      row.clientAmount = 0;
+      row.grossMargin = 0;
+      row.marginPercent = 0;
+      row.overburnHours = 0;
+    }
   });
 
   /* Шаг 6: Сортировка */

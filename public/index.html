@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Зарплатный обзор — 1С-АйтиЛаб</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0B0F17;--bg1:#111827;--bg2:#151C2C;--bg3:#1E293B;--bg-hover:#192236;--border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.10);--border-accent:rgba(59,130,246,.35);--text:#F3F7FF;--text2:#A1AEC3;--text3:#6B7A90;--accent:#4f8bff;--accent-hover:#60A5FA;--green:#22d47e;--red:#ff4f6a;--yellow:#f5a623;--cyan:#00d4ff;--orange:#ff8c42;--mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;--glass:rgba(11,15,23,.88);--glass-border:rgba(148,163,184,.08);--shadow-card:0 2px 8px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.22);--shadow-card-hover:0 4px 12px rgba(0,0,0,.22),0 12px 32px rgba(0,0,0,.30);--shadow-btn:0 1px 3px rgba(0,0,0,.20),0 2px 8px rgba(0,0,0,.15);--shadow-btn-hover:0 2px 6px rgba(0,0,0,.25),0 4px 12px rgba(0,0,0,.20);--highlight:inset 0 1px 0 rgba(255,255,255,.05);--highlight-strong:inset 0 1px 0 rgba(255,255,255,.07);--radius:12px}
@@ -20,8 +21,10 @@ body>*{position:relative;z-index:1}
 .bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:glow 2s infinite}
 @keyframes glow{0%,100%{box-shadow:0 0 8px var(--accent)}50%{box-shadow:0 0 20px var(--accent)}}
 .topbar-r{display:flex;align-items:center;gap:8px}
-.refresh-btn{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:6px;cursor:pointer;border:1px solid rgba(34,212,126,.3);background:rgba(34,212,126,.08);color:var(--green);transition:all .15s;user-select:none}
-.refresh-btn:hover{background:rgba(34,212,126,.15);border-color:rgba(34,212,126,.5)}
+.mode-toggle{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg2);transition:all .15s;user-select:none}
+.mode-toggle:hover{border-color:var(--border2)}
+.mode-toggle.mock{color:var(--yellow);border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.08)}
+.mode-toggle.live{color:var(--green);border-color:rgba(34,212,126,.3);background:rgba(34,212,126,.08)}
 .tabs{display:flex;gap:4px}
 .tab-btn{padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text3);background:rgba(18,21,31,.6);border:1px solid var(--glass-border);border-radius:8px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;transition:all .15s;box-shadow:var(--shadow-btn),var(--highlight)}
 .tab-btn:hover{color:var(--text2);border-color:var(--border2);transform:translateY(-1px)}
@@ -51,12 +54,14 @@ body>*{position:relative;z-index:1}
     <span class="version" id="appVersion"></span>
   </div>
   <div class="topbar-r">
-    <div class="refresh-btn" onclick="refreshData()">&#8635; Данные</div>
+    <div class="mode-toggle" id="modeToggle" onclick="toggleMockMode()">
+      <span id="modeLabel">МОК</span>
+    </div>
     <div class="tabs">
       <button class="tab-btn active" id="tabBtn0" onclick="switchTab(0)">Обзор</button>
       <button class="tab-btn" id="tabBtn1" onclick="switchTab(1)">План</button>
     </div>
-    <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot hide" id="gd"></span></button>
+    <button class="gear" id="gear" onclick="toggleS()">&#9881;<span class="gdot" id="gd"></span></button>
   </div>
 </div>
 
@@ -70,7 +75,8 @@ body>*{position:relative;z-index:1}
     <button class="bsave" onclick="saveH()">Сохранить</button>
   </div>
   <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--text3)">
-    Вебхук зашит по умолчанию. Данные загружаются напрямую из Bitrix24.
+    Вебхук зашит по умолчанию. Нажмите МОК/ЖИВОЙ для переключения режима данных.
+    В режиме МОК — тестовые данные, в ЖИВОЙ — реальные из Bitrix24.
   </div>
 </div>
 
@@ -84,22 +90,23 @@ body>*{position:relative;z-index:1}
   </div>
 </div>
 
-<!-- Скрипты (v=7.2.1 cache bust) -->
-<script src="js/core.js?v=7.2.1"></script>
-<script src="js/data-loader.js?v=7.2.1"></script>
-<!-- Domain layer (must load before engine/projection) -->
-<script src="js/payroll/payroll-domain.js?v=7.2.1"></script>
-<script src="js/payroll/payroll-normalizer.js?v=7.2.1"></script>
-<script src="js/payroll/payroll-cache.js?v=7.2.1"></script>
-<script src="js/payroll/payroll-storage.js?v=7.2.1"></script>
-<script src="js/payroll/payroll-projection.js?v=7.3.0"></script>
-<script src="js/payroll/payroll-review-engine.js?v=7.2.1"></script>
-<script src="js/payroll/payroll-export.js?v=7.2.1"></script>
-<!-- Legacy root files -->
-<script src="js/payroll-review-storage.js?v=7.2.1"></script>
-<script src="js/payroll-review-styles.js?v=7.2.1"></script>
-<script src="js/tab-payroll-review.js?v=7.3.0"></script>
-<script src="js/tab-plan.js?v=7.3.0"></script>
+<!-- Скрипты: cache layer (v8.0.0 TRUE ELAPSED-FIRST) -->
+<script src="js/payroll/payroll-cache.js?v=8.5.0"></script>
+
+<!-- Скрипты: доменные модули (v2.0.0 hardening) -->
+<script src="js/payroll/payroll-domain.js?v=8.5.0"></script>
+<script src="js/payroll/payroll-normalizer.js?v=8.5.0"></script>
+<script src="js/payroll/payroll-review-engine.js?v=8.5.0"></script>
+<script src="js/payroll/payroll-projection.js?v=8.5.0"></script>
+<script src="js/payroll/payroll-storage.js?v=8.5.0"></script>
+<script src="js/payroll/payroll-export.js?v=8.5.0"></script>
+
+<!-- Скрипты: core + mock (DEPRECATED legacy calc/storage/export REMOVED) -->
+<script src="js/core.js?v=8.5.0"></script>
+<script src="js/mock-data.js?v=8.5.0"></script>
+<script src="js/payroll-review-styles.js?v=8.5.0"></script>
+<script src="js/tab-payroll-review.js?v=8.5.0"></script>
+<script src="js/tab-plan.js?v=8.5.0"></script>
 
 <script>
 function switchTab(t) {
@@ -126,8 +133,23 @@ function toggleS() {
   gear.classList.toggle('active');
 }
 
-function refreshData() {
+function toggleMockMode() {
+  PR_MOCK_MODE = !PR_MOCK_MODE;
+  PR_FORCE_MOCK = PR_MOCK_MODE;
+  updateModeUI();
   if (window.TabPayrollReview) window.TabPayrollReview.refresh();
+}
+
+function updateModeUI() {
+  var toggle = document.getElementById('modeToggle');
+  var label = document.getElementById('modeLabel');
+  if (PR_MOCK_MODE) {
+    toggle.className = 'mode-toggle mock';
+    label.textContent = 'МОК';
+  } else {
+    toggle.className = 'mode-toggle live';
+    label.textContent = 'ЖИВОЙ';
+  }
 }
 
 function saveH() {
@@ -137,7 +159,13 @@ function saveH() {
     return;
   }
   HOOK = v.endsWith('/') ? v : v + '/';
-  try { localStorage.setItem('bx_hook', HOOK); } catch(e) {}
+  /* Сохраняем через PayrollStorage — единая точка доступа */
+  if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveHook) {
+    PayrollStorage.saveHook(HOOK);
+  }
+  PR_MOCK_MODE = false;
+  PR_FORCE_MOCK = false;
+  updateModeUI();
   toggleS();
   if (window.TabPayrollReview) window.TabPayrollReview.refresh();
 }
@@ -149,6 +177,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (HOOK) {
     document.getElementById('hi').value = HOOK;
   }
+
+  updateModeUI();
 
   if (window.TabPayrollReview) {
     window.TabPayrollReview.render(document.getElementById('pr-container'));

@@ -19,9 +19,9 @@
 /* ─── Конфигурация нормализации ─── */
 var PR_NORM_CONFIG = {
   minSeconds: 60,          /* Минимум 1 минута — меньше отбрасываем */
-  maxSeconds: 0,           /* 0 = без лимита (Bitrix24 позволяет списывать > 24ч за раз) */
-  maxHoursPerEntry: 0,     /* 0 = без лимита */
-  maxHoursPerTaskPerDev: 0, /* 0 = без лимита */
+  maxSeconds: 86400,       /* Максимум 24 часа — больше подозрительно */
+  maxHoursPerEntry: 12,    /* Максимум часов на одну запись elapsed */
+  maxHoursPerTaskPerDev: 200, /* Максимум часов на задачу на разработчика за месяц */
   allowedDevIds: null,     /* null = использовать DEV_IDS из core.js */
   excludeGroups: null,     /* null = использовать EXCLUDE_GROUPS из core.js */
   timezoneOffset: null     /* null = автоопределение */
@@ -42,13 +42,8 @@ function _normGetDevIds() {
  * @returns {Object}
  */
 function _normGetExcludeGroups() {
-  /* v6.6.0: Приоритет — override из core.js (пустой = не исключать) */
-  if (typeof PR_NORM_CONFIG_OVERRIDE !== 'undefined' && PR_NORM_CONFIG_OVERRIDE.excludeGroups) {
-    return PR_NORM_CONFIG_OVERRIDE.excludeGroups;
-  }
   if (PR_NORM_CONFIG.excludeGroups) return PR_NORM_CONFIG.excludeGroups;
-  /* ⚠️ Внимание: даже если EXCLUDE_GROUPS задан, НЕ используем его
-     для фильтрации данных — только для UI. Возвращаем пустой объект. */
+  if (typeof EXCLUDE_GROUPS !== 'undefined') return EXCLUDE_GROUPS;
   return {};
 }
 
@@ -81,7 +76,7 @@ function normalizeElapsedEntry(entry, options) {
 
   /* ── Фильтр по минимуму/максимуму секунд ── */
   if (seconds < PR_NORM_CONFIG.minSeconds) return null;
-  if (PR_NORM_CONFIG.maxSeconds > 0 && seconds > PR_NORM_CONFIG.maxSeconds) {
+  if (seconds > PR_NORM_CONFIG.maxSeconds) {
     /* Обрезаем до максимума, не отбрасываем */
     seconds = PR_NORM_CONFIG.maxSeconds;
   }
@@ -301,8 +296,8 @@ function aggregateFactHours(group) {
 
   var factHours = Math.round(group.totalMinutes / 6) / 10;
 
-  /* Защита от нереалистичных значений (0 = без лимита) */
-  if (PR_NORM_CONFIG.maxHoursPerTaskPerDev > 0 && factHours > PR_NORM_CONFIG.maxHoursPerTaskPerDev) {
+  /* Защита от нереалистичных значений */
+  if (factHours > PR_NORM_CONFIG.maxHoursPerTaskPerDev) {
     factHours = PR_NORM_CONFIG.maxHoursPerTaskPerDev;
   }
 
