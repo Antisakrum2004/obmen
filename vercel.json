@@ -1,6 +1,6 @@
 {
-  "cleanUrls": true,
   "rewrites": [
+    { "source": "/", "destination": "/payroll.html" },
     { "source": "/api/(.*)", "destination": "/api" }
   ],
   "headers": [
