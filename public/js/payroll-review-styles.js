@@ -285,22 +285,25 @@ var PR_CSS = '\
 .pr-admin-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}\
 \
 /* ─── Admin Cards Grid ─── */\
-.pr-admin-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}\
-.pr-admin-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;transition:border-color .2s}\
+.pr-admin-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}\
+.pr-admin-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;transition:border-color .2s,box-shadow .2s}\
 .pr-admin-card:hover{border-color:var(--border2)}\
-.pr-admin-card-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}\
-.pr-admin-card-avatar{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--bg3);border:1px solid var(--glass-border);color:var(--accent);flex-shrink:0}\
-.pr-admin-card-name{font-weight:600;font-size:12px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
-.pr-admin-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}\
-.pr-admin-field{display:flex;flex-direction:column;gap:2px}\
-.pr-admin-field label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}\
+.pr-admin-card-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px}\
+.pr-admin-card-avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--bg3);border:1px solid var(--glass-border);color:var(--accent);flex-shrink:0}\
+.pr-admin-card-name{font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.pr-admin-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}\
+.pr-admin-field{display:flex;flex-direction:column;gap:3px}\
+.pr-admin-field label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}\
 \
 /* ─── Admin Table ─── */\
 .pr-admin-table{width:100%;border-collapse:collapse}\
 .pr-admin-table th{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:8px 6px;text-align:left;border-bottom:1px solid var(--border);background:rgba(18,21,31,.5)}\
 .pr-admin-table td{padding:6px;border-bottom:1px solid var(--border)}\
-.pr-admin-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 8px;outline:none;width:100%;transition:border-color .15s}\
-.pr-admin-input:focus{border-color:var(--accent)}\
+.pr-admin-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:7px 10px;outline:none;width:100%;transition:border-color .15s,background .15s}\
+.pr-admin-input:focus{border-color:var(--accent);background:rgba(79,139,255,.04)}\
+.pr-admin-input::placeholder{color:var(--text3)}\
+.pr-admin-input::-webkit-inner-spin-button,.pr-admin-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}\
+.pr-admin-input[type=number]{-moz-appearance:textfield}\
 \
 /* ─── Project Cards ─── */\
 .pr-project-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;transition:border-color .2s}\

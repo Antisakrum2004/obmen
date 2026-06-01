@@ -94,12 +94,12 @@ function _prRenderAdminBody() {
       h += '<button class="pr-btn pr-btn-green" style="font-size:9px;padding:2px 6px" onclick="_prOpenDevDetail(\'' + sid + '\')">&#8594; Детали</button>';
       h += '</div>';
       h += '<div class="pr-admin-card-fields">';
-      h += '<div class="pr-admin-field"><label>Ставка</label><input class="pr-admin-input" type="number" step="100" min="0" value="' + rate + '" data-devid="' + sid + '" data-field="rate"></div>';
-      h += '<div class="pr-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="pr-admin-input" type="number" step="100" min="0" value="' + clientRate + '" data-devid="' + sid + '" data-field="clientRate" style="color:var(--cyan)"></div>';
+      h += '<div class="pr-admin-field"><label>Ставка (р/ч)</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + rate + '" data-devid="' + sid + '" data-field="rate" onfocus="this.select()"></div>';
+      h += '<div class="pr-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + clientRate + '" data-devid="' + sid + '" data-field="clientRate" style="color:var(--cyan)" onfocus="this.select()"></div>';
       var fineComment = (typeof prGetFineComment === 'function') ? prGetFineComment(sid) : '';
-      h += '<div class="pr-admin-field"><label>ЗП/Бонус</label><input class="pr-admin-input" type="number" step="1000" min="0" value="' + base + '" data-devid="' + sid + '" data-field="base"></div>';
-      h += '<div class="pr-admin-field"><label style="color:var(--red)">Штраф</label><input class="pr-admin-input" type="number" step="500" min="0" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="color:var(--red)"></div>';
-      h += '<div class="pr-admin-field" style="grid-column:1/-1"><label style="color:var(--yellow)">Коммент. штрафа</label><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" style="color:var(--yellow)" placeholder="Причина штрафа"></div>';
+      h += '<div class="pr-admin-field"><label>ЗП/Бонус</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + base + '" data-devid="' + sid + '" data-field="base" onfocus="this.select()"></div>';
+      h += '<div class="pr-admin-field"><label style="color:var(--red)">Штраф</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + fine + '" data-devid="' + sid + '" data-field="fine" style="color:var(--red)" onfocus="this.select()"></div>';
+      h += '<div class="pr-admin-field" style="grid-column:1/-1"><label style="color:var(--yellow)">Коммент. штрафа</label><input class="pr-admin-input" type="text" value="' + esc(fineComment) + '" data-devid="' + sid + '" data-field="fineComment" style="color:var(--yellow)" placeholder="Причина штрафа" onfocus="this.select()"></div>';
       h += '</div>';
       h += '</div>';
     });
@@ -123,8 +123,8 @@ function _prRenderAdminBody() {
       h += '</div>';
       h += '<div class="pr-project-card-fields">';
       var pClientRate = (typeof prGetProjectClientRate === 'function') ? prGetProjectClientRate(pid) : (typeof prGetClientRate === 'function' ? prGetClientRate(pid) : 0);
-      h += '<div class="pr-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="pr-admin-input" type="number" step="100" min="0" value="' + pClientRate + '" data-pid="' + pid + '" data-field="clientRate" style="color:var(--cyan)"></div>';
-      h += '<div class="pr-admin-field"><label>Допы (доход/мес)</label><input class="pr-admin-input" type="number" step="1000" min="0" value="' + serviceIncome + '" data-pid="' + pid + '" data-field="serviceIncome"></div>';
+      h += '<div class="pr-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + pClientRate + '" data-pid="' + pid + '" data-field="clientRate" style="color:var(--cyan)" onfocus="this.select()"></div>';
+      h += '<div class="pr-admin-field"><label>Допы (доход/мес)</label><input class="pr-admin-input" type="text" inputmode="numeric" value="' + serviceIncome + '" data-pid="' + pid + '" data-field="serviceIncome" onfocus="this.select()"></div>';
       h += '</div>';
       h += '</div>';
     });
@@ -155,10 +155,10 @@ function _prRenderDevDetailSubmodal() {
   var h = '<div class="pr-admin-submodal">';
   h += '<div class="pr-admin-submodal-inner">';
   h += '<div class="pr-admin-submodal-title">' + esc(dName) + ' — детали</div>';
-  h += '<div class="pr-admin-field"><label>ИНН</label><input class="pr-admin-input" type="text" value="' + esc(dInn) + '" data-devid="' + devId + '" data-field="inn" placeholder="ИНН"></div>';
-  h += '<div class="pr-admin-field"><label>ФИО (полное)</label><input class="pr-admin-input" type="text" value="' + esc(dName) + '" data-devid="' + devId + '" data-field="name"></div>';
-  h += '<div class="pr-admin-field"><label>Самозанятый</label><input class="pr-admin-input" type="text" value="' + esc(dSelfEmployed) + '" data-devid="' + devId + '" data-field="selfEmployed" placeholder="Номер/статус"></div>';
-  h += '<div class="pr-admin-field"><label>Заметки</label><input class="pr-admin-input" type="text" value="' + esc(dNotes) + '" data-devid="' + devId + '" data-field="notes" placeholder="Заметки"></div>';
+  h += '<div class="pr-admin-field"><label>ИНН</label><input class="pr-admin-input" type="text" value="' + esc(dInn) + '" data-devid="' + devId + '" data-field="inn" placeholder="ИНН" onfocus="this.select()"></div>';
+  h += '<div class="pr-admin-field"><label>ФИО (полное)</label><input class="pr-admin-input" type="text" value="' + esc(dName) + '" data-devid="' + devId + '" data-field="name" onfocus="this.select()"></div>';
+  h += '<div class="pr-admin-field"><label>Самозанятый</label><input class="pr-admin-input" type="text" value="' + esc(dSelfEmployed) + '" data-devid="' + devId + '" data-field="selfEmployed" placeholder="Номер/статус" onfocus="this.select()"></div>';
+  h += '<div class="pr-admin-field"><label>Заметки</label><input class="pr-admin-input" type="text" value="' + esc(dNotes) + '" data-devid="' + devId + '" data-field="notes" placeholder="Заметки" onfocus="this.select()"></div>';
   h += '<div style="display:flex;gap:8px;margin-top:10px">';
   h += '<button class="pr-btn pr-btn-ghost" onclick="_prCloseDevDetail()">Назад</button>';
   h += '<button class="pr-btn pr-btn-primary" onclick="_prCloseDevDetail();_prSaveAdmin()">Сохранить</button>';
@@ -263,7 +263,8 @@ function _prSaveAdmin() {
     if (d.name) settings.name = d.name;
     if (d.inn !== undefined) settings.inn = d.inn;
     if (d.rate !== undefined) {
-      var newRate = (d.rate !== '' && d.rate !== undefined && d.rate !== null) ? parseInt(d.rate) : СТАВКА_ПО_УМОЛЧ;
+      var rawRate = String(d.rate).replace(/[^\d.,]/g, '').replace(',', '.');
+      var newRate = (rawRate !== '' && rawRate !== undefined && rawRate !== null) ? parseInt(rawRate) : СТАВКА_ПО_УМОЛЧ;
       if (isNaN(newRate)) newRate = СТАВКА_ПО_УМОЛЧ;
       if (newRate !== settings.rate) {
         auditEntries.push(createAuditEntry('change_rate', 'developer', devId, {
@@ -275,7 +276,7 @@ function _prSaveAdmin() {
       settings.rate = newRate;
     }
     if (d.base !== undefined) {
-      var newBase = parseInt(d.base) || 0;
+      var newBase = parseInt(String(d.base).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
       if (newBase !== settings.base) {
         auditEntries.push(createAuditEntry('change_base', 'developer', devId, {
           oldBase: settings.base || 0,
@@ -286,7 +287,7 @@ function _prSaveAdmin() {
       settings.base = newBase;
     }
     if (d.fine !== undefined) {
-      var newFine = parseInt(d.fine) || 0;
+      var newFine = parseInt(String(d.fine).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
       if (newFine !== (settings.fine || 0)) {
         auditEntries.push(createAuditEntry('change_fine', 'developer', devId, {
           oldFine: settings.fine || 0,
@@ -301,7 +302,8 @@ function _prSaveAdmin() {
       settings.fineComment = d.fineComment;
     }
     if (d.clientRate !== undefined) {
-      var newClientRate = (d.clientRate !== '' && d.clientRate !== undefined && d.clientRate !== null) ? parseInt(d.clientRate) : 0;
+      var rawCR = String(d.clientRate).replace(/[^\d.,]/g, '').replace(',', '.');
+      var newClientRate = (rawCR !== '' && rawCR !== undefined && rawCR !== null) ? parseInt(rawCR) : 0;
       if (isNaN(newClientRate)) newClientRate = 0;
       if (newClientRate !== (settings.clientRate !== undefined ? settings.clientRate : 0)) {
         auditEntries.push(createAuditEntry('change_client_rate', 'developer', devId, {
@@ -328,7 +330,7 @@ function _prSaveAdmin() {
   Object.keys(projData).forEach(function(pid) {
     var p = projData[pid];
     if (p.serviceIncome !== undefined || p.serviceNote !== undefined) {
-      var svcAmount = p.serviceIncome !== undefined ? (parseInt(p.serviceIncome) || 0) : (typeof prGetProjectServiceIncome === 'function' ? prGetProjectServiceIncome(pid) : 0);
+      var svcAmount = p.serviceIncome !== undefined ? (parseInt(String(p.serviceIncome).replace(/[^\d.,]/g, '').replace(',', '.')) || 0) : (typeof prGetProjectServiceIncome === 'function' ? prGetProjectServiceIncome(pid) : 0);
       var svcNote = p.serviceNote || '';
       if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveProjectServiceIncome) {
         PayrollStorage.saveProjectServiceIncome(pid, svcAmount, svcNote);
@@ -339,7 +341,7 @@ function _prSaveAdmin() {
       }
     }
     if (p.clientRate !== undefined) {
-      var newProjClientRate = parseInt(p.clientRate) || 0;
+      var newProjClientRate = parseInt(String(p.clientRate).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
       if (typeof PayrollStorage !== 'undefined' && PayrollStorage.saveProjectClientRate) {
         PayrollStorage.saveProjectClientRate(pid, newProjClientRate);
       } else if (typeof PROJECT_CLIENT_RATES !== 'undefined') {
