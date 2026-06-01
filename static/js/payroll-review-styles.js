@@ -403,4 +403,21 @@ var PLAN_CSS = '\
 .modal-body{padding:20px;overflow-y:auto;flex:1}\
 .modal-footer{display:flex;justify-content:space-between;gap:8px;padding:16px 20px;border-top:1px solid var(--border);align-items:center}\
 @media(max-width:600px){.plan-summary-grid{grid-template-columns:1fr 1fr}.plan-doc-header{padding:12px 14px}.plan-actions{gap:4px}.plan-btn{font-size:9px;padding:5px 10px}.plan-dev-select{min-width:140px}}\
+\
+/* ─── Plan Admin Cards ─── */\
+.plan-admin-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}\
+.plan-admin-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;transition:border-color .2s,box-shadow .2s}\
+.plan-admin-card:hover{border-color:var(--border2)}\
+.plan-admin-card-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px}\
+.plan-admin-card-avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--bg3);border:1px solid var(--glass-border);color:var(--accent);flex-shrink:0}\
+.plan-admin-card-name{font-weight:600;font-size:13px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.plan-admin-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}\
+.plan-admin-field{display:flex;flex-direction:column;gap:3px}\
+.plan-admin-field label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}\
+.plan-admin-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:7px 10px;outline:none;width:100%;transition:border-color .15s,background .15s}\
+.plan-admin-input:focus{border-color:var(--accent);background:rgba(79,139,255,.04)}\
+.plan-admin-input::placeholder{color:var(--text3)}\
+/* Hide number spinners — no arrows in fields */\
+.plan-admin-input::-webkit-inner-spin-button,.plan-admin-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}\
+.plan-admin-input[type=number]{-moz-appearance:textfield}\
 ';

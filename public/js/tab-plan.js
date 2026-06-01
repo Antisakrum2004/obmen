@@ -20,10 +20,12 @@ var _plan = {
   dailyMap: {},            /* dateStr -> {plan, fact, tasks[]} */
   billableOverrides: {},   /* taskId -> billable hours (saved overrides) */
   eventLog: [],            /* log of all changes */
-  modalOpen: null,         /* null | 'tasks' | 'taskDetail' */
+  modalOpen: null,         /* null | 'tasks' | 'taskDetail' | 'admin' */
   modalDate: '',           /* date for tasks modal */
   modalTaskId: '',         /* taskId for detail modal */
-  loading: false
+  loading: false,
+  adminSaveMsg: null,      /* flash message after save */
+  adminChangedDevs: {}     /* devId -> true for green highlight */
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -234,6 +236,7 @@ function _planRenderAll() {
   /* Modals rendered outside main flow */
   h += _planRenderTasksModal();
   h += _planRenderTaskDetailModal();
+  h += _planRenderAdminModal();
   _plan.container.innerHTML = h;
   _planAttachKeys();
 }
@@ -272,6 +275,7 @@ function _planRenderHeader() {
   h += '</select>';
 
   h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
+  h += '<button class="plan-btn plan-btn-yellow" onclick="_planOpenAdmin()">&#9881; Админка</button>';
   h += '</div>';
 
   /* Info line */
@@ -581,11 +585,167 @@ function _planOnBillableChange(el) {
   _planRenderAll();
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   АДМИНКА ПЛАНА — Настройка ставок разработчиков
+   ═══════════════════════════════════════════════════════════════ */
+
+function _planOpenAdmin() {
+  _plan.modalOpen = 'admin';
+  _plan.adminSaveMsg = null;
+  _plan.adminChangedDevs = {};
+  _planRenderAll();
+}
+
+function _planCloseAdmin(e) {
+  if (e && e.target && !e.target.classList.contains('pr-modal-overlay')) return;
+  _plan.modalOpen = null;
+  _plan.adminSaveMsg = null;
+  _plan.adminChangedDevs = {};
+  _planRenderAll();
+}
+
+function _planRenderAdminModal() {
+  if (_plan.modalOpen !== 'admin') return '';
+
+  var h = '<div class="pr-modal-overlay" onclick="_planCloseAdmin(event)">';
+  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:960px">';
+
+  /* Header */
+  h += '<div class="pr-modal-header">';
+  h += '<span class="pr-modal-title">&#9881; Настройка ставок — План-факт</span>';
+  h += '<button class="pr-modal-close" onclick="_planCloseAdmin()">&times;</button>';
+  h += '</div>';
+
+  /* Body */
+  h += '<div class="pr-modal-body" id="planAdminBody">';
+  h += _planRenderAdminBody();
+  h += '</div>';
+
+  /* Footer */
+  h += '<div class="pr-modal-footer">';
+  if (_plan.adminSaveMsg) {
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-right:auto;padding:6px 12px;background:rgba(34,212,126,.12);border:1px solid rgba(34,212,126,.3);border-radius:6px">';
+    h += '<span style="color:var(--green);font-size:14px">&#10003;</span>';
+    h += '<span style="font-family:var(--mono);font-size:11px;color:var(--green);font-weight:600">' + esc(_plan.adminSaveMsg) + '</span>';
+    h += '</div>';
+  }
+  h += '<button class="plan-btn plan-btn-ghost" onclick="_planCloseAdmin()">Отмена</button>';
+  h += '<button class="plan-btn plan-btn-green" onclick="_planSavePlanAdmin()">Сохранить</button>';
+  h += '</div>';
+
+  h += '</div></div>';
+  return h;
+}
+
+function _planRenderAdminBody() {
+  var h = '';
+  h += '<div style="margin-bottom:14px;font-family:var(--mono);font-size:11px;color:var(--text3)">Ставки используются для расчёта Плана (8ч × ставка) и Факта (часы_выставл. × ставка) во вкладке План-факт</div>';
+  h += '<div class="plan-admin-cards-grid">';
+
+  var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : (typeof DEV_IDS !== 'undefined' ? DEV_IDS : []);
+  activeIds.forEach(function(id) {
+    var sid = String(id);
+    var name = prGetDevName(sid);
+    var rate = prGetRate(sid);
+    var clientRate = (typeof prGetClientRate === 'function') ? prGetClientRate(sid) : 0;
+    var isChanged = _plan.adminChangedDevs[sid];
+    var initials = name.split(' ').map(function(w) { return w.charAt(0); }).join('').substring(0, 2);
+    var cardBorder = isChanged ? 'border-color:var(--green);box-shadow:0 0 8px rgba(34,212,126,.2)' : '';
+
+    h += '<div class="plan-admin-card" style="' + cardBorder + '">';
+    h += '<div class="plan-admin-card-hdr">';
+    h += '<div class="plan-admin-card-avatar">' + esc(initials) + '</div>';
+    h += '<div class="plan-admin-card-name">' + esc(name) + '</div>';
+    h += '</div>';
+    h += '<div class="plan-admin-card-fields">';
+    h += '<div class="plan-admin-field"><label>Ставка (р/ч)</label><input class="plan-admin-input" type="text" inputmode="numeric" value="' + rate + '" data-devid="' + sid + '" data-field="rate" onfocus="this.select()"></div>';
+    h += '<div class="plan-admin-field"><label style="color:var(--cyan)">Ставка клиента</label><input class="plan-admin-input" type="text" inputmode="numeric" value="' + clientRate + '" data-devid="' + sid + '" data-field="clientRate" style="color:var(--cyan)" onfocus="this.select()"></div>';
+    h += '</div>';
+    h += '</div>';
+  });
+
+  h += '</div>';
+  return h;
+}
+
+function _planSavePlanAdmin() {
+  var inputs = document.querySelectorAll('.plan-admin-input');
+  var changedDevs = [];
+
+  inputs.forEach(function(inp) {
+    var devId = inp.getAttribute('data-devid');
+    var field = inp.getAttribute('data-field');
+    if (!devId || !field) return;
+
+    var raw = inp.value.replace(/[^\d.,]/g, '').replace(',', '.');
+    var val = parseInt(raw) || 0;
+
+    var settings = (typeof _prLoadDevSettings === 'function') ? _prLoadDevSettings(devId) : {};
+    if (!settings) settings = {};
+
+    if (field === 'rate') {
+      var defaultRate = (typeof СТАВКА_ПО_УМОЛЧ !== 'undefined') ? СТАВКА_ПО_УМОЛЧ : 500;
+      var newRate = val > 0 ? val : defaultRate;
+      if (newRate !== (settings.rate || defaultRate)) {
+        settings.rate = newRate;
+        changedDevs.push(devId);
+      }
+    }
+    if (field === 'clientRate') {
+      var newCR = val > 0 ? val : 0;
+      if (newCR !== (settings.clientRate || 0)) {
+        settings.clientRate = newCR;
+        changedDevs.push(devId);
+      }
+    }
+
+    if (typeof _prSaveDevSettings === 'function') {
+      _prSaveDevSettings(devId, settings);
+    }
+  });
+
+  /* Update cards behind the modal if _pr is active */
+  if (changedDevs.length > 0 && typeof _pr !== 'undefined' && _pr.rows) {
+    var devSet = {};
+    changedDevs.forEach(function(id) { devSet[String(id)] = true; });
+    _pr.rows.forEach(function(r) {
+      if (devSet[String(r.developerId)]) {
+        r.rate = prGetRate(r.developerId);
+        r.clientRate = prGetClientRate(r.developerId);
+        r.base = prGetBase(r.developerId);
+        r.payrollAmount = Math.round((r.payrollHours || 0) * r.rate);
+      }
+    });
+  }
+
+  /* Show success */
+  _plan.adminChangedDevs = {};
+  changedDevs.forEach(function(id) { _plan.adminChangedDevs[String(id)] = true; });
+  _plan.adminSaveMsg = changedDevs.length > 0
+    ? 'Ставки обновлены: ' + changedDevs.map(function(id) { return prGetDevName(id); }).join(', ')
+    : 'Без изменений';
+
+  _planLogEvent('Админка: ставки', _plan.adminSaveMsg);
+
+  /* Rebuild daily map with new rates */
+  _planBuildDailyMap();
+
+  /* Partial render of admin body + footer */
+  var body = document.getElementById('planAdminBody');
+  if (body) body.innerHTML = _planRenderAdminBody();
+
+  /* Re-render the main table area too */
+  _planRenderAll();
+}
+
 /* ─── Keyboard: Esc closes modals ─── */
 function _planAttachKeys() {
   document.onkeydown = function(e) {
     if (e.key === 'Escape') {
-      if (_plan.modalOpen === 'taskDetail') {
+      if (_plan.modalOpen === 'admin') {
+        _planCloseAdmin();
+        e.preventDefault();
+      } else if (_plan.modalOpen === 'taskDetail') {
         _planCloseTaskDetail();
         e.preventDefault();
       } else if (_plan.modalOpen === 'tasks') {
