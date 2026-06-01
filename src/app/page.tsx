@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 export default function PayrollReviewRedirect() {
   useEffect(() => {
     // Редирект на статический HTML с зарплатным обзором
-    window.location.replace('/index.html');
+    window.location.replace('/payroll.html');
   }, []);
 
   return (

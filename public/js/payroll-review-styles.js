@@ -359,7 +359,7 @@ var PLAN_CSS = '\
 .plan-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2);box-shadow:var(--shadow-card),var(--highlight)}\
 .plan-table-wrap::-webkit-scrollbar{height:5px}\
 .plan-table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}\
-.plan-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:700px}\
+.plan-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:600px}\
 .plan-table th{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:10px 10px;text-align:left;border-bottom:1px solid var(--glass-border);background:rgba(18,21,31,.5);white-space:nowrap;user-select:none;position:sticky;top:0;z-index:2}\
 .plan-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;font-family:var(--mono)}\
 .plan-table tbody tr{transition:background .15s}\
@@ -377,6 +377,10 @@ var PLAN_CSS = '\
 .plan-edit{background:rgba(18,21,31,.6);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 8px;outline:none;width:80px;text-align:right;transition:border-color .15s,background .15s}\
 .plan-edit:focus{border-color:var(--accent);background:rgba(79,139,255,.06)}\
 .plan-edit.changed{border-color:var(--yellow);background:rgba(245,166,35,.06)}\
+.cell-comment{padding:4px 6px!important}\
+.plan-comment-input{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:11px;padding:5px 8px;outline:none;width:100%;transition:border-color .15s,background .15s}\
+.plan-comment-input:focus{border-color:var(--accent);background:rgba(79,139,255,.04)}\
+.plan-comment-input::placeholder{color:var(--text3);font-style:italic}\
 .plan-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}\
 .plan-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--text3);font-family:var(--mono);font-size:12px}\
 .plan-task-row:hover{background:rgba(79,139,255,.06)!important}\

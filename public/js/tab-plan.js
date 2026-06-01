@@ -19,6 +19,7 @@ var _plan = {
   selectedDevId: '',       /* current developer ID */
   dailyMap: {},            /* dateStr -> {plan, fact, tasks[]} */
   billableOverrides: {},   /* taskId -> billable hours (saved overrides) */
+  dayComments: {},         /* dateStr -> comment text */
   eventLog: [],            /* log of all changes */
   modalOpen: null,         /* null | 'tasks' | 'taskDetail' | 'admin' */
   modalDate: '',           /* date for tasks modal */
@@ -41,6 +42,7 @@ window.TabPlan = {
       document.head.appendChild(_plan.styleEl);
     }
     _planLoadOverrides();
+    _planLoadComments();
     _planLoadEventLog();
     _planLoadData();
   },
@@ -77,6 +79,23 @@ function _planLoadOverrides() {
 function _planSaveOverrides() {
   try {
     localStorage.setItem(_planStorageKey(), JSON.stringify(_plan.billableOverrides));
+  } catch(e) {}
+}
+
+function _planCommentsKey() {
+  return 'pr_plan_cmt_' + prCurrentPeriod.year + '_' + String(prCurrentPeriod.month).padStart(2, '0');
+}
+
+function _planLoadComments() {
+  try {
+    var raw = localStorage.getItem(_planCommentsKey());
+    _plan.dayComments = raw ? JSON.parse(raw) : {};
+  } catch(e) { _plan.dayComments = {}; }
+}
+
+function _planSaveComments() {
+  try {
+    localStorage.setItem(_planCommentsKey(), JSON.stringify(_plan.dayComments));
   } catch(e) {}
 }
 
@@ -321,14 +340,24 @@ function _planRenderSummary() {
 /* ─── Main table ─── */
 function _planRenderTable() {
   var h = '<div class="plan-table-wrap" style="max-height:520px;overflow-y:auto">';
-  h += '<table class="plan-table">';
+  h += '<table class="plan-table" style="table-layout:fixed">';
+  h += '<colgroup>';
+  h += '<col style="width:30px">';
+  h += '<col style="width:90px">';
+  h += '<col style="width:80px">';
+  h += '<col style="width:80px">';
+  h += '<col style="width:80px">';
+  h += '<col style="width:40px">';
+  h += '<col style="width:40%">';
+  h += '</colgroup>';
   h += '<thead><tr>';
-  h += '<th style="width:40px">N</th>';
-  h += '<th style="width:120px">Дата</th>';
-  h += '<th style="width:120px;text-align:right">План (8ч × ставка)</th>';
-  h += '<th style="width:120px;text-align:right">Факт</th>';
-  h += '<th style="width:100px;text-align:right">Разница</th>';
-  h += '<th style="width:60px;text-align:center">Задач</th>';
+  h += '<th>N</th>';
+  h += '<th>Дата</th>';
+  h += '<th style="text-align:right">План</th>';
+  h += '<th style="text-align:right">Факт</th>';
+  h += '<th style="text-align:right">Разн.</th>';
+  h += '<th style="text-align:center">∑</th>';
+  h += '<th>Комментарий</th>';
   h += '</tr></thead><tbody>';
 
   var idx = 0;
@@ -345,19 +374,19 @@ function _planRenderTable() {
     var wkendCls = day.isWeekend ? ' class="row-weekend"' : '';
     var dayName = _planGetDayName(dateStr);
     var taskCount = day.tasks.length;
+    var comment = _plan.dayComments[dateStr] || '';
 
     totalPlan += day.plan;
     totalFact += day.fact;
 
-    var clickAttr = taskCount > 0 ? ' style="cursor:pointer" onclick="_planOpenTasksModal(\'' + dateStr + '\')"' : '';
-
-    h += '<tr' + wkendCls + clickAttr + '>';
+    h += '<tr' + wkendCls + '>';
     h += '<td class="cell-num">' + idx + '</td>';
-    h += '<td class="cell-date">' + _planFormatDateRu(dateStr) + '<span class="day-name">' + dayName + '</span></td>';
+    h += '<td class="cell-date" style="cursor:pointer" onclick="_planOpenTasksModal(\'' + dateStr + '\')">' + _planFormatDateRu(dateStr) + '<span class="day-name">' + dayName + '</span></td>';
     h += '<td class="cell-money">' + (day.plan > 0 ? _planFmtMoney(day.plan) : '—') + '</td>';
     h += '<td class="cell-money" style="color:var(--green)">' + (day.fact > 0 ? _planFmtMoney(day.fact) : '—') + '</td>';
     h += '<td class="cell-money ' + diffCls + '">' + (day.plan > 0 || day.fact > 0 ? diffPrefix + _planFmtMoney(diff) : '—') + '</td>';
     h += '<td style="text-align:center">' + (taskCount > 0 ? '<span class="plan-task-count">' + taskCount + '</span>' : '—') + '</td>';
+    h += '<td class="cell-comment"><input class="plan-comment-input" type="text" value="' + esc(comment) + '" data-date="' + dateStr + '" onchange="_planOnCommentChange(this)" placeholder="Комментарий..." onclick="event.stopPropagation()" onfocus="this.select()"></td>';
     h += '</tr>';
   });
 
@@ -370,6 +399,7 @@ function _planRenderTable() {
   h += '<td class="cell-money" style="color:var(--accent)">' + _planFmtMoney(totalPlan) + '</td>';
   h += '<td class="cell-money" style="color:var(--green)">' + _planFmtMoney(totalFact) + '</td>';
   h += '<td class="cell-money ' + totalDiffCls + '">' + totalDiffPrefix + _planFmtMoney(totalDiff) + '</td>';
+  h += '<td></td>';
   h += '<td></td>';
   h += '</tr></tfoot></table></div>';
   return h;
@@ -508,6 +538,7 @@ function _planRenderEventLog() {
 function _planOnDevChange(devId) {
   _plan.selectedDevId = String(devId);
   _planLoadOverrides();
+  _planLoadComments();
   _planBuildDailyMap();
   _planLogEvent('Выбор разработчика', prGetDevName(devId));
   _planRenderAll();
@@ -518,6 +549,7 @@ function _planOnPeriodChange(val) {
   prCurrentPeriod.year = parseInt(parts[0]);
   prCurrentPeriod.month = parseInt(parts[1]);
   _planLoadOverrides();
+  _planLoadComments();
   _planLoadEventLog();
   _planLoadData();
 }
@@ -583,6 +615,23 @@ function _planOnBillableChange(el) {
   _planLogEvent('Часы выставл.', taskTitle.substring(0, 40) + ': ' + (oldVal !== undefined ? oldVal : 'факт') + ' → ' + val);
 
   _planRenderAll();
+}
+
+function _planOnCommentChange(el) {
+  var dateStr = el.getAttribute('data-date');
+  var val = el.value.trim();
+  var oldVal = _plan.dayComments[dateStr] || '';
+
+  if (val) {
+    _plan.dayComments[dateStr] = val;
+  } else {
+    delete _plan.dayComments[dateStr];
+  }
+  _planSaveComments();
+
+  if (val !== oldVal) {
+    _planLogEvent('Комментарий', _planFormatDateRu(dateStr) + ': ' + (oldVal || '—') + ' → ' + (val || '—'));
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
