@@ -1,27 +1,29 @@
 /* ═══════════════════════════════════════════════════════════════
-   tab-plan.js — Вкладка ПЛАН (Планирование выработки)
-   v2.0.0 — Полная реализация, интеграция с core.js
+   tab-plan.js — Вкладка ПЛАН (План-факт контроль выработки)
+   v3.0.0 — Реальные данные из Bitrix24, план-факт по разрабам
 
-   Отвечает за:
-   - Ежедневный контроль выработки: План vs Факт
-   - Расчёт отклонений и средней выработки
-   - Админку ставок разработчика/клиента
-   - Сохранение данных в localStorage (через PayrollStorage)
+   Логика:
+   - Выбор разработчика → таблица по дням
+   - План = 8ч × ставка разраба в день
+   - Факт = Σ (часы_к_выставлению × ставка) по задачам дня
+   - Клик на дату → модалка задач
+   - Поле «часы к выставлению» — вручную, по умолчанию = факт часы
+   - Факт пересчитывается по часам выставления, не по фактическим
+   - Все изменения пишутся в лог событий
    ═══════════════════════════════════════════════════════════════ */
 
 var _plan = {
   container: null,
   styleEl: null,
-  rows: [],
-  dirty: false,
-  docNumber: '',
-  docDate: '',
-  period: null,          /* { year, month } */
-  responsible: '',
-  docComment: '',
-  adminOpen: false,
-  _factSum: 0,           /* running sum for average calculation */
-  _factCount: 0          /* running count for average calculation */
+  data: null,              /* raw data from prLoadPeriodData */
+  selectedDevId: '',       /* current developer ID */
+  dailyMap: {},            /* dateStr -> {plan, fact, tasks[]} */
+  billableOverrides: {},   /* taskId -> billable hours (saved overrides) */
+  eventLog: [],            /* log of all changes */
+  modalOpen: null,         /* null | 'tasks' | 'taskDetail' */
+  modalDate: '',           /* date for tasks modal */
+  modalTaskId: '',         /* taskId for detail modal */
+  loading: false
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -31,15 +33,14 @@ window.TabPlan = {
   render: function(container) {
     if (!container) return;
     _plan.container = container;
-    _plan.period = { year: prCurrentPeriod.year, month: prCurrentPeriod.month };
-    /* Подключаем стили если ещё не подключены */
     if (!_plan.styleEl && typeof PLAN_CSS !== 'undefined') {
       _plan.styleEl = document.createElement('style');
       _plan.styleEl.textContent = PLAN_CSS;
       document.head.appendChild(_plan.styleEl);
     }
+    _planLoadOverrides();
+    _planLoadEventLog();
     _planLoadData();
-    _planRenderAll();
   },
   destroy: function() {
     if (_plan.styleEl && _plan.styleEl.parentNode) {
@@ -47,132 +48,171 @@ window.TabPlan = {
       _plan.styleEl = null;
     }
     _plan.container = null;
-    _plan.rows = [];
+    _plan.data = null;
   },
   refresh: function() {
     _planLoadData();
-    _planRenderAll();
   }
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   ДАННЫЕ
+   ХРАНИЛИЩЕ ПЕРЕОПРЕДЕЛЕНИЙ (overrides) и ЛОГА
    ═══════════════════════════════════════════════════════════════ */
 function _planStorageKey() {
-  return 'pr_plan_' + _plan.period.year + '_' + String(_plan.period.month).padStart(2, '0');
+  return 'pr_plan_bill_' + prCurrentPeriod.year + '_' + String(prCurrentPeriod.month).padStart(2, '0');
+}
+function _planLogKey() {
+  return 'pr_plan_log_' + prCurrentPeriod.year + '_' + String(prCurrentPeriod.month).padStart(2, '0');
 }
 
-function _planLoadData() {
-  _plan.period = { year: prCurrentPeriod.year, month: prCurrentPeriod.month };
+function _planLoadOverrides() {
   try {
     var raw = localStorage.getItem(_planStorageKey());
-    if (raw) {
-      var data = JSON.parse(raw);
-      if (data && data._v === 1) {
-        _plan.rows = data.rows || [];
-        _plan.docNumber = data.docNumber || _planGenNumber();
-        _plan.docDate = data.docDate || _planNowStr();
-        _plan.responsible = data.responsible || '';
-        _plan.docComment = data.docComment || '';
-        _plan.dirty = false;
-        return;
-      }
-    }
+    _plan.billableOverrides = raw ? JSON.parse(raw) : {};
+  } catch(e) { _plan.billableOverrides = {}; }
+}
+
+function _planSaveOverrides() {
+  try {
+    localStorage.setItem(_planStorageKey(), JSON.stringify(_plan.billableOverrides));
   } catch(e) {}
-  /* Нет сохранённых данных — генерируем по периоду */
-  _plan.rows = _planGenerateRows();
-  _plan.docNumber = _planGenNumber();
-  _plan.docDate = _planNowStr();
-  _plan.responsible = '';
-  _plan.docComment = '';
-  _plan.dirty = false;
 }
 
-function _planSaveData() {
+function _planLoadEventLog() {
   try {
-    var data = {
-      _v: 1,
-      _ts: Date.now(),
-      rows: _plan.rows,
-      docNumber: _plan.docNumber,
-      docDate: _plan.docDate,
-      responsible: _plan.responsible,
-      docComment: _plan.docComment
-    };
-    localStorage.setItem(_planStorageKey(), JSON.stringify(data));
-    _plan.dirty = false;
-  } catch(e) {
-    console.warn('_planSaveData: ошибка', e);
-  }
+    var raw = localStorage.getItem(_planLogKey());
+    _plan.eventLog = raw ? JSON.parse(raw) : [];
+  } catch(e) { _plan.eventLog = []; }
 }
 
-function _planGenNumber() {
+function _planSaveEventLog() {
   try {
-    var cnt = parseInt(localStorage.getItem('pr_plan_counter') || '0') + 1;
-    localStorage.setItem('pr_plan_counter', String(cnt));
-    return String(cnt).padStart(9, '0');
-  } catch(e) {
-    return '000000001';
-  }
+    /* Keep last 200 entries */
+    if (_plan.eventLog.length > 200) _plan.eventLog = _plan.eventLog.slice(-200);
+    localStorage.setItem(_planLogKey(), JSON.stringify(_plan.eventLog));
+  } catch(e) {}
 }
 
-function _planNowStr() {
-  var d = new Date();
-  return String(d.getDate()).padStart(2, '0') + '.' +
-         String(d.getMonth() + 1).padStart(2, '0') + '.' +
-         d.getFullYear() + ' ' +
-         String(d.getHours()).padStart(2, '0') + ':' +
-         String(d.getMinutes()).padStart(2, '0') + ':' +
-         String(d.getSeconds()).padStart(2, '0');
+function _planLogEvent(action, detail) {
+  _plan.eventLog.push({
+    ts: new Date().toISOString(),
+    dev: _plan.selectedDevId ? prGetDevName(_plan.selectedDevId) : '',
+    action: action,
+    detail: detail
+  });
+  _planSaveEventLog();
 }
 
-/* Генерация строк по рабочим дням периода */
-function _planGenerateRows() {
-  var year = _plan.period.year;
-  var month = _plan.period.month;
+/* ═══════════════════════════════════════════════════════════════
+   ЗАГРУЗКА ДАННЫХ
+   ═══════════════════════════════════════════════════════════════ */
+function _planLoadData() {
+  if (!_plan.container) return;
+  _plan.loading = true;
+  _planRenderAll();
+
+  prLoadPeriodData(prCurrentPeriod.year, prCurrentPeriod.month).then(function(data) {
+    _plan.data = data;
+    _plan.loading = false;
+    /* Auto-select first dev if none selected */
+    if (!_plan.selectedDevId && typeof ACTIVE_DEV_IDS !== 'undefined' && ACTIVE_DEV_IDS.length) {
+      _plan.selectedDevId = String(ACTIVE_DEV_IDS[0]);
+    }
+    _planBuildDailyMap();
+    _planRenderAll();
+  }).catch(function(e) {
+    console.error('_planLoadData error', e);
+    _plan.loading = false;
+    _planRenderAll();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ПОСТРОЕНИЕ КАРТЫ ПО ДНЯМ
+   ═══════════════════════════════════════════════════════════════ */
+function _planBuildDailyMap() {
+  _plan.dailyMap = {};
+  if (!_plan.data || !_plan.selectedDevId) return;
+
+  var devId = _plan.selectedDevId;
+  var rate = prGetRate(devId);
+  var year = prCurrentPeriod.year;
+  var month = prCurrentPeriod.month;
   var daysInMonth = new Date(year, month, 0).getDate();
-  var dailyPlan = _planCalcDailyPlan();
-  var rows = [];
 
-  for (var day = 1; day <= daysInMonth; day++) {
-    var d = new Date(year, month - 1, day);
-    var dow = d.getDay();
-    var isWknd = (dow === 0 || dow === 6);
-    var dateStr = String(day).padStart(2, '0') + '.' +
-                  String(month).padStart(2, '0') + '.' + year;
-    rows.push({
-      date: dateStr,
-      plan: dailyPlan,
-      fact: 0,
-      comment: '',
-      isWeekend: isWknd
-    });
-  }
-  return rows;
-}
-
-/* Суточный план = суммарная ставка × 8ч / рабочие дни в месяце */
-function _planCalcDailyPlan() {
-  var workDays = 0;
-  var year = _plan.period.year;
-  var month = _plan.period.month;
-  var daysInMonth = new Date(year, month, 0).getDate();
+  /* Init all days */
   for (var d = 1; d <= daysInMonth; d++) {
     var dt = new Date(year, month - 1, d);
     var dow = dt.getDay();
-    if (dow !== 0 && dow !== 6) workDays++;
+    var isWknd = (dow === 0 || dow === 6);
+    var dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    _plan.dailyMap[dateStr] = {
+      plan: isWknd ? 0 : 8 * rate,
+      fact: 0,
+      tasks: [],
+      isWeekend: isWknd
+    };
   }
-  if (workDays === 0) return 6000;
 
-  var totalHourlyRate = 0;
-  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
-    ACTIVE_DEV_IDS.forEach(function(id) {
-      totalHourlyRate += prGetRate(String(id));
+  /* Group elapsed by date for this developer */
+  var elapsed = _plan.data.elapsed || [];
+  var tasksMeta = _plan.data.tasksMeta || {};
+
+  elapsed.forEach(function(e) {
+    if (String(e.USER_ID) !== String(devId)) return;
+    var dateStr = (e.CREATED_DATE || '').substring(0, 10);
+    if (!_plan.dailyMap[dateStr]) return;
+
+    var taskId = String(e.TASK_ID);
+    var factMinutes = parseInt(e.MINUTES || e.SECONDS / 60 || 0);
+    var factHours = safeRound(factMinutes / 60, 2);
+
+    /* Check if task already in this day */
+    var existing = null;
+    _plan.dailyMap[dateStr].tasks.forEach(function(t) {
+      if (t.taskId === taskId) existing = t;
     });
-  }
-  /* Если ставки 0 — дефолт 6000 */
-  if (totalHourlyRate === 0) return 6000;
-  return Math.round(totalHourlyRate * 8 / workDays);
+
+    if (existing) {
+      existing.factHours = safeRound(existing.factHours + factHours, 2);
+      existing.factMinutes += factMinutes;
+      existing.elapsedEntries.push(e);
+    } else {
+      var meta = tasksMeta[taskId] || {};
+      var overrideKey = taskId + '_' + dateStr;
+      var billableHours = (_plan.billableOverrides[overrideKey] !== undefined)
+        ? _plan.billableOverrides[overrideKey]
+        : factHours;
+
+      _plan.dailyMap[dateStr].tasks.push({
+        taskId: taskId,
+        title: meta.title || ('Задача ' + taskId),
+        projectName: meta.groupName || '',
+        projectId: meta.groupId || '',
+        status: meta.status || '',
+        factHours: factHours,
+        factMinutes: factMinutes,
+        billableHours: billableHours,
+        comment: e.COMMENT_TEXT || '',
+        elapsedEntries: [e]
+      });
+    }
+  });
+
+  /* Calculate fact per day = Σ (billableHours × rate) */
+  Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    var factSum = 0;
+    day.tasks.forEach(function(t) {
+      factSum += t.billableHours * rate;
+    });
+    day.fact = Math.round(factSum);
+  });
+}
+
+function safeRound(n, d) {
+  var f = Math.pow(10, d || 0);
+  return Math.round(n * f) / f;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -182,145 +222,142 @@ function _planRenderAll() {
   if (!_plan.container) return;
   var h = '';
   h += _planRenderHeader();
-  h += _planRenderSummary();
-  h += _planRenderTableControls();
-  h += _planRenderTable();
-  h += _planRenderFooter();
-  h += _planRenderAdminModal();
+  if (_plan.loading) {
+    h += '<div class="plan-loading"><div class="pr-ring"></div><div>Загрузка данных...</div></div>';
+  } else if (!_plan.data) {
+    h += '<div class="plan-empty">Нет данных. Нажмите обновить.</div>';
+  } else {
+    h += _planRenderSummary();
+    h += _planRenderTable();
+    h += _planRenderEventLog();
+  }
+  /* Modals rendered outside main flow */
+  h += _planRenderTasksModal();
+  h += _planRenderTaskDetailModal();
   _plan.container.innerHTML = h;
+  _planAttachKeys();
 }
 
-/* ─── Document Header ─── */
+/* ─── Header with dev selector ─── */
 function _planRenderHeader() {
-  var periodLabel = (typeof МЕСЯЦЫ_ПОЛН !== 'undefined')
-    ? МЕСЯЦЫ_ПОЛН[_plan.period.month - 1] + ' ' + _plan.period.year
-    : _plan.period.year + '-' + String(_plan.period.month).padStart(2, '0');
-
   var h = '<div class="plan-doc-header">';
   h += '<div class="plan-doc-title">';
-  h += 'Планирование <span class="plan-doc-num">' + esc(_plan.docNumber) + '</span>';
-  h += ' <span class="plan-doc-date">от ' + esc(_plan.docDate) + '</span>';
-  if (_plan.dirty) h += '<span class="plan-dirty" title="Несохранённые изменения">*</span>';
+  h += 'План-факт контроль';
+  if (_plan.selectedDevId) {
+    h += ' <span class="plan-doc-num">' + esc(prGetDevName(_plan.selectedDevId)) + '</span>';
+  }
+  h += ' <span class="plan-doc-date">' + (typeof МЕСЯЦЫ_ПОЛН !== 'undefined' ? МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year : '') + '</span>';
   h += '</div>';
 
   h += '<div class="plan-actions">';
-  h += '<button class="plan-btn plan-btn-yellow" onclick="_planSaveClose()">Провести и закрыть</button>';
-  h += '<button class="plan-btn plan-btn-green" onclick="_planSave()">Записать</button>';
-  h += '<button class="plan-btn plan-btn-primary" onclick="_planPost()">Провести</button>';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="alert(\'Ещё: экспорт, печать, история\')">Ещё ▾</button>';
-  h += '<span class="plan-admin-badge" onclick="_planOpenAdmin()">&#9881; Админка ставок</span>';
-  h += '</div>';
+  h += '<select class="plan-req-input plan-dev-select" onchange="_planOnDevChange(this.value)">';
+  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
+    ACTIVE_DEV_IDS.forEach(function(id) {
+      var sel = String(id) === String(_plan.selectedDevId) ? ' selected' : '';
+      h += '<option value="' + id + '"' + sel + '>' + esc(prGetDevName(String(id))) + '</option>';
+    });
+  }
+  h += '</select>';
 
-  h += '<div class="plan-reqs">';
-  h += '<div class="plan-req"><label>Номер</label><span class="plan-req-val">' + esc(_plan.docNumber) + '</span></div>';
-  h += '<div class="plan-req"><label>Дата</label><input class="plan-req-input" type="datetime-local" value="' + _planIsoDate(_plan.docDate) + '" onchange="_plan.docDate=this.value;_plan.dirty=true"></div>';
-  h += '<div class="plan-req"><label>Период</label>';
-
-  /* Select периода — текущий + 2 предыдущих */
+  /* Period select */
   h += '<select class="plan-req-input" onchange="_planOnPeriodChange(this.value)">';
   var now = new Date();
   for (var i = 0; i < 3; i++) {
     var dd = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var yy = dd.getFullYear(), mm = dd.getMonth() + 1;
-    var sel = (yy === _plan.period.year && mm === _plan.period.month) ? ' selected' : '';
-    var lbl = (typeof МЕСЯЦЫ_ПОЛН !== 'undefined') ? МЕСЯЦЫ_ПОЛН[mm - 1] + ' ' + yy : yy + '-' + String(mm).padStart(2, '0');
-    h += '<option value="' + yy + '-' + mm + '"' + sel + '>' + esc(lbl) + '</option>';
+    var sel2 = (yy === prCurrentPeriod.year && mm === prCurrentPeriod.month) ? ' selected' : '';
+    var lbl = (typeof МЕСЯЦЫ_ПОЛН !== 'undefined') ? МЕСЯЦЫ_ПОЛН[mm - 1] + ' ' + yy : yy + '-' + mm;
+    h += '<option value="' + yy + '-' + mm + '"' + sel2 + '>' + esc(lbl) + '</option>';
   }
-  h += '</select></div>';
+  h += '</select>';
 
-  h += '<div class="plan-req"><label>Ответственный</label>';
-  h += '<select class="plan-req-input" onchange="_plan.responsible=this.value;_plan.dirty=true">';
-  h += '<option value="">—</option>';
-  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
-    ACTIVE_DEV_IDS.forEach(function(id) {
-      var name = prGetDevName(String(id));
-      var sel = _plan.responsible === String(id) ? ' selected' : '';
-      h += '<option value="' + id + '"' + sel + '>' + esc(name) + '</option>';
-    });
+  h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
+  h += '</div>';
+
+  /* Info line */
+  if (_plan.selectedDevId) {
+    var rate = prGetRate(_plan.selectedDevId);
+    var base = prGetBase(_plan.selectedDevId);
+    h += '<div class="plan-info-line">';
+    h += '<span>Ставка: <strong>' + rate + ' р/ч</strong></span>';
+    h += '<span>План/день: <strong>' + _planFmtMoney(8 * rate) + '</strong></span>';
+    if (base > 0) h += '<span>Оклад: <strong>' + _planFmtMoney(base) + '</strong></span>';
+    h += '</div>';
   }
-  h += '</select></div>';
-  h += '</div></div>';
-  return h;
-}
 
-/* ─── Summary Block ─── */
-function _planRenderSummary() {
-  var totalPlan = 0, totalFact = 0;
-  _plan.rows.forEach(function(r) {
-    totalPlan += r.plan;
-    totalFact += r.fact;
-  });
-  var diff = totalFact - totalPlan;
-  var diffCls = diff >= 0 ? 'val-diff-pos' : 'val-diff-neg';
-  var diffPrefix = diff >= 0 ? '+ ' : '';
-  var today = new Date();
-  var todayStr = String(today.getDate()).padStart(2, '0') + '.' +
-                 String(today.getMonth() + 1).padStart(2, '0') + '.' + today.getFullYear();
-
-  var h = '<div class="plan-summary">';
-  h += '<div class="plan-summary-title">Итог на текущую дату</div>';
-  h += '<div class="plan-summary-grid">';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">Дата среза</div><div class="plan-summary-value" style="font-size:16px;color:var(--text2)">' + todayStr + '</div></div>';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">План</div><div class="plan-summary-value val-plan">' + _planFmtMoney(totalPlan) + '</div></div>';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">Факт</div><div class="plan-summary-value val-fact">' + _planFmtMoney(totalFact) + '</div></div>';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">Разница</div><div class="plan-summary-value ' + diffCls + '">' + diffPrefix + _planFmtMoney(Math.abs(diff)) + '</div></div>';
-  h += '</div></div>';
-  return h;
-}
-
-/* ─── Table Controls ─── */
-function _planRenderTableControls() {
-  var h = '<div class="plan-table-controls">';
-  h += '<button class="plan-btn plan-btn-green" onclick="_planAddRow()">+ Добавить</button>';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="alert(\'Мок: перемещение строки вверх\')">&#9650;</button>';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="alert(\'Мок: перемещение строки вниз\')">&#9660;</button>';
-  h += '<input class="plan-search" type="text" placeholder="Поиск (Ctrl+F)..." oninput="_planFilterRows(this.value)">';
   h += '</div>';
   return h;
 }
 
-/* ─── Data Table ─── */
+/* ─── Summary block ─── */
+function _planRenderSummary() {
+  var totalPlan = 0, totalFact = 0, workDays = 0;
+  Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    totalPlan += day.plan;
+    totalFact += day.fact;
+    if (!day.isWeekend) workDays++;
+  });
+  var diff = totalFact - totalPlan;
+  var diffCls = diff >= 0 ? 'val-diff-pos' : 'val-diff-neg';
+  var diffPrefix = diff >= 0 ? '+ ' : '';
+  var pct = totalPlan > 0 ? Math.round(totalFact / totalPlan * 100) : 0;
+
+  var h = '<div class="plan-summary">';
+  h += '<div class="plan-summary-title">Итого за период</div>';
+  h += '<div class="plan-summary-grid">';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">Раб. дней</div><div class="plan-summary-value" style="font-size:18px;color:var(--text2)">' + workDays + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">План</div><div class="plan-summary-value val-plan">' + _planFmtMoney(totalPlan) + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">Факт</div><div class="plan-summary-value val-fact">' + _planFmtMoney(totalFact) + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">Разница (' + pct + '%)</div><div class="plan-summary-value ' + diffCls + '">' + diffPrefix + _planFmtMoney(diff) + '</div></div>';
+  h += '</div></div>';
+  return h;
+}
+
+/* ─── Main table ─── */
 function _planRenderTable() {
   var h = '<div class="plan-table-wrap" style="max-height:520px;overflow-y:auto">';
-  h += '<table class="plan-table" id="planTable">';
+  h += '<table class="plan-table">';
   h += '<thead><tr>';
   h += '<th style="width:40px">N</th>';
-  h += '<th style="width:100px">Дата</th>';
-  h += '<th style="width:110px;text-align:right">Сумма план</th>';
-  h += '<th style="width:120px;text-align:right">Сумма факт</th>';
-  h += '<th style="width:110px;text-align:right">Разница</th>';
-  h += '<th style="width:120px;text-align:right">Сумма факт средняя</th>';
-  h += '<th>Комментарий</th>';
-  h += '</tr></thead><tbody id="planTableBody">';
+  h += '<th style="width:120px">Дата</th>';
+  h += '<th style="width:120px;text-align:right">План (8ч × ставка)</th>';
+  h += '<th style="width:120px;text-align:right">Факт</th>';
+  h += '<th style="width:100px;text-align:right">Разница</th>';
+  h += '<th style="width:60px;text-align:center">Задач</th>';
+  h += '</tr></thead><tbody>';
 
-  var totalPlan = 0, totalFact = 0, factCount = 0, factSum = 0;
+  var idx = 0;
+  var totalPlan = 0, totalFact = 0;
+  var dates = Object.keys(_plan.dailyMap).sort();
+  var rate = prGetRate(_plan.selectedDevId);
 
-  _plan.rows.forEach(function(row, idx) {
-    var diff = row.fact - row.plan;
-    totalPlan += row.plan;
-    totalFact += row.fact;
-    if (row.fact > 0) { factSum += row.fact; factCount++; }
-    var avg = factCount > 0 ? factSum / factCount : 0;
+  dates.forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    idx++;
+    var diff = day.fact - day.plan;
     var diffCls = diff >= 0 ? 'pos' : 'neg';
     var diffPrefix = diff >= 0 ? '+' : '';
-    var wkendCls = row.isWeekend ? ' class="row-weekend"' : '';
-    var dayName = _planGetDayName(row.date);
+    var wkendCls = day.isWeekend ? ' class="row-weekend"' : '';
+    var dayName = _planGetDayName(dateStr);
+    var taskCount = day.tasks.length;
 
-    h += '<tr' + wkendCls + ' data-idx="' + idx + '">';
-    h += '<td class="cell-num">' + (idx + 1) + '</td>';
-    h += '<td class="cell-date">' + esc(row.date) + '<span class="day-name">' + dayName + '</span></td>';
-    h += '<td class="cell-money">' + _planFmtMoney(row.plan) + '</td>';
-    h += '<td style="text-align:right"><input class="plan-edit' + (row.fact > 0 ? ' active-cell' : '') + '" type="text" value="' + _planFmtMoney(row.fact) + '" data-idx="' + idx + '" onchange="_planOnFactChange(this)" onfocus="this.select()"></td>';
-    h += '<td class="cell-money ' + diffCls + '">' + diffPrefix + _planFmtMoney(diff) + '</td>';
-    h += '<td class="cell-avg">' + (avg > 0 ? _planFmtMoney(avg) : '—') + '</td>';
-    h += '<td><textarea class="plan-comment-edit" rows="1" data-idx="' + idx + '" onchange="_planOnCommentChange(this)">' + esc(row.comment) + '</textarea></td>';
+    totalPlan += day.plan;
+    totalFact += day.fact;
+
+    var clickAttr = taskCount > 0 ? ' style="cursor:pointer" onclick="_planOpenTasksModal(\'' + dateStr + '\')"' : '';
+
+    h += '<tr' + wkendCls + clickAttr + '>';
+    h += '<td class="cell-num">' + idx + '</td>';
+    h += '<td class="cell-date">' + _planFormatDateRu(dateStr) + '<span class="day-name">' + dayName + '</span></td>';
+    h += '<td class="cell-money">' + (day.plan > 0 ? _planFmtMoney(day.plan) : '—') + '</td>';
+    h += '<td class="cell-money" style="color:var(--green)">' + (day.fact > 0 ? _planFmtMoney(day.fact) : '—') + '</td>';
+    h += '<td class="cell-money ' + diffCls + '">' + (day.plan > 0 || day.fact > 0 ? diffPrefix + _planFmtMoney(diff) : '—') + '</td>';
+    h += '<td style="text-align:center">' + (taskCount > 0 ? '<span class="plan-task-count">' + taskCount + '</span>' : '—') + '</td>';
     h += '</tr>';
   });
 
   h += '</tbody>';
-
-  /* Footer */
   var totalDiff = totalFact - totalPlan;
   var totalDiffCls = totalDiff >= 0 ? 'pos' : 'neg';
   var totalDiffPrefix = totalDiff >= 0 ? '+ ' : '';
@@ -329,155 +366,234 @@ function _planRenderTable() {
   h += '<td class="cell-money" style="color:var(--accent)">' + _planFmtMoney(totalPlan) + '</td>';
   h += '<td class="cell-money" style="color:var(--green)">' + _planFmtMoney(totalFact) + '</td>';
   h += '<td class="cell-money ' + totalDiffCls + '">' + totalDiffPrefix + _planFmtMoney(totalDiff) + '</td>';
-  h += '<td></td><td></td>';
+  h += '<td></td>';
   h += '</tr></tfoot></table></div>';
   return h;
 }
 
-/* ─── Footer ─── */
-function _planRenderFooter() {
-  var totalPlan = 0, totalFact = 0;
-  _plan.rows.forEach(function(r) { totalPlan += r.plan; totalFact += r.fact; });
-  var diff = totalFact - totalPlan;
-  var diffCls = diff >= 0 ? 'val-diff-pos' : 'val-diff-neg';
-  var diffPrefix = diff >= 0 ? '+ ' : '';
+/* ─── Tasks modal (click on date) ─── */
+function _planRenderTasksModal() {
+  if (_plan.modalOpen !== 'tasks') return '';
+  var day = _plan.dailyMap[_plan.modalDate];
+  if (!day) return '';
 
-  var h = '<div class="plan-footer">';
-  h += '<div class="plan-footer-comment"><label>Комментарий к документу</label>';
-  h += '<textarea onchange="_plan.docComment=this.value;_plan.dirty=true" placeholder="Общие примечания к плану за период...">' + esc(_plan.docComment) + '</textarea></div>';
-  h += '<div class="plan-footer-totals">';
-  h += '<div class="plan-total-item"><span class="plan-total-label">Итого план:</span><span class="plan-total-value val-plan">' + _planFmtMoney(totalPlan) + '</span></div>';
-  h += '<div class="plan-total-item"><span class="plan-total-label">Факт:</span><span class="plan-total-value val-fact">' + _planFmtMoney(totalFact) + '</span></div>';
-  h += '<div class="plan-total-item"><span class="plan-total-label">Разница:</span><span class="plan-total-value ' + diffCls + '">' + diffPrefix + _planFmtMoney(diff) + '</span></div>';
-  h += '</div></div>';
+  var rate = prGetRate(_plan.selectedDevId);
+  var h = '<div class="modal-overlay open" id="planTasksModal" onclick="if(event.target===this)_planCloseModal()">';
+  h += '<div class="modal" style="max-width:900px">';
+  h += '<div class="modal-header">';
+  h += '<span class="modal-title">Задачи — ' + _planFormatDateRu(_plan.modalDate) + ' (' + _planGetDayName(_plan.modalDate) + ')</span>';
+  h += '<button class="modal-close" onclick="_planCloseModal()">&times;</button>';
+  h += '</div>';
+  h += '<div class="modal-body" style="padding:12px 16px">';
+
+  if (!day.tasks.length) {
+    h += '<div class="plan-empty">Нет задач за этот день</div>';
+  } else {
+    h += '<table class="plan-table" style="min-width:auto">';
+    h += '<thead><tr>';
+    h += '<th>Задача</th>';
+    h += '<th style="width:90px;text-align:right">Факт ч.</th>';
+    h += '<th style="width:110px;text-align:right">Часы выставл.</th>';
+    h += '<th style="width:100px;text-align:right">Сумма</th>';
+    h += '</tr></thead><tbody>';
+
+    day.tasks.forEach(function(t) {
+      var amount = t.billableHours * rate;
+      var overrideKey = t.taskId + '_' + _plan.modalDate;
+      var isOverridden = _plan.billableOverrides[overrideKey] !== undefined;
+
+      h += '<tr class="plan-task-row" onclick="_planOpenTaskDetail(\'' + t.taskId + '\',\'' + _plan.modalDate + '\')" style="cursor:pointer">';
+      h += '<td>';
+      h += '<div class="plan-task-title">' + esc(t.title) + '</div>';
+      if (t.projectName) h += '<div class="plan-task-project">' + esc(t.projectName) + '</div>';
+      h += '</td>';
+      h += '<td class="cell-money">' + t.factHours.toFixed(1) + '</td>';
+      h += '<td style="text-align:right">';
+      h += '<input class="plan-edit' + (isOverridden ? ' changed' : '') + '" type="text" value="' + t.billableHours.toFixed(1) + '" data-task="' + t.taskId + '" data-date="' + _plan.modalDate + '" onchange="_planOnBillableChange(this)" onclick="event.stopPropagation()" onfocus="this.select()">';
+      h += '</td>';
+      h += '<td class="cell-money" style="color:var(--green)">' + _planFmtMoney(amount) + '</td>';
+      h += '</tr>';
+    });
+
+    h += '</tbody></table>';
+  }
+
+  h += '</div>';
+  h += '<div class="modal-footer">';
+  h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3)">Клик на задачу — детали | Часы выставл. — редактируются</span>';
+  h += '<button class="plan-btn plan-btn-ghost" onclick="_planCloseModal()">Закрыть (Esc)</button>';
+  h += '</div></div></div>';
   return h;
 }
 
-/* ─── Admin Modal ─── */
-function _planRenderAdminModal() {
-  var h = '<div class="modal-overlay' + (_plan.adminOpen ? ' open' : '') + '" id="planAdminModal" onclick="if(event.target===this)_planCloseAdmin()">';
-  h += '<div class="modal">';
-  h += '<div class="modal-header"><span class="modal-title">&#9881; Админка — Ставки разработчиков</span><button class="modal-close" onclick="_planCloseAdmin()">&times;</button></div>';
-  h += '<div class="modal-body"><div class="admin-cards-grid">';
+/* ─── Task detail modal ─── */
+function _planRenderTaskDetailModal() {
+  if (_plan.modalOpen !== 'taskDetail') return '';
+  /* Find the task */
+  var day = _plan.dailyMap[_plan.modalDate];
+  if (!day) return '';
+  var task = null;
+  day.tasks.forEach(function(t) { if (t.taskId === _plan.modalTaskId) task = t; });
+  if (!task) return '';
 
-  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
-    ACTIVE_DEV_IDS.forEach(function(id) {
-      var name = prGetDevName(String(id));
-      var rate = prGetRate(String(id));
-      var clientRate = prGetClientRate(String(id));
-      var base = prGetBase(String(id));
-      var fine = (typeof prGetFine === 'function') ? prGetFine(String(id)) : 0;
-      var initials = name.split(' ').map(function(w) { return w[0]; }).join('');
+  var rate = prGetRate(_plan.selectedDevId);
+  var h = '<div class="modal-overlay open" id="planTaskDetailModal" onclick="if(event.target===this)_planCloseTaskDetail()">';
+  h += '<div class="modal" style="max-width:700px">';
+  h += '<div class="modal-header">';
+  h += '<span class="modal-title">' + esc(task.title) + '</span>';
+  h += '<button class="modal-close" onclick="_planCloseTaskDetail()">&times;</button>';
+  h += '</div>';
+  h += '<div class="modal-body">';
 
-      h += '<div class="admin-card">';
-      h += '<div class="admin-card-hdr"><div class="admin-card-avatar">' + esc(initials) + '</div><div class="admin-card-name">' + esc(name) + '</div></div>';
-      h += '<div class="admin-card-fields">';
-      h += '<div class="admin-field"><label>Ставка разраб. (р/ч)</label><input class="admin-input input-rate" type="number" value="' + rate + '" data-dev="' + id + '" data-field="rate"></div>';
-      h += '<div class="admin-field"><label>Ставка клиента (р/ч)</label><input class="admin-input input-client-rate" type="number" value="' + clientRate + '" data-dev="' + id + '" data-field="clientRate"></div>';
-      h += '<div class="admin-field"><label>Базовая / Оклад</label><input class="admin-input" type="number" value="' + base + '" data-dev="' + id + '" data-field="base"></div>';
-      h += '<div class="admin-field"><label>Штраф</label><input class="admin-input" type="number" value="' + fine + '" data-dev="' + id + '" data-field="fine" style="color:rgba(255,110,120,.9)"></div>';
-      h += '</div></div>';
+  h += '<div class="plan-detail-grid">';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">Проект</span><span class="plan-detail-val">' + esc(task.projectName || '—') + '</span></div>';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">ID задачи</span><span class="plan-detail-val">' + esc(task.taskId) + '</span></div>';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">Факт часы</span><span class="plan-detail-val" style="color:var(--accent)">' + task.factHours.toFixed(1) + ' ч</span></div>';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">Часы к выставлению</span><span class="plan-detail-val" style="color:var(--green)">' + task.billableHours.toFixed(1) + ' ч</span></div>';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">Ставка</span><span class="plan-detail-val">' + rate + ' р/ч</span></div>';
+  h += '<div class="plan-detail-item"><span class="plan-detail-label">Сумма к выплате</span><span class="plan-detail-val" style="color:var(--orange)">' + _planFmtMoney(task.billableHours * rate) + '</span></div>';
+  h += '</div>';
+
+  /* Elapsed entries */
+  if (task.elapsedEntries && task.elapsedEntries.length) {
+    h += '<div class="plan-detail-section">Списания времени</div>';
+    h += '<table class="plan-table" style="min-width:auto;margin-top:6px">';
+    h += '<thead><tr><th>Время</th><th>Комментарий</th></tr></thead><tbody>';
+    task.elapsedEntries.forEach(function(e) {
+      var mins = parseInt(e.MINUTES || (parseInt(e.SECONDS || 0) / 60) || 0);
+      var hrs = safeRound(mins / 60, 2);
+      h += '<tr><td class="cell-money">' + hrs.toFixed(1) + ' ч</td>';
+      h += '<td style="font-family:var(--sans);font-size:11px;color:var(--text2)">' + esc(e.COMMENT_TEXT || '—') + '</td></tr>';
     });
+    h += '</tbody></table>';
   }
 
-  h += '</div></div>';
+  h += '</div>';
   h += '<div class="modal-footer">';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="_planCloseAdmin()">Отмена</button>';
-  h += '<button class="plan-btn plan-btn-green" onclick="_planSaveAdminRates()">Сохранить ставки</button>';
+  h += '<button class="plan-btn plan-btn-ghost" onclick="_planCloseTaskDetail()">Назад (Esc)</button>';
   h += '</div></div></div>';
+  return h;
+}
+
+/* ─── Event log ─── */
+function _planRenderEventLog() {
+  if (!_plan.eventLog.length) return '';
+  var h = '<div class="plan-log-section">';
+  h += '<div class="plan-log-title">Лог изменений</div>';
+  h += '<div class="plan-log-body">';
+
+  /* Show last 20 entries, newest first */
+  var entries = _plan.eventLog.slice(-20).reverse();
+  entries.forEach(function(e) {
+    var ts = e.ts ? e.ts.substring(11, 19) : '';
+    h += '<div class="plan-log-row">';
+    h += '<span class="plan-log-time">' + ts + '</span>';
+    h += '<span class="plan-log-dev">' + esc(e.dev) + '</span>';
+    h += '<span class="plan-log-action">' + esc(e.action) + '</span>';
+    h += '<span class="plan-log-detail">' + esc(e.detail) + '</span>';
+    h += '</div>';
+  });
+
+  h += '</div></div>';
   return h;
 }
 
 /* ═══════════════════════════════════════════════════════════════
    ОБРАБОТЧИКИ
    ═══════════════════════════════════════════════════════════════ */
-function _planOnFactChange(el) {
-  var idx = parseInt(el.getAttribute('data-idx'));
-  var raw = el.value.replace(/[^\d.,-]/g, '').replace(',', '.');
-  var val = parseFloat(raw) || 0;
-  if (idx >= 0 && idx < _plan.rows.length) {
-    _plan.rows[idx].fact = val;
-    _plan.dirty = true;
-    _planRenderAll();
-  }
-}
-
-function _planOnCommentChange(el) {
-  var idx = parseInt(el.getAttribute('data-idx'));
-  if (idx >= 0 && idx < _plan.rows.length) {
-    _plan.rows[idx].comment = el.value;
-    _plan.dirty = true;
-  }
-}
-
-function _planAddRow() {
-  var lastDate = _plan.rows.length > 0 ? _plan.rows[_plan.rows.length - 1].date : '01.01.2026';
-  _plan.rows.push({ date: lastDate, plan: _planCalcDailyPlan(), fact: 0, comment: '', isWeekend: false });
-  _plan.dirty = true;
+function _planOnDevChange(devId) {
+  _plan.selectedDevId = String(devId);
+  _planLoadOverrides();
+  _planBuildDailyMap();
+  _planLogEvent('Выбор разработчика', prGetDevName(devId));
   _planRenderAll();
-}
-
-function _planFilterRows(query) {
-  var rows = document.querySelectorAll('#planTableBody tr');
-  var q = query.toLowerCase();
-  rows.forEach(function(tr) {
-    var text = tr.textContent.toLowerCase();
-    tr.style.display = !q || text.indexOf(q) >= 0 ? '' : 'none';
-  });
 }
 
 function _planOnPeriodChange(val) {
   var parts = val.split('-');
-  _plan.period = { year: parseInt(parts[0]), month: parseInt(parts[1]) };
-  prCurrentPeriod.year = _plan.period.year;
-  prCurrentPeriod.month = _plan.period.month;
+  prCurrentPeriod.year = parseInt(parts[0]);
+  prCurrentPeriod.month = parseInt(parts[1]);
+  _planLoadOverrides();
+  _planLoadEventLog();
   _planLoadData();
+}
+
+function _planOpenTasksModal(dateStr) {
+  _plan.modalOpen = 'tasks';
+  _plan.modalDate = dateStr;
   _planRenderAll();
 }
 
-function _planSave() {
-  _planSaveData();
+function _planCloseModal() {
+  _plan.modalOpen = null;
+  _plan.modalDate = '';
   _planRenderAll();
 }
 
-function _planSaveClose() {
-  _planSaveData();
-  /* Переключаемся на Обзор */
-  if (typeof switchTab === 'function') switchTab(0);
-}
-
-function _planPost() {
-  _planSaveData();
+function _planOpenTaskDetail(taskId, dateStr) {
+  _plan.modalOpen = 'taskDetail';
+  _plan.modalDate = dateStr;
+  _plan.modalTaskId = taskId;
   _planRenderAll();
 }
 
-function _planOpenAdmin() {
-  _plan.adminOpen = true;
+function _planCloseTaskDetail() {
+  _plan.modalOpen = 'tasks';
+  _plan.modalTaskId = '';
   _planRenderAll();
 }
 
-function _planCloseAdmin() {
-  _plan.adminOpen = false;
+function _planOnBillableChange(el) {
+  var taskId = el.getAttribute('data-task');
+  var dateStr = el.getAttribute('data-date');
+  var raw = el.value.replace(/[^\d.,]/g, '').replace(',', '.');
+  var val = parseFloat(raw) || 0;
+
+  var overrideKey = taskId + '_' + dateStr;
+  var oldVal = _plan.billableOverrides[overrideKey];
+
+  _plan.billableOverrides[overrideKey] = val;
+  _planSaveOverrides();
+
+  /* Update the task in dailyMap */
+  var day = _plan.dailyMap[dateStr];
+  if (day) {
+    day.tasks.forEach(function(t) {
+      if (t.taskId === taskId) {
+        var oldBill = t.billableHours;
+        t.billableHours = val;
+      }
+    });
+    /* Recalculate day fact */
+    var rate = prGetRate(_plan.selectedDevId);
+    var factSum = 0;
+    day.tasks.forEach(function(t) { factSum += t.billableHours * rate; });
+    day.fact = Math.round(factSum);
+  }
+
+  /* Log the change */
+  var taskTitle = 'Задача ' + taskId;
+  if (day) {
+    day.tasks.forEach(function(t) { if (t.taskId === taskId) taskTitle = t.title; });
+  }
+  _planLogEvent('Часы выставл.', taskTitle.substring(0, 40) + ': ' + (oldVal !== undefined ? oldVal : 'факт') + ' → ' + val);
+
   _planRenderAll();
 }
 
-function _planSaveAdminRates() {
-  var inputs = document.querySelectorAll('#planAdminModal .admin-input');
-  inputs.forEach(function(inp) {
-    var devId = inp.getAttribute('data-dev');
-    var field = inp.getAttribute('data-field');
-    var val = parseFloat(inp.value) || 0;
-    var settings = (typeof prLoadDevSettings === 'function') ? prLoadDevSettings(devId) : {};
-    if (!settings) settings = {};
-    settings[field] = val;
-    if (typeof prSaveDevSettings === 'function') prSaveDevSettings(devId, settings);
-  });
-  _plan.adminOpen = false;
-  _plan.dirty = true;
-  /* Пересчитать план на день */
-  var newDaily = _planCalcDailyPlan();
-  _plan.rows.forEach(function(r) { r.plan = newDaily; });
-  _planRenderAll();
+/* ─── Keyboard: Esc closes modals ─── */
+function _planAttachKeys() {
+  document.onkeydown = function(e) {
+    if (e.key === 'Escape') {
+      if (_plan.modalOpen === 'taskDetail') {
+        _planCloseTaskDetail();
+        e.preventDefault();
+      } else if (_plan.modalOpen === 'tasks') {
+        _planCloseModal();
+        e.preventDefault();
+      }
+    }
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -486,20 +602,19 @@ function _planSaveAdminRates() {
 function _planFmtMoney(n) {
   var neg = n < 0;
   var abs = Math.abs(n);
-  var str = abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  var str = abs.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return neg ? ('- ' + str) : str;
 }
 
 function _planGetDayName(dateStr) {
-  var parts = dateStr.split('.');
-  var d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+  var d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return '';
   var days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
   return days[d.getDay()];
 }
 
-function _planIsoDate(ruDateStr) {
-  /* DD.MM.YYYY HH:MM:SS → YYYY-MM-DDTHH:MM */
-  var m = ruDateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})/);
-  if (m) return m[3] + '-' + m[2] + '-' + m[1] + 'T' + m[4] + ':' + m[5];
-  return '';
+function _planFormatDateRu(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+  return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear();
 }
