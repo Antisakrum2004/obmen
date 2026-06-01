@@ -46,3 +46,32 @@ Stage Summary:
 - Вкладка ПЛАН полностью интегрирована и работает на localhost:3000
 - Проблема пользователя — кэш браузера (видит старую версию ПР-8.4.0)
 - Рекомендация: Ctrl+Shift+R (жёсткое обновление) или очистить кэш браузера
+
+---
+Task ID: 1
+Agent: main
+Task: Fix Vercel 404 deployment error + verify Plan tab comment field
+
+Work Log:
+- Analyzed uploaded screenshot: Vercel 404 NOT_FOUND error page
+- Checked git status: branch was 1 commit ahead of origin/main (unpushed .next/ artifacts)
+- Found .next/ build directory was tracked in git (should not be)
+- Found output: "standalone" in next.config.ts (conflicts with Vercel deployment)
+- Removed .next/ from git tracking (git rm --cached)
+- Removed output: "standalone" from next.config.ts
+- Reverted page.tsx back to iframe approach (was previously working)
+- Added static/index.html as copy of payroll.html for Vercel static serving
+- Updated vercel.json with proper cache headers for payroll.html and JS files
+- Verified Next.js build succeeds locally
+- Committed and pushed all changes to GitHub
+- Verified Plan tab already has comment field (40% width, _planOnCommentChange handler)
+
+Stage Summary:
+- .next/ removed from git (1117 files deleted from tracking)
+- next.config.ts: removed output: "standalone" 
+- page.tsx: reverted to iframe approach (loads /payroll.html)
+- static/index.html: added as copy of payroll.html
+- vercel.json: added cache headers for static files
+- Plan tab comment field: already implemented in tab-plan.js (line 389, _planOnCommentChange)
+- All changes pushed to origin/main (commit 5b07d27)
+- Vercel should auto-deploy from the push; if still 404, user may need to check Vercel dashboard for project connection
