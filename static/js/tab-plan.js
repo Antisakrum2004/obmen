@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    tab-plan.js — Вкладка ПЛАН (План-факт контроль выработки)
-   v3.0.0 — Реальные данные из Bitrix24, план-факт по разрабам
+   v4.0.0 — Аналитические фичи: Burn Rate, Sparkline, Donut, КПД,
+             Простои, Топ-5, Дельта, Экспорт
 
    Логика:
    - Выбор разработчика → таблица по дням
@@ -26,7 +27,9 @@ var _plan = {
   modalTaskId: '',         /* taskId for detail modal */
   loading: false,
   adminSaveMsg: null,      /* flash message after save */
-  adminChangedDevs: {}     /* devId -> true for green highlight */
+  adminChangedDevs: {},    /* devId -> true for green highlight */
+  prevMonthTotals: null,   /* {plan, fact} from previous month for delta */
+  topTasksExpanded: false  /* toggle for top-5 tasks */
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -44,6 +47,7 @@ window.TabPlan = {
     _planLoadOverrides();
     _planLoadComments();
     _planLoadEventLog();
+    _planLoadPrevMonth();
     _planLoadData();
   },
   destroy: function() {
@@ -122,6 +126,28 @@ function _planLogEvent(action, detail) {
     detail: detail
   });
   _planSaveEventLog();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ФИЧА 8: Дельта с прошлым месяцем — загрузка итогов
+   ═══════════════════════════════════════════════════════════════ */
+function _planPrevMonthKey() {
+  var pm = prCurrentPeriod.month === 1 ? 12 : prCurrentPeriod.month - 1;
+  var py = prCurrentPeriod.month === 1 ? prCurrentPeriod.year - 1 : prCurrentPeriod.year;
+  return 'pr_plan_totals_' + py + '_' + String(pm).padStart(2, '0');
+}
+
+function _planLoadPrevMonth() {
+  try {
+    var raw = localStorage.getItem(_planPrevMonthKey());
+    _plan.prevMonthTotals = raw ? JSON.parse(raw) : null;
+  } catch(e) { _plan.prevMonthTotals = null; }
+}
+
+function _planSaveTotals(plan, fact) {
+  try {
+    localStorage.setItem(_planStorageKey().replace('pr_plan_bill_', 'pr_plan_totals_'), JSON.stringify({plan: plan, fact: fact}));
+  } catch(e) {}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -221,6 +247,7 @@ function _planBuildDailyMap() {
   });
 
   /* Calculate fact per day = Σ (billableHours × rate) */
+  var totalPlan = 0, totalFact = 0;
   Object.keys(_plan.dailyMap).forEach(function(dateStr) {
     var day = _plan.dailyMap[dateStr];
     var factSum = 0;
@@ -228,12 +255,123 @@ function _planBuildDailyMap() {
       factSum += t.billableHours * rate;
     });
     day.fact = Math.round(factSum);
+    totalPlan += day.plan;
+    totalFact += day.fact;
   });
+
+  /* Save totals for delta feature (фича 8) */
+  _planSaveTotals(totalPlan, totalFact);
 }
 
 function safeRound(n, d) {
   var f = Math.pow(10, d || 0);
   return Math.round(n * f) / f;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   АНАЛИТИЧЕСКИЕ РАСЧЁТЫ (фичи 1, 4, 6, 7)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Фича 1: Burn Rate — прогноз на конец месяца */
+function _planCalcBurnRate() {
+  var rate = prGetRate(_plan.selectedDevId);
+  var now = new Date();
+  var dates = Object.keys(_plan.dailyMap).sort();
+  var passedWorkDays = 0, passedFactSum = 0;
+  var totalWorkDays = 0, remainingWorkDays = 0;
+  var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+  dates.forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    if (day.isWeekend) return;
+    totalWorkDays++;
+    if (dateStr <= todayStr) {
+      passedWorkDays++;
+      passedFactSum += day.fact;
+    }
+  });
+
+  remainingWorkDays = totalWorkDays - passedWorkDays;
+  if (passedWorkDays === 0 || remainingWorkDays <= 0) return null;
+
+  var avgDailyFact = passedFactSum / passedWorkDays;
+  var projectedTotal = passedFactSum + avgDailyFact * remainingWorkDays;
+  var totalPlan = totalWorkDays * 8 * rate;
+  var projectedPct = totalPlan > 0 ? Math.round(projectedTotal / totalPlan * 100) : 0;
+
+  return { projectedPct: projectedPct, avgDaily: avgDailyFact, remainingDays: remainingWorkDays, totalPlan: totalPlan, projectedTotal: Math.round(projectedTotal) };
+}
+
+/* Фича 4: Подсветка простоев (рабочие дни с 0 списаний) */
+function _planIsIdleDay(day) {
+  return !day.isWeekend && day.fact === 0 && day.tasks.length === 0;
+}
+
+/* Фича 4: Подсветка переработок (факт > 120% плана) */
+function _planIsOvertime(day) {
+  if (day.isWeekend || day.plan === 0) return false;
+  return day.fact > day.plan * 1.2;
+}
+
+/* Фича 6: Средний КПД */
+function _planCalcEfficiency() {
+  var dates = Object.keys(_plan.dailyMap).sort();
+  var totalPct = 0, count = 0;
+  dates.forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    if (day.isWeekend || day.plan === 0) return;
+    totalPct += day.fact / day.plan;
+    count++;
+  });
+  return count > 0 ? Math.round(totalPct / count * 100) : 0;
+}
+
+/* Фича 7: Топ-5 задач месяца */
+function _planCalcTopTasks() {
+  var taskMap = {};
+  var rate = prGetRate(_plan.selectedDevId);
+  Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    day.tasks.forEach(function(t) {
+      var key = t.taskId;
+      if (!taskMap[key]) {
+        taskMap[key] = { taskId: t.taskId, title: t.title, projectName: t.projectName, totalBillable: 0, totalFact: 0 };
+      }
+      taskMap[key].totalBillable += t.billableHours;
+      taskMap[key].totalFact += t.factHours;
+    });
+  });
+  var arr = Object.keys(taskMap).map(function(k) { return taskMap[k]; });
+  arr.sort(function(a, b) { return b.totalBillable - a.totalBillable; });
+  return arr.slice(0, 5);
+}
+
+/* Фича 3: Распределение по проектам */
+function _planCalcProjectDistribution() {
+  var projMap = {};
+  var rate = prGetRate(_plan.selectedDevId);
+  Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    day.tasks.forEach(function(t) {
+      var pname = t.projectName || 'Без проекта';
+      if (!projMap[pname]) projMap[pname] = { hours: 0, amount: 0 };
+      projMap[pname].hours += t.billableHours;
+      projMap[pname].amount += t.billableHours * rate;
+    });
+  });
+  var arr = Object.keys(projMap).map(function(k) { return { name: k, hours: projMap[k].hours, amount: projMap[k].amount }; });
+  arr.sort(function(a, b) { return b.amount - a.amount; });
+  return arr;
+}
+
+/* Фича 8: Дельта с прошлым месяцем */
+function _planCalcDelta(curPlan, curFact) {
+  if (!_plan.prevMonthTotals) return null;
+  var prevPlan = _plan.prevMonthTotals.plan || 0;
+  var prevFact = _plan.prevMonthTotals.fact || 0;
+  var planDelta = prevPlan > 0 ? Math.round((curPlan - prevPlan) / prevPlan * 100) : 0;
+  var factDelta = prevFact > 0 ? Math.round((curFact - prevFact) / prevFact * 100) : 0;
+  return { planDelta: planDelta, factDelta: factDelta };
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -249,7 +387,9 @@ function _planRenderAll() {
     h += '<div class="plan-empty">Нет данных. Нажмите обновить.</div>';
   } else {
     h += _planRenderSummary();
+    h += _planRenderAnalytics();
     h += _planRenderTable();
+    h += _planRenderTopTasks();
     h += _planRenderEventLog();
   }
   /* Modals rendered outside main flow */
@@ -293,6 +433,8 @@ function _planRenderHeader() {
   }
   h += '</select>';
 
+  /* Фича 10: Кнопка экспорта сводки */
+  h += '<button class="plan-btn plan-btn-ghost" onclick="_planExportSummary()">&#128203; Сводка</button>';
   h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
   h += '<button class="plan-btn plan-btn-yellow" onclick="_planOpenAdmin()">&#9881; Админка</button>';
   h += '</div>';
@@ -312,7 +454,7 @@ function _planRenderHeader() {
   return h;
 }
 
-/* ─── Summary block ─── */
+/* ─── Summary block (enhanced with Фича 6 КПД + Фича 8 Дельта) ─── */
 function _planRenderSummary() {
   var totalPlan = 0, totalFact = 0, workDays = 0;
   Object.keys(_plan.dailyMap).forEach(function(dateStr) {
@@ -326,18 +468,133 @@ function _planRenderSummary() {
   var diffPrefix = diff >= 0 ? '+ ' : '';
   var pct = totalPlan > 0 ? Math.round(totalFact / totalPlan * 100) : 0;
 
+  /* Фича 6: КПД */
+  var efficiency = _planCalcEfficiency();
+  var effCls = efficiency >= 95 ? 'val-kpd-good' : (efficiency >= 70 ? 'val-kpd-warn' : 'val-kpd-bad');
+
+  /* Фича 8: Дельта */
+  var delta = _planCalcDelta(totalPlan, totalFact);
+
   var h = '<div class="plan-summary">';
   h += '<div class="plan-summary-title">Итого за период</div>';
   h += '<div class="plan-summary-grid">';
   h += '<div class="plan-summary-item"><div class="plan-summary-label">Раб. дней</div><div class="plan-summary-value" style="font-size:18px;color:var(--text2)">' + workDays + '</div></div>';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">План</div><div class="plan-summary-value val-plan">' + _planFmtMoney(totalPlan) + '</div></div>';
-  h += '<div class="plan-summary-item"><div class="plan-summary-label">Факт</div><div class="plan-summary-value val-fact">' + _planFmtMoney(totalFact) + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">План' + (delta ? ' <span class="plan-delta ' + (delta.planDelta >= 0 ? 'pos' : 'neg') + '">' + (delta.planDelta >= 0 ? '&#9650;' : '&#9660;') + Math.abs(delta.planDelta) + '%</span>' : '') + '</div><div class="plan-summary-value val-plan">' + _planFmtMoney(totalPlan) + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">Факт' + (delta ? ' <span class="plan-delta ' + (delta.factDelta >= 0 ? 'pos' : 'neg') + '">' + (delta.factDelta >= 0 ? '&#9650;' : '&#9660;') + Math.abs(delta.factDelta) + '%</span>' : '') + '</div><div class="plan-summary-value val-fact">' + _planFmtMoney(totalFact) + '</div></div>';
   h += '<div class="plan-summary-item"><div class="plan-summary-label">Разница (' + pct + '%)</div><div class="plan-summary-value ' + diffCls + '">' + diffPrefix + _planFmtMoney(diff) + '</div></div>';
+  h += '<div class="plan-summary-item"><div class="plan-summary-label">КПД</div><div class="plan-summary-value ' + effCls + '">' + efficiency + '%</div></div>';
   h += '</div></div>';
   return h;
 }
 
-/* ─── Main table ─── */
+/* ─── Analytics row: Burn Rate + Sparkline + Donut (Фичи 1, 2, 3) ─── */
+function _planRenderAnalytics() {
+  var rate = prGetRate(_plan.selectedDevId);
+  var dates = Object.keys(_plan.dailyMap).sort();
+
+  /* Фича 1: Burn Rate */
+  var burn = _planCalcBurnRate();
+
+  /* Фича 2: Sparkline SVG — кумулятивный план-факт */
+  var cumPlan = 0, cumFact = 0;
+  var sparkData = [];
+  var maxVal = 1;
+  dates.forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    cumPlan += day.plan;
+    cumFact += day.fact;
+    sparkData.push({ plan: cumPlan, fact: cumFact });
+    if (cumPlan > maxVal) maxVal = cumPlan;
+    if (cumFact > maxVal) maxVal = cumFact;
+  });
+
+  /* Build SVG path */
+  var svgW = 200, svgH = 48, padY = 4;
+  var xStep = sparkData.length > 1 ? svgW / (sparkData.length - 1) : svgW;
+  var planPath = '', factPath = '';
+  sparkData.forEach(function(pt, i) {
+    var x = i * xStep;
+    var yPlan = svgH - padY - (pt.plan / maxVal * (svgH - padY * 2));
+    var yFact = svgH - padY - (pt.fact / maxVal * (svgH - padY * 2));
+    planPath += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yPlan.toFixed(1);
+    factPath += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yFact.toFixed(1);
+  });
+
+  /* Фича 3: Donut — распределение по проектам */
+  var projects = _planCalcProjectDistribution();
+  var totalAmount = 0;
+  projects.forEach(function(p) { totalAmount += p.amount; });
+
+  var donutColors = ['#4f8bff','#22d47e','#f5a623','#ff4f6a','#00d4ff','#ff8c42','#a78bfa','#f472b6'];
+  var donutSvg = '';
+  if (totalAmount > 0) {
+    var cx = 28, cy = 28, r = 20, rInner = 13;
+    var cumAngle = 0;
+    var arcs = '';
+    projects.forEach(function(p, i) {
+      var pctAngle = p.amount / totalAmount * Math.PI * 2;
+      var startAngle = cumAngle - Math.PI / 2;
+      var endAngle = cumAngle + pctAngle - Math.PI / 2;
+      var x1 = cx + r * Math.cos(startAngle);
+      var y1 = cy + r * Math.sin(startAngle);
+      var x2 = cx + r * Math.cos(endAngle);
+      var y2 = cy + r * Math.sin(endAngle);
+      var x3 = cx + rInner * Math.cos(endAngle);
+      var y3 = cy + rInner * Math.sin(endAngle);
+      var x4 = cx + rInner * Math.cos(startAngle);
+      var y4 = cy + rInner * Math.sin(startAngle);
+      var large = pctAngle > Math.PI ? 1 : 0;
+      var col = donutColors[i % donutColors.length];
+      arcs += '<path d="M' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' A' + r + ',' + r + ' 0 ' + large + ' 1 ' + x2.toFixed(1) + ',' + y2.toFixed(1) + ' L' + x3.toFixed(1) + ',' + y3.toFixed(1) + ' A' + rInner + ',' + rInner + ' 0 ' + large + ' 0 ' + x4.toFixed(1) + ',' + y4.toFixed(1) + ' Z" fill="' + col + '" opacity="0.85"/>';
+      cumAngle += pctAngle;
+    });
+    donutSvg = '<svg width="56" height="56" viewBox="0 0 56 56">' + arcs + '</svg>';
+  }
+
+  var h = '<div class="plan-analytics-row">';
+
+  /* Фича 1: Burn Rate */
+  if (burn) {
+    var barPct = Math.min(burn.projectedPct, 120);
+    var barW = Math.round(barPct / 120 * 100);
+    var barCls = burn.projectedPct >= 95 ? 'plan-burn-good' : (burn.projectedPct >= 70 ? 'plan-burn-warn' : 'plan-burn-bad');
+    h += '<div class="plan-analytics-card">';
+    h += '<div class="plan-analytics-label">Прогноз на конец месяца</div>';
+    h += '<div class="plan-burn-row"><div class="plan-burn-track"><div class="plan-burn-fill ' + barCls + '" style="width:' + barW + '%"></div></div><div class="plan-burn-val">' + burn.projectedPct + '%</div></div>';
+    h += '<div class="plan-analytics-sub">Средняя выработка ' + _planFmtMoney(Math.round(burn.avgDaily)) + '/день | Осталось ' + burn.remainingDays + ' дн.</div>';
+    h += '</div>';
+  }
+
+  /* Фича 2: Sparkline */
+  h += '<div class="plan-analytics-card">';
+  h += '<div class="plan-analytics-label">Кумулятивный план-факт</div>';
+  h += '<div class="plan-sparkline-wrap">';
+  h += '<svg width="' + svgW + '" height="' + svgH + '" viewBox="0 0 ' + svgW + ' ' + svgH + '" class="plan-sparkline">';
+  h += '<path d="' + planPath + '" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.5"/>';
+  h += '<path d="' + factPath + '" fill="none" stroke="var(--green)" stroke-width="1.5"/>';
+  h += '</svg>';
+  h += '<div class="plan-sparkline-legend"><span style="color:var(--accent)">&#9644; План</span><span style="color:var(--green)">&#9644; Факт</span></div>';
+  h += '</div></div>';
+
+  /* Фича 3: Donut + project list */
+  if (donutSvg && projects.length > 0) {
+    h += '<div class="plan-analytics-card plan-donut-card">';
+    h += '<div class="plan-analytics-label">По проектам</div>';
+    h += '<div class="plan-donut-row">';
+    h += '<div class="plan-donut-svg">' + donutSvg + '</div>';
+    h += '<div class="plan-donut-legend">';
+    projects.slice(0, 4).forEach(function(p, i) {
+      var col = donutColors[i % donutColors.length];
+      h += '<div class="plan-donut-item"><span class="plan-donut-dot" style="background:' + col + '"></span><span class="plan-donut-name">' + esc(p.name.substring(0, 18)) + '</span><span class="plan-donut-pct">' + (totalAmount > 0 ? Math.round(p.amount / totalAmount * 100) : 0) + '%</span></div>';
+    });
+    h += '</div></div></div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+/* ─── Main table (enhanced with Фича 4: idle + overtime) ─── */
 function _planRenderTable() {
   var h = '<div class="plan-table-wrap" style="max-height:520px;overflow-y:auto">';
   h += '<table class="plan-table" style="table-layout:fixed">';
@@ -356,7 +613,7 @@ function _planRenderTable() {
   h += '<th style="text-align:right">План</th>';
   h += '<th style="text-align:right">Факт</th>';
   h += '<th style="text-align:right">Разн.</th>';
-  h += '<th style="text-align:center">∑</th>';
+  h += '<th style="text-align:center">&#8721;</th>';
   h += '<th>Комментарий</th>';
   h += '</tr></thead><tbody>';
 
@@ -371,17 +628,30 @@ function _planRenderTable() {
     var diff = day.fact - day.plan;
     var diffCls = diff >= 0 ? 'pos' : 'neg';
     var diffPrefix = diff >= 0 ? '+' : '';
-    var wkendCls = day.isWeekend ? ' class="row-weekend"' : '';
     var dayName = _planGetDayName(dateStr);
     var taskCount = day.tasks.length;
     var comment = _plan.dayComments[dateStr] || '';
 
+    /* Фича 4: Row class — idle / overtime */
+    var rowCls = '';
+    if (day.isWeekend) {
+      rowCls = ' class="row-weekend"';
+    } else if (_planIsIdleDay(day)) {
+      rowCls = ' class="row-idle"';
+    } else if (_planIsOvertime(day)) {
+      rowCls = ' class="row-overtime"';
+    }
+
     totalPlan += day.plan;
     totalFact += day.fact;
 
-    h += '<tr' + wkendCls + '>';
+    h += '<tr' + rowCls + '>';
     h += '<td class="cell-num">' + idx + '</td>';
-    h += '<td class="cell-date" style="cursor:pointer" onclick="_planOpenTasksModal(\'' + dateStr + '\')">' + _planFormatDateRu(dateStr) + '<span class="day-name">' + dayName + '</span></td>';
+    h += '<td class="cell-date" style="cursor:pointer" onclick="_planOpenTasksModal(\'' + dateStr + '\')">' + _planFormatDateRu(dateStr) + '<span class="day-name">' + dayName + '</span>';
+    /* Фича 4: Idle/Overtime badges */
+    if (_planIsIdleDay(day)) h += '<span class="plan-badge-idle" title="Простой — нет списаний">&#9888;</span>';
+    if (_planIsOvertime(day)) h += '<span class="plan-badge-overtime" title="Переработка >120% плана">&#128293;</span>';
+    h += '</td>';
     h += '<td class="cell-money">' + (day.plan > 0 ? _planFmtMoney(day.plan) : '—') + '</td>';
     h += '<td class="cell-money" style="color:var(--green)">' + (day.fact > 0 ? _planFmtMoney(day.fact) : '—') + '</td>';
     h += '<td class="cell-money ' + diffCls + '">' + (day.plan > 0 || day.fact > 0 ? diffPrefix + _planFmtMoney(diff) : '—') + '</td>';
@@ -403,6 +673,46 @@ function _planRenderTable() {
   h += '<td></td>';
   h += '</tr></tfoot></table></div>';
   return h;
+}
+
+/* ─── Фича 7: Топ-5 задач месяца (expandable) ─── */
+function _planRenderTopTasks() {
+  var top = _planCalcTopTasks();
+  if (!top.length) return '';
+
+  var rate = prGetRate(_plan.selectedDevId);
+  var expanded = _plan.topTasksExpanded;
+
+  var h = '<div class="plan-top-tasks">';
+  h += '<div class="plan-top-tasks-header" onclick="_planToggleTopTasks()">';
+  h += '<span class="plan-top-tasks-title">&#127942; Топ-5 задач по часам</span>';
+  h += '<span class="plan-top-tasks-toggle">' + (expanded ? '&#9650; скрыть' : '&#9660; показать') + '</span>';
+  h += '</div>';
+  if (expanded) {
+    h += '<div class="plan-top-tasks-body">';
+    top.forEach(function(t, i) {
+      var amount = Math.round(t.totalBillable * rate);
+      var barW = top[0].totalBillable > 0 ? Math.round(t.totalBillable / top[0].totalBillable * 100) : 0;
+      h += '<div class="plan-top-task-row">';
+      h += '<span class="plan-top-task-num">' + (i + 1) + '</span>';
+      h += '<div class="plan-top-task-info">';
+      h += '<div class="plan-top-task-name">' + esc(t.title.substring(0, 45)) + (t.title.length > 45 ? '...' : '') + '</div>';
+      if (t.projectName) h += '<div class="plan-top-task-proj">' + esc(t.projectName) + '</div>';
+      h += '</div>';
+      h += '<div class="plan-top-task-bar-wrap"><div class="plan-top-task-bar" style="width:' + barW + '%"></div></div>';
+      h += '<div class="plan-top-task-hours">' + t.totalBillable.toFixed(1) + 'ч</div>';
+      h += '<div class="plan-top-task-amount">' + _planFmtMoney(amount) + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function _planToggleTopTasks() {
+  _plan.topTasksExpanded = !_plan.topTasksExpanded;
+  _planRenderAll();
 }
 
 /* ─── Tasks modal (click on date) ─── */
@@ -551,6 +861,7 @@ function _planOnPeriodChange(val) {
   _planLoadOverrides();
   _planLoadComments();
   _planLoadEventLog();
+  _planLoadPrevMonth();
   _planLoadData();
 }
 
@@ -631,6 +942,52 @@ function _planOnCommentChange(el) {
 
   if (val !== oldVal) {
     _planLogEvent('Комментарий', _planFormatDateRu(dateStr) + ': ' + (oldVal || '—') + ' → ' + (val || '—'));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ФИЧА 10: Быстрый экспорт сводки
+   ═══════════════════════════════════════════════════════════════ */
+function _planExportSummary() {
+  var totalPlan = 0, totalFact = 0, workDays = 0, idleDays = 0, overtimeDays = 0;
+  Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+    var day = _plan.dailyMap[dateStr];
+    totalPlan += day.plan;
+    totalFact += day.fact;
+    if (!day.isWeekend) {
+      workDays++;
+      if (_planIsIdleDay(day)) idleDays++;
+      if (_planIsOvertime(day)) overtimeDays++;
+    }
+  });
+  var diff = totalFact - totalPlan;
+  var pct = totalPlan > 0 ? Math.round(totalFact / totalPlan * 100) : 0;
+  var eff = _planCalcEfficiency();
+  var devName = _plan.selectedDevId ? prGetDevName(_plan.selectedDevId) : '—';
+  var monthName = (typeof МЕСЯЦЫ_ПОЛН !== 'undefined') ? МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year : prCurrentPeriod.year + '-' + prCurrentPeriod.month;
+  var burn = _planCalcBurnRate();
+
+  var text = 'План-факт ' + devName + ', ' + monthName + '\n';
+  text += 'План: ' + _planFmtMoney(totalPlan) + ' | Факт: ' + _planFmtMoney(totalFact) + ' | Разница: ' + (diff >= 0 ? '+' : '') + _planFmtMoney(diff) + ' (' + pct + '%)\n';
+  text += 'КПД: ' + eff + '% | Раб.дней: ' + workDays + ' | Простои: ' + idleDays + ' | Переработки: ' + overtimeDays;
+  if (burn) text += '\nПрогноз: ' + burn.projectedPct + '% на конец месяца';
+
+  /* Copy to clipboard */
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      _planLogEvent('Экспорт', 'Сводка скопирована');
+      /* Brief visual feedback */
+      var btn = document.querySelector('.plan-actions .plan-btn-ghost');
+      if (btn) { var orig = btn.textContent; btn.textContent = 'Скопировано!'; setTimeout(function() { btn.textContent = orig; }, 1500); }
+    });
+  } else {
+    /* Fallback */
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
   }
 }
 

@@ -347,8 +347,7 @@ var PLAN_CSS = '\
 .plan-summary{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;margin-bottom:16px;box-shadow:var(--shadow-card),var(--highlight)}\
 .plan-summary-title{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:6px}\
 .plan-summary-title::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--orange);box-shadow:0 0 6px var(--orange)}\
-.plan-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}\
-@media(max-width:700px){.plan-summary-grid{grid-template-columns:1fr 1fr}}\
+.plan-summary-grid{display:grid;gap:12px}\
 .plan-summary-item{text-align:center;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px}\
 .plan-summary-label{font-family:var(--mono);font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}\
 .plan-summary-value{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text);line-height:1}\
@@ -427,4 +426,75 @@ var PLAN_CSS = '\
 /* Hide number spinners — no arrows in fields */\
 .plan-admin-input::-webkit-inner-spin-button,.plan-admin-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}\
 .plan-admin-input[type=number]{-moz-appearance:textfield}\
+\
+/* ─── Plan Analytics Row (Фичи 1,2,3) ─── */\
+.plan-analytics-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}\
+@media(max-width:900px){.plan-analytics-row{grid-template-columns:1fr}}\
+.plan-analytics-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;box-shadow:var(--shadow-card),var(--highlight)}\
+.plan-analytics-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}\
+.plan-analytics-sub{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px}\
+\
+/* Фича 1: Burn Rate */\
+.plan-burn-row{display:flex;align-items:center;gap:10px}\
+.plan-burn-track{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}\
+.plan-burn-fill{height:100%;border-radius:4px;transition:width .4s}\
+.plan-burn-fill.plan-burn-good{background:var(--green)}\
+.plan-burn-fill.plan-burn-warn{background:var(--yellow)}\
+.plan-burn-fill.plan-burn-bad{background:var(--red)}\
+.plan-burn-val{font-family:var(--mono);font-size:18px;font-weight:700;min-width:50px;text-align:right}\
+\
+/* Фича 2: Sparkline */\
+.plan-sparkline-wrap{position:relative}\
+.plan-sparkline{display:block;width:100%;height:auto}\
+.plan-sparkline-legend{display:flex;gap:12px;margin-top:4px;font-family:var(--mono);font-size:9px}\
+\
+/* Фича 3: Donut */\
+.plan-donut-card{min-width:0}\
+.plan-donut-row{display:flex;align-items:center;gap:12px}\
+.plan-donut-svg{flex-shrink:0}\
+.plan-donut-legend{flex:1;min-width:0}\
+.plan-donut-item{display:flex;align-items:center;gap:6px;padding:2px 0}\
+.plan-donut-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}\
+.plan-donut-name{font-family:var(--mono);font-size:10px;color:var(--text2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.plan-donut-pct{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text);min-width:28px;text-align:right}\
+\
+/* Фича 4: Idle / Overtime rows */\
+.plan-table tbody tr.row-idle{background:rgba(255,140,66,.04);border-left:3px solid var(--orange)}\
+.plan-table tbody tr.row-idle td{color:var(--text2)}\
+.plan-table tbody tr.row-overtime{background:rgba(255,79,106,.04);border-left:3px solid var(--red)}\
+.plan-badge-idle{font-size:10px;margin-left:4px;color:var(--orange);cursor:help}\
+.plan-badge-overtime{font-size:10px;margin-left:4px;color:var(--red);cursor:help}\
+\
+/* Фича 6: КПД colors */\
+.plan-summary-value.val-kpd-good{color:var(--green)}\
+.plan-summary-value.val-kpd-warn{color:var(--yellow)}\
+.plan-summary-value.val-kpd-bad{color:var(--red)}\
+\
+/* Фича 8: Delta badges */\
+.plan-delta{font-family:var(--mono);font-size:8px;font-weight:600;margin-left:4px}\
+.plan-delta.pos{color:var(--green)}\
+.plan-delta.neg{color:var(--red)}\
+\
+/* Фича 7: Top-5 Tasks */\
+.plan-top-tasks{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;box-shadow:var(--shadow-card),var(--highlight);overflow:hidden}\
+.plan-top-tasks-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;cursor:pointer;transition:background .15s;user-select:none}\
+.plan-top-tasks-header:hover{background:var(--bg-hover)}\
+.plan-top-tasks-title{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}\
+.plan-top-tasks-toggle{font-family:var(--mono);font-size:9px;color:var(--text3)}\
+.plan-top-tasks-body{padding:8px 16px 12px}\
+.plan-top-task-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}\
+.plan-top-task-row:last-child{border-bottom:none}\
+.plan-top-task-num{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);min-width:18px}\
+.plan-top-task-info{flex:1;min-width:0}\
+.plan-top-task-name{font-family:var(--sans);font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.plan-top-task-proj{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:1px}\
+.plan-top-task-bar-wrap{width:60px;height:4px;background:var(--bg);border-radius:2px;overflow:hidden;flex-shrink:0}\
+.plan-top-task-bar{height:100%;border-radius:2px;background:var(--green);transition:width .3s}\
+.plan-top-task-hours{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text2);min-width:40px;text-align:right}\
+.plan-top-task-amount{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--green);min-width:60px;text-align:right}\
+\
+/* Summary grid 5 columns for КПД */\
+.plan-summary-grid{grid-template-columns:repeat(5,1fr)}\
+@media(max-width:900px){.plan-summary-grid{grid-template-columns:repeat(3,1fr)}}\
+@media(max-width:600px){.plan-summary-grid{grid-template-columns:1fr 1fr}}\
 ';
