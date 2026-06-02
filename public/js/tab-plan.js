@@ -795,10 +795,10 @@ function _planRenderTaskDetailModal() {
   var bxTaskUrl = bxPortal + '/company/personal/user/' + _plan.selectedDevId + '/tasks/task/view/' + task.taskId + '/';
 
   var h = '<div class="modal-overlay open" id="planTaskDetailModal" onclick="if(event.target===this)_planCloseTaskDetail()">';
-  h += '<div class="modal" style="max-width:600px">';
+  h += '<div class="modal" style="max-width:600px;overflow:hidden">';
 
   /* ── Header: ← Назад | #taskId | проект-тег ── */
-  h += '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)">';
+  h += '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);overflow:hidden">';
   h += '<span style="color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap" onclick="_planCloseTaskDetail()">&larr; Назад</span>';
   h += '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">#' + esc(task.taskId) + '</span>';
   if (task.projectName) {
@@ -811,8 +811,8 @@ function _planRenderTaskDetailModal() {
   /* ── Body ── */
   h += '<div style="padding:16px">';
 
-  /* Task title */
-  h += '<div style="font-size:16px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:12px">' + esc(task.title) + '</div>';
+  /* Task title — truncate if too long */
+  h += '<div style="font-size:16px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(task.title) + '">' + esc(task.title) + '</div>';
 
   /* ОПИСАНИЕ */
   if (hasDesc) {
@@ -1054,6 +1054,7 @@ function _planOnCommentChange(el) {
 
   if (val !== oldVal) {
     _planLogEvent('Комментарий', _planFormatDateRu(dateStr) + ': ' + (oldVal || '—') + ' → ' + (val || '—'));
+    _planRenderAll();
   }
 }
 
@@ -1135,7 +1136,7 @@ function _planRenderAdminModal() {
   h += '</div>';
 
   /* Body */
-  h += '<div class="pr-modal-body" id="planAdminBody">';
+  h += '<div class="pr-modal-body" id="planAdminBody" style="overflow-y:auto">';
   h += _planRenderAdminBody();
   h += '</div>';
 
@@ -1245,14 +1246,11 @@ function _planSavePlanAdmin() {
 
   _planLogEvent('Админка: ставки', _plan.adminSaveMsg);
 
-  /* Rebuild daily map with new rates */
+  /* Rebuild daily map with new rates (no API call, just recalc) */
   _planBuildDailyMap();
 
-  /* Partial render of admin body + footer */
-  var body = document.getElementById('planAdminBody');
-  if (body) body.innerHTML = _planRenderAdminBody();
-
-  /* Re-render the main table area too */
+  /* Close admin modal and render once */
+  _plan.modalOpen = null;
   _planRenderAll();
 }
 
