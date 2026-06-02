@@ -29,7 +29,8 @@ var _plan = {
   adminSaveMsg: null,      /* flash message after save */
   adminChangedDevs: {},    /* devId -> true for green highlight */
   prevMonthTotals: null,   /* {plan, fact} from previous month for delta */
-  topTasksExpanded: false  /* toggle for top-5 tasks */
+  topTasksExpanded: false,  /* toggle for top-5 tasks */
+  taskDescCache: {}         /* taskId -> {description, deadline, statusText} */
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -781,42 +782,153 @@ function _planRenderTaskDetailModal() {
   if (!task) return '';
 
   var rate = prGetRate(_plan.selectedDevId);
+  var cached = _plan.taskDescCache[task.taskId] || {};
+  var desc = cached.description || '';
+  var deadline = cached.deadline || '';
+  var statusText = cached.statusText || '';
+  var hasDesc = desc.length > 0;
+  var shortDesc = hasDesc && desc.length > 120 ? desc.substring(0, 120) + '...' : desc;
+
+  /* Bitrix24 task URL */
+  var bxPortal = '';
+  try { bxPortal = (HOOK || '').replace(/\/rest\/.*/, ''); } catch(e) {}
+  var bxTaskUrl = bxPortal + '/company/personal/user/' + _plan.selectedDevId + '/tasks/task/view/' + task.taskId + '/';
+
   var h = '<div class="modal-overlay open" id="planTaskDetailModal" onclick="if(event.target===this)_planCloseTaskDetail()">';
-  h += '<div class="modal" style="max-width:700px">';
-  h += '<div class="modal-header">';
-  h += '<span class="modal-title">' + esc(task.title) + '</span>';
+  h += '<div class="modal" style="max-width:600px">';
+
+  /* ── Header: ← Назад | #taskId | проект-тег ── */
+  h += '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)">';
+  h += '<span style="color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap" onclick="_planCloseTaskDetail()">&larr; Назад</span>';
+  h += '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">#' + esc(task.taskId) + '</span>';
+  if (task.projectName) {
+    h += '<span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(79,139,255,.1);padding:2px 8px;border-radius:10px;white-space:nowrap">' + esc(task.projectName) + '</span>';
+  }
+  h += '<span style="flex:1"></span>';
   h += '<button class="modal-close" onclick="_planCloseTaskDetail()">&times;</button>';
   h += '</div>';
-  h += '<div class="modal-body">';
 
-  h += '<div class="plan-detail-grid">';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">Проект</span><span class="plan-detail-val">' + esc(task.projectName || '—') + '</span></div>';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">ID задачи</span><span class="plan-detail-val">' + esc(task.taskId) + '</span></div>';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">Факт часы</span><span class="plan-detail-val" style="color:var(--accent)">' + task.factHours.toFixed(1) + ' ч</span></div>';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">Часы к выставлению</span><span class="plan-detail-val" style="color:var(--green)">' + task.billableHours.toFixed(1) + ' ч</span></div>';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">Ставка</span><span class="plan-detail-val">' + rate + ' р/ч</span></div>';
-  h += '<div class="plan-detail-item"><span class="plan-detail-label">Сумма к выплате</span><span class="plan-detail-val" style="color:var(--orange)">' + _planFmtMoney(task.billableHours * rate) + '</span></div>';
-  h += '</div>';
+  /* ── Body ── */
+  h += '<div style="padding:16px">';
 
-  /* Elapsed entries */
-  if (task.elapsedEntries && task.elapsedEntries.length) {
-    h += '<div class="plan-detail-section">Списания времени</div>';
-    h += '<table class="plan-table" style="min-width:auto;margin-top:6px">';
-    h += '<thead><tr><th>Время</th><th>Комментарий</th></tr></thead><tbody>';
-    task.elapsedEntries.forEach(function(e) {
-      var mins = parseInt(e.MINUTES || (parseInt(e.SECONDS || 0) / 60) || 0);
-      var hrs = safeRound(mins / 60, 2);
-      h += '<tr><td class="cell-money">' + hrs.toFixed(1) + ' ч</td>';
-      h += '<td style="font-family:var(--sans);font-size:11px;color:var(--text2)">' + esc(e.COMMENT_TEXT || '—') + '</td></tr>';
-    });
-    h += '</tbody></table>';
+  /* Task title */
+  h += '<div style="font-size:16px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:12px">' + esc(task.title) + '</div>';
+
+  /* ОПИСАНИЕ */
+  if (hasDesc) {
+    h += '<div style="margin-bottom:12px">';
+    h += '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Описание</div>';
+    h += '<div id="taskDescShort" style="font-size:12px;color:var(--text2);line-height:1.5">' + esc(shortDesc) + '</div>';
+    if (desc.length > 120) {
+      h += '<div id="taskDescFull" style="font-size:12px;color:var(--text2);line-height:1.5;display:none">' + esc(desc) + '</div>';
+      h += '<span id="taskDescToggle" style="color:var(--accent);font-family:var(--mono);font-size:11px;cursor:pointer" onclick="_planToggleDesc()">Показать &#9660;</span>';
+    }
+    h += '</div>';
+  } else {
+    h += '<div style="margin-bottom:12px">';
+    h += '<div style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Описание</div>';
+    h += '<div id="taskDescContent" style="font-size:12px;color:var(--text3);font-style:italic">Загрузка...</div>';
+    h += '</div>';
   }
 
+  /* ── Info grid ── */
+  h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
+  h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Проект</span>';
+  h += '<span style="font-family:var(--mono);font-size:12px;color:var(--text2)">' + esc(task.projectName || '—') + '</span>';
+  h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Списано</span>';
+  h += '<span style="font-family:var(--mono);font-size:12px;color:var(--green)">' + task.factHours.toFixed(1) + ' ч</span>';
+  h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">К выставлению</span>';
+  h += '<span style="font-family:var(--mono);font-size:12px;color:var(--accent)">' + task.billableHours.toFixed(1) + ' ч</span>';
+  h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Сумма</span>';
+  h += '<span style="font-family:var(--mono);font-size:12px;color:var(--orange)">' + _planFmtMoney(task.billableHours * rate) + '</span>';
+  if (statusText) {
+    h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Статус</span>';
+    h += '<span style="font-family:var(--mono);font-size:12px;color:var(--text2)">' + esc(statusText) + '</span>';
+  }
+  if (deadline) {
+    h += '<span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Крайний срок</span>';
+    h += '<span style="font-family:var(--mono);font-size:12px;color:var(--red)">' + esc(deadline) + '</span>';
+  }
   h += '</div>';
-  h += '<div class="modal-footer">';
-  h += '<button class="plan-btn plan-btn-ghost" onclick="_planCloseTaskDetail()">Назад (Esc)</button>';
-  h += '</div></div></div>';
+
+  h += '</div>'; /* end body padding */
+
+  /* ── Footer: ссылка «Открыть в Битрикс» ── */
+  h += '<div style="padding:8px 16px;border-top:1px solid var(--border);text-align:right">';
+  h += '<a href="' + esc(bxTaskUrl) + '" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:10px;color:var(--accent);text-decoration:none;opacity:.7" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.7">Открыть в Битрикс &#8599;</a>';
+  h += '</div>';
+
+  h += '</div></div>';
+
+  /* Fetch description if not cached */
+  if (!hasDesc) {
+    setTimeout(function() { _planFetchTaskDesc(task.taskId); }, 100);
+  }
+
   return h;
+}
+
+/* Toggle description Показать/Свернуть */
+function _planToggleDesc() {
+  var shortEl = document.getElementById('taskDescShort');
+  var fullEl = document.getElementById('taskDescFull');
+  var toggleEl = document.getElementById('taskDescToggle');
+  if (!shortEl || !fullEl) return;
+  if (fullEl.style.display === 'none') {
+    shortEl.style.display = 'none';
+    fullEl.style.display = '';
+    if (toggleEl) toggleEl.innerHTML = 'Свернуть &#9650;';
+  } else {
+    shortEl.style.display = '';
+    fullEl.style.display = 'none';
+    if (toggleEl) toggleEl.innerHTML = 'Показать &#9660;';
+  }
+}
+
+/* Fetch task description from Bitrix24 on demand */
+function _planFetchTaskDesc(taskId) {
+  if (_plan.taskDescCache[taskId]) return;
+  if (typeof bxPost !== 'function') return;
+
+  bxPost('tasks.task.get', { taskId: taskId, select: ['ID','TITLE','DESCRIPTION','STATUS','DEADLINE','STATUS_PSEUDO'] }).then(function(r) {
+    if (!r || r.error || !r.result || !r.result.task) {
+      _plan.taskDescCache[taskId] = { description: '', deadline: '', statusText: '' };
+      return;
+    }
+    var t = r.result.task;
+    var desc = t.description || '';
+    var deadline = t.deadline || '';
+    var statusText = '';
+    /* Status mapping */
+    var s = parseInt(t.status, 10);
+    if (s === 1 || t.statusPseudo === 'pending') statusText = 'Ждёт выполнения';
+    else if (s === 2 || t.statusPseudo === 'in_progress') statusText = 'В работе';
+    else if (s === 3 || t.statusPseudo === 'completed') statusText = 'Выполнена';
+    else if (s === 4 || s === 5 || t.statusPseudo === 'deferred') statusText = 'Отложена';
+    else if (t.statusPseudo === 'review') statusText = 'На проверке';
+
+    if (deadline) {
+      try {
+        var dd = new Date(deadline);
+        if (!isNaN(dd.getTime())) {
+          var dDay = String(dd.getDate()).padStart(2, '0');
+          var dMon = МЕСЯЦЫ_ПОЛН[dd.getMonth()];
+          var dH = String(dd.getHours()).padStart(2, '0');
+          var dM = String(dd.getMinutes()).padStart(2, '0');
+          deadline = dDay + ' ' + dMon + ' ' + dH + ':' + dM;
+        }
+      } catch(e) {}
+    }
+
+    _plan.taskDescCache[taskId] = { description: desc, deadline: deadline, statusText: statusText };
+
+    /* Re-render if still viewing this task */
+    if (_plan.modalOpen === 'taskDetail' && _plan.modalTaskId === String(taskId)) {
+      _planRenderAll();
+    }
+  }).catch(function() {
+    _plan.taskDescCache[taskId] = { description: '', deadline: '', statusText: '' };
+  });
 }
 
 /* ─── Event log ─── */

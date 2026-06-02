@@ -426,6 +426,8 @@ var PLAN_CSS = '\
 /* Hide number spinners — no arrows in fields */\
 .plan-admin-input::-webkit-inner-spin-button,.plan-admin-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}\
 .plan-admin-input[type=number]{-moz-appearance:textfield}\
+.plan-edit::-webkit-inner-spin-button,.plan-edit::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}\
+.plan-edit[type=number]{-moz-appearance:textfield}\
 \
 /* ─── Plan Analytics Row (Фичи 1,2,3) ─── */\
 .plan-analytics-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}\
