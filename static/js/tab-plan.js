@@ -804,10 +804,10 @@ function _planRenderTaskDetailModal() {
   var hasDesc = desc.length > 0;
   var shortDesc = hasDesc && desc.length > 120 ? desc.substring(0, 120) + '...' : desc;
 
-  /* Bitrix24 task URL */
+  /* Bitrix24 task URL — стандартный формат без /company/personal/user/ */
   var bxPortal = '';
   try { bxPortal = (HOOK || '').replace(/\/rest\/.*/, ''); } catch(e) {}
-  var bxTaskUrl = bxPortal + '/company/personal/user/' + _plan.selectedDevId + '/tasks/task/view/' + task.taskId + '/';
+  var bxTaskUrl = bxPortal + '/tasks/task/view/' + task.taskId + '/';
 
   var h = '<div class="modal-overlay open" id="planTaskDetailModal" onclick="if(event.target===this)_planCloseTaskDetail()">';
   h += '<div class="modal" style="max-width:600px;overflow:hidden">';
