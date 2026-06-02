@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    tab-plan.js — Вкладка ПЛАН (План-факт контроль выработки)
-   v4.0.0 — Аналитические фичи: Burn Rate, Sparkline, Donut, КПД,
+   v4.1.0 — Убрана вкладка Обзор, тёмные скроллбары
              Простои, Топ-5, Дельта, Экспорт
 
    Логика:
@@ -42,7 +42,7 @@ window.TabPlan = {
     _plan.container = container;
     if (!_plan.styleEl && typeof PLAN_CSS !== 'undefined') {
       _plan.styleEl = document.createElement('style');
-      _plan.styleEl.textContent = PLAN_CSS;
+      _plan.styleEl.textContent = PLAN_CSS + _PLAN_SCROLLBAR_CSS;
       document.head.appendChild(_plan.styleEl);
     }
     _planLoadOverrides();
@@ -374,6 +374,17 @@ function _planCalcDelta(curPlan, curFact) {
   var factDelta = prevFact > 0 ? Math.round((curFact - prevFact) / prevFact * 100) : 0;
   return { planDelta: planDelta, factDelta: factDelta };
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ТЁМНЫЕ СКРОЛЛБАРЫ (добавляются к PLAN_CSS при инициализации)
+   ═══════════════════════════════════════════════════════════════ */
+var _PLAN_SCROLLBAR_CSS = '\
+.modal-body::-webkit-scrollbar,.pr-modal-body::-webkit-scrollbar,.plan-log-body::-webkit-scrollbar{width:5px}\
+.modal-body::-webkit-scrollbar-thumb,.pr-modal-body::-webkit-scrollbar-thumb,.plan-log-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}\
+.modal-body::-webkit-scrollbar-track,.pr-modal-body::-webkit-scrollbar-track,.plan-log-body::-webkit-scrollbar-track{background:transparent}\
+.modal-body,.pr-modal-body{scrollbar-width:thin;scrollbar-color:var(--border) transparent}\
+.plan-log-body{scrollbar-width:thin;scrollbar-color:var(--border) transparent}\
+';
 
 /* ═══════════════════════════════════════════════════════════════
    РЕНДЕРИНГ
