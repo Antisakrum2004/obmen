@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    tab-plan.js — Вкладка ПЛАН (План-факт контроль выработки)
-   v4.1.0 — Убрана вкладка Обзор, тёмные скроллбары
+   v4.2.0 — Чипсы разрабов вместо dropdown + info-line
+             Убрана вкладка Обзор, тёмные скроллбары
              Простои, Топ-5, Дельта, Экспорт
 
    Логика:
@@ -384,6 +385,10 @@ var _PLAN_SCROLLBAR_CSS = '\
 .modal-body::-webkit-scrollbar-track,.pr-modal-body::-webkit-scrollbar-track,.plan-log-body::-webkit-scrollbar-track{background:transparent}\
 .modal-body,.pr-modal-body{scrollbar-width:thin;scrollbar-color:var(--border) transparent}\
 .plan-log-body{scrollbar-width:thin;scrollbar-color:var(--border) transparent}\
+.plan-dev-chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 0}\
+.plan-dev-chip{display:inline-flex;align-items:center;padding:4px 12px;border-radius:16px;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text2);background:var(--bg2);border:1px solid var(--border);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap}\
+.plan-dev-chip:hover{border-color:var(--border2);color:var(--text);transform:translateY(-1px)}\
+.plan-dev-chip.active{color:#fff;background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px rgba(79,139,255,.25)}\
 ';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -412,26 +417,15 @@ function _planRenderAll() {
   _planAttachKeys();
 }
 
-/* ─── Header with dev selector ─── */
+/* ─── Header with dev chips ─── */
 function _planRenderHeader() {
   var h = '<div class="plan-doc-header">';
   h += '<div class="plan-doc-title">';
   h += 'План-факт контроль';
-  if (_plan.selectedDevId) {
-    h += ' <span class="plan-doc-num">' + esc(prGetDevName(_plan.selectedDevId)) + '</span>';
-  }
   h += ' <span class="plan-doc-date">' + (typeof МЕСЯЦЫ_ПОЛН !== 'undefined' ? МЕСЯЦЫ_ПОЛН[prCurrentPeriod.month - 1] + ' ' + prCurrentPeriod.year : '') + '</span>';
   h += '</div>';
 
   h += '<div class="plan-actions">';
-  h += '<select class="plan-req-input plan-dev-select" onchange="_planOnDevChange(this.value)">';
-  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
-    ACTIVE_DEV_IDS.forEach(function(id) {
-      var sel = String(id) === String(_plan.selectedDevId) ? ' selected' : '';
-      h += '<option value="' + id + '"' + sel + '>' + esc(prGetDevName(String(id))) + '</option>';
-    });
-  }
-  h += '</select>';
 
   /* Period select */
   h += '<select class="plan-req-input" onchange="_planOnPeriodChange(this.value)">';
@@ -451,19 +445,29 @@ function _planRenderHeader() {
   h += '<button class="plan-btn plan-btn-yellow" onclick="_planOpenAdmin()">&#9881; Админка</button>';
   h += '</div>';
 
-  /* Info line */
-  if (_plan.selectedDevId) {
-    var rate = prGetRate(_plan.selectedDevId);
-    var base = prGetBase(_plan.selectedDevId);
-    h += '<div class="plan-info-line">';
-    h += '<span>Ставка: <strong>' + rate + ' р/ч</strong></span>';
-    h += '<span>План/день: <strong>' + _planFmtMoney(8 * rate) + '</strong></span>';
-    if (base > 0) h += '<span>Оклад: <strong>' + _planFmtMoney(base) + '</strong></span>';
-    h += '</div>';
+  /* Dev chips */
+  h += '<div class="plan-dev-chips">';
+  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
+    ACTIVE_DEV_IDS.forEach(function(id) {
+      var isActive = String(id) === String(_plan.selectedDevId);
+      var cls = 'plan-dev-chip' + (isActive ? ' active' : '');
+      var fullName = prGetDevName(String(id));
+      var shortName = _planShortDevName(fullName);
+      h += '<span class="' + cls + '" onclick="_planOnDevChange(' + id + ')" title="' + esc(fullName) + '">' + esc(shortName) + '</span>';
+    });
   }
+  h += '</div>';
 
   h += '</div>';
   return h;
+}
+
+/* Short name for chips: "Имя Ф." */
+function _planShortDevName(fullName) {
+  if (!fullName) return '?';
+  var parts = fullName.trim().split(/\s+/);
+  if (parts.length >= 2) return parts[0] + ' ' + parts[1].charAt(0) + '.';
+  return parts[0];
 }
 
 /* ─── Summary block (enhanced with Фича 6 КПД + Фича 8 Дельта) ─── */
