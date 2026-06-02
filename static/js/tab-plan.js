@@ -89,7 +89,7 @@ function _planSaveOverrides() {
 }
 
 function _planCommentsKey() {
-  return 'pr_plan_cmt_' + prCurrentPeriod.year + '_' + String(prCurrentPeriod.month).padStart(2, '0');
+  return 'pr_plan_cmt_' + prCurrentPeriod.year + '_' + String(prCurrentPeriod.month).padStart(2, '0') + '_' + _plan.selectedDevId;
 }
 
 function _planLoadComments() {
@@ -1131,7 +1131,6 @@ function _planOpenAdmin() {
 }
 
 function _planCloseAdmin(e) {
-  if (e && e.target && !e.target.classList.contains('pr-modal-overlay')) return;
   _plan.modalOpen = null;
   _plan.adminSaveMsg = null;
   _plan.adminChangedDevs = {};
@@ -1141,22 +1140,22 @@ function _planCloseAdmin(e) {
 function _planRenderAdminModal() {
   if (_plan.modalOpen !== 'admin') return '';
 
-  var h = '<div class="pr-modal-overlay" onclick="_planCloseAdmin(event)">';
-  h += '<div class="pr-modal" onclick="event.stopPropagation()" style="max-width:960px">';
+  var h = '<div class="modal-overlay open" id="planAdminModal" onclick="if(event.target===this)_planCloseAdmin()">';
+  h += '<div class="modal" onclick="event.stopPropagation()" style="max-width:960px">';
 
   /* Header */
-  h += '<div class="pr-modal-header">';
-  h += '<span class="pr-modal-title">&#9881; Настройка ставок — План-факт</span>';
-  h += '<button class="pr-modal-close" onclick="_planCloseAdmin()">&times;</button>';
+  h += '<div class="modal-header">';
+  h += '<span class="modal-title">&#9881; Настройка ставок — План-факт</span>';
+  h += '<button class="modal-close" onclick="_planCloseAdmin()">&times;</button>';
   h += '</div>';
 
   /* Body */
-  h += '<div class="pr-modal-body" id="planAdminBody" style="overflow-y:auto">';
+  h += '<div class="modal-body" id="planAdminBody" style="overflow-y:auto;padding:12px 16px">';
   h += _planRenderAdminBody();
   h += '</div>';
 
   /* Footer */
-  h += '<div class="pr-modal-footer">';
+  h += '<div class="modal-footer">';
   if (_plan.adminSaveMsg) {
     h += '<div style="display:flex;align-items:center;gap:6px;margin-right:auto;padding:6px 12px;background:rgba(34,212,126,.12);border:1px solid rgba(34,212,126,.3);border-radius:6px">';
     h += '<span style="color:var(--green);font-size:14px">&#10003;</span>';
