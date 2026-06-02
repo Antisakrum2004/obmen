@@ -804,10 +804,11 @@ function _planRenderTaskDetailModal() {
   var hasDesc = desc.length > 0;
   var shortDesc = hasDesc && desc.length > 120 ? desc.substring(0, 120) + '...' : desc;
 
-  /* Bitrix24 task URL — стандартный формат без /company/personal/user/ */
+  /* Bitrix24 task URL — надёжное извлечение домена портала */
   var bxPortal = '';
   try { bxPortal = (HOOK || '').replace(/\/rest\/.*/, ''); } catch(e) {}
-  var bxTaskUrl = bxPortal + '/tasks/task/view/' + task.taskId + '/';
+  if (!bxPortal || !bxPortal.startsWith('http')) bxPortal = 'https://1c-cms.bitrix24.ru';
+  var bxTaskUrl = bxPortal + '/company/personal/user/' + _plan.selectedDevId + '/tasks/task/view/' + task.taskId + '/';
 
   var h = '<div class="modal-overlay open" id="planTaskDetailModal" onclick="if(event.target===this)_planCloseTaskDetail()">';
   h += '<div class="modal" style="max-width:600px;overflow:hidden">';
@@ -815,7 +816,7 @@ function _planRenderTaskDetailModal() {
   /* ── Header: ← Назад | #taskId | проект-тег ── */
   h += '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);overflow:hidden">';
   h += '<span style="color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap" onclick="_planCloseTaskDetail()">&larr; Назад</span>';
-  h += '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">#' + esc(task.taskId) + '</span>';
+  h += '<a href="' + esc(bxTaskUrl) + '" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;opacity:.8" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.8" title="Открыть задачку в Битрикс">#' + esc(task.taskId) + '</a>';
   if (task.projectName) {
     h += '<span style="font-family:var(--mono);font-size:10px;color:var(--accent);background:rgba(79,139,255,.1);padding:2px 8px;border-radius:10px;white-space:nowrap">' + esc(task.projectName) + '</span>';
   }
