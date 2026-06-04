@@ -1054,6 +1054,7 @@ function _planOnBillableChange(el) {
   _planLogEvent('Часы выставл.', taskTitle.substring(0, 40) + ': ' + (oldVal !== undefined ? oldVal : 'факт') + ' → ' + val);
 
   _planRenderAll();
+  _planDebouncedApiSave();
 }
 
 function _planOnCommentChange(el) {
@@ -1071,6 +1072,7 @@ function _planOnCommentChange(el) {
   if (val !== oldVal) {
     _planLogEvent('Комментарий', _planFormatDateRu(dateStr) + ': ' + (oldVal || '—') + ' → ' + (val || '—'));
     _planRenderAll();
+    _planDebouncedApiSave();
   }
 }
 
@@ -1264,9 +1266,150 @@ function _planSavePlanAdmin() {
   /* Rebuild daily map with new rates (no API call, just recalc) */
   _planBuildDailyMap();
 
+  /* Send snapshot to API (fire-and-forget) */
+  _planSaveToApi();
+
   /* Close admin modal and render once */
   _plan.modalOpen = null;
   _planRenderAll();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   API: отправка снапшота на сервер
+   ═══════════════════════════════════════════════════════════════ */
+var _PR_API_KEY = 'pr_api_2026';
+
+function _planBuildApiSnapshot() {
+  var periodKey = prCurrentPeriod.year + '-' + String(prCurrentPeriod.month).padStart(2, '0');
+  var developers = [];
+  var details = [];
+  var totals = { totalPlan: 0, totalFact: 0, totalPayrollAmount: 0, totalClientRevenue: 0, totalBase: 0, totalFine: 0 };
+
+  if (typeof ACTIVE_DEV_IDS !== 'undefined') {
+    ACTIVE_DEV_IDS.forEach(function(devId) {
+      var sid = String(devId);
+      var rate = prGetRate(sid);
+      var clientRate = prGetClientRate(sid);
+      var base = prGetBase(sid);
+      var fine = prGetFine(sid);
+      var fineComment = prGetFineComment(sid);
+      var fines = prGetFines(sid);
+      var devName = prGetDevName(sid);
+
+      var devFactHours = 0;
+      var devBillableHours = 0;
+      var devPayrollAmount = 0;
+      var devClientRevenue = 0;
+      var devTaskCount = 0;
+
+      /* Собираем данные по дням для этого разраба */
+      var savedDevId = _plan.selectedDevId;
+      _plan.selectedDevId = sid;
+      _planBuildDailyMap();
+
+      Object.keys(_plan.dailyMap).forEach(function(dateStr) {
+        var day = _plan.dailyMap[dateStr];
+        day.tasks.forEach(function(t) {
+          devFactHours += t.factHours;
+          devBillableHours += t.billableHours;
+          devPayrollAmount += t.billableHours * rate;
+          devClientRevenue += t.billableHours * clientRate;
+          devTaskCount++;
+
+          details.push({
+            devId: parseInt(sid),
+            fullName: devName,
+            taskId: parseInt(t.taskId),
+            taskTitle: t.title,
+            projectId: t.projectId ? parseInt(t.projectId) : null,
+            projectName: t.projectName || '',
+            date: dateStr,
+            factHours: t.factHours,
+            billableHours: t.billableHours,
+            rate: rate,
+            payrollAmount: Math.round(t.billableHours * rate),
+            clientRate: clientRate,
+            clientAmount: Math.round(t.billableHours * clientRate),
+            comment: _plan.dayComments[dateStr] || ''
+          });
+        });
+      });
+
+      var payrollAmount = Math.round(devPayrollAmount) + base - fine;
+      var grossMargin = devClientRevenue - payrollAmount;
+
+      developers.push({
+        devId: parseInt(sid),
+        fullName: devName,
+        inn: prGetInn(sid),
+        selfEmployed: prGetSelfEmployed(sid),
+        bank: prGetBank(sid),
+        contract: prGetContract(sid),
+        contractDate: prGetContractDate(sid),
+        rate: rate,
+        clientRate: clientRate,
+        base: base,
+        fine: fine,
+        fineComment: fineComment,
+        fines: fines,
+        notes: prGetNotes(sid),
+        active: true,
+        factHours: devFactHours,
+        billableHours: devBillableHours,
+        payrollAmount: payrollAmount,
+        clientRevenue: devClientRevenue,
+        grossMargin: grossMargin,
+        taskCount: devTaskCount
+      });
+
+      totals.totalPayrollAmount += payrollAmount;
+      totals.totalClientRevenue += devClientRevenue;
+      totals.totalBase += base;
+      totals.totalFine += fine;
+
+      /* Восстанавливаем выбранного разраба */
+      _plan.selectedDevId = savedDevId;
+    });
+  }
+
+  /* Пересчитаем для текущего разраба */
+  _planBuildDailyMap();
+
+  return {
+    period: periodKey,
+    developers: developers,
+    details: details,
+    totals: totals
+  };
+}
+
+function _planSaveToApi() {
+  try {
+    var snapshot = _planBuildApiSnapshot();
+    var periodKey = snapshot.period;
+
+    fetch('/api/admin/save?key=' + _PR_API_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot)
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) {
+        console.log('[API] Снапшот сохранён: ' + periodKey + ' → ' + data.url);
+      } else {
+        console.warn('[API] Ошибка сохранения:', data.error);
+      }
+    }).catch(function(e) {
+      console.warn('[API] Сеть:', e.message);
+    });
+  } catch(e) {
+    console.warn('[API] Ошибка формирования снапшота:', e.message);
+  }
+}
+
+var _planApiSaveTimer = null;
+function _planDebouncedApiSave() {
+  if (_planApiSaveTimer) clearTimeout(_planApiSaveTimer);
+  _planApiSaveTimer = setTimeout(function() { _planSaveToApi(); }, 3000);
 }
 
 /* ─── Keyboard: Esc closes modals ─── */
