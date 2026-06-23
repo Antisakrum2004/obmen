@@ -239,6 +239,7 @@ function _planBuildDailyMap() {
         projectName: meta.groupName || '',
         projectId: meta.groupId || '',
         status: meta.status || '',
+        stageId: meta.stageId || '0',
         factHours: factHours,
         factMinutes: factMinutes,
         billableHours: billableHours,
@@ -1316,6 +1317,11 @@ function _planBuildApiSnapshot() {
           devClientRevenue += t.billableHours * clientRate;
           devTaskCount++;
 
+          /* Определяем стадию задачи и платёжный статус */
+          var stageInfo = (typeof prGetStageInfo === 'function')
+            ? prGetStageInfo(t.projectId, t.stageId)
+            : {stageId: 0, stageName: '', paymentStatus: 'unknown', isReadyForPayment: false};
+
           details.push({
             devId: parseInt(sid),
             fullName: devName,
@@ -1323,6 +1329,10 @@ function _planBuildApiSnapshot() {
             taskTitle: t.title,
             projectId: t.projectId ? parseInt(t.projectId) : null,
             projectName: t.projectName || '',
+            stageId: stageInfo.stageId,
+            stageName: stageInfo.stageName,
+            paymentStatus: stageInfo.paymentStatus,
+            isReadyForPayment: stageInfo.isReadyForPayment,
             date: dateStr,
             factHours: t.factHours,
             billableHours: t.billableHours,

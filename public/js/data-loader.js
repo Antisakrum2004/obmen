@@ -321,7 +321,7 @@ function _prLoadTaskMetadata(taskIds) {
     return _dlDelay(idx * 100).then(function() {
       return _dlBxPost('tasks.task.list', {
         filter: { ID: batch },
-        select: ['ID','TITLE','GROUP_ID','STATUS','RESPONSIBLE_ID','CREATED_DATE','DATE_ACTIVITY']
+        select: ['ID','TITLE','GROUP_ID','STATUS','STAGE_ID','RESPONSIBLE_ID','CREATED_DATE','DATE_ACTIVITY']
       });
     }).then(function(r) {
       if (!r || r.error || !r.result) return;
@@ -335,6 +335,7 @@ function _prLoadTaskMetadata(taskIds) {
           groupId: gid, groupName: pname,
           title: t.title || t.TITLE || '',
           status: t.status || t.STATUS || '0',
+          stageId: t.stageId || t.STAGE_ID || '0',
           responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
         };
       });
@@ -525,6 +526,7 @@ function PR_loadRealData(year, month, progressCb) {
           groupId: gid, groupName: pname,
           title: t.title || t.TITLE || '',
           status: t.status || t.STATUS || '0',
+          stageId: t.stageId || t.STAGE_ID || '0',
           responsibleId: String(t.responsibleId || t.RESPONSIBLE_ID || '0')
         };
       });
