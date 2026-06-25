@@ -102,10 +102,18 @@ function prLoadPeriodData(year, month, progressCb) {
   if (typeof PayrollCache !== 'undefined') {
     var cached = PayrollCache.get(cacheKey);
     if (cached) {
-      console.log('[DL] CACHE HIT: ' + cacheKey + ' (age=' +
-        Math.round((Date.now() - (cached._cachedAt || 0)) / 1000) + 'с)');
-      if (progressCb) progressCb('Из кэша', periodKey);
-      return Promise.resolve(cached);
+      /* v9.3.1: Проверка целостности — если в кеше нет elapsed/tasksMeta, игнорируем */
+      var hasElapsed = cached.elapsed && cached.elapsed.length > 0;
+      var hasMeta = cached.tasksMeta && Object.keys(cached.tasksMeta).length > 0;
+      if (hasElapsed && hasMeta) {
+        console.log('[DL] CACHE HIT: ' + cacheKey + ' (age=' +
+          Math.round((Date.now() - (cached._cachedAt || 0)) / 1000) + 'с)');
+        if (progressCb) progressCb('Из кэша', periodKey);
+        return Promise.resolve(cached);
+      } else {
+        console.log('[DL] CACHE INVALID: ' + cacheKey + ' — empty elapsed or tasksMeta, refetching');
+        PayrollCache.invalidate(cacheKey);
+      }
     }
   }
 
