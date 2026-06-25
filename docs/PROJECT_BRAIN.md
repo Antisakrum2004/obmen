@@ -76,9 +76,95 @@
 
 Результаты: 711:39 часов, 137 задач — лучше чем v7.0.0, но НЕ ВСЕ задачи за май
 
-### ПР-7.3.0 — Bugfix: формула + штрафы (текущая)
+### ПР-9.0.0 — Расширение API для интеграции с 1С (финансовый конвейер)
 
-Два баг-фикса без изменения функциональности:
+**Цель:** 1С должен забирать из дашборда задачи в стадиях «Счет» и «Оплата» для формирования счетов клиентам и выплат разработчикам. Раз в месяц агрегация.
+
+**Решения согласованы с пользователем:**
+- 1С забирает ДВА списка: `invoices` (счета клиентам) + `payouts` (выплаты разрабам)
+- Стадия «Счет» = счёт создан; «Оплата» = клиент оплатил, можно платить разрабам; «Готово» = задача закрыта
+- Backlink от 1С нужен (mark-processed)
+- Проект 86 «Вайбкодинг» исключён
+- STAGE_MAP заменён на полный маппинг всех проектов Bitrix24
+- **Смена стадий в Bitrix24 делается вручную менеджером** — API не дёргает Bitrix24
+
+**Что сделано:**
+
+1. **`public/js/core.js`** — заменён STAGE_MAP на полный маппинг projectId → { stageId → stageName } для всех проектов (кроме 86 Вайбкодинг). Активные проекты (10 стадий): 4, 6, 20, 32, 36, 50, 52, 62, 66, 70, 72, 82. Спец-проекты: 78 Backlog. Неактивные: 2, 18, 42, 48, 60, 64, 74, 76, 80.
+
+2. **`public/js/data-loader.js`** — в выборку `tasks.task.list` добавлено поле `STAGE_ID`, прокинуто в `tasksMeta[taskId].stageId`.
+
+3. **`public/js/tab-plan.js`**:
+   - Добавлен хелпер `prGetStageInfo(projectId, stageId)` → `{stageId, stageName, paymentStatus, isReadyForPayment}` где paymentStatus ∈ {`not_ready`, `invoice`, `paid`, `closed`, `unknown`}
+   - Расширён `details` в `_planBuildApiSnapshot` полями: `stageId, stageName, paymentStatus, isReadyForPayment, processedAt`
+
+4. **`api/payroll/[period]/billing.js`** (НОВЫЙ) — GET, возвращает `{invoices: [...], payouts: [...], totals: {...}}`. Фильтрует снапшот: `invoices` = задачи с `paymentStatus='invoice'` и `processedAt=null`; `payouts` = задачи с `paymentStatus='paid'` и `processedAt=null`. Каждый item содержит developer (devId, fullName, inn, selfEmployed, bank, contract, contractDate), taskId, taskTitle, projectId, projectName, stageId, stageName, hours, rate, amount, clientRate, clientAmount, processedAt.
+
+5. **`api/admin/mark-processed.js`** (НОВЫЙ) — POST, принимает `{period, items: [{taskId, action: 'invoice_created'|'paid_out', processedAt}]}`. Обновляет `payroll-processed-{period}.json` в Vercel Blob. **НЕ дёргает Bitrix24** — менеджер вручную переводит стадии.
+
+6. **`api/projects.js`** (НОВЫЙ) — GET, возвращает справочник проектов со стадиями из STAGE_MAP (для отладки/UI 1С).
+
+7. **`download/API_METHODS.md`** — дополнен документацией новых эндпоинтов.
+
+**Финансовый конвейер стадий:** Новые → Оценка → Работа → Правки → Тест → Релиз → Готово → Пауза → **Счет** → **Оплата**
+
+### ПР-9.3.0 — Дневной отчёт по всем разрабам (кратко + детали)
+
+**Цель:** Раньше была только «Сводка» по одному разрабу за весь месяц. Нужен дневной срез по всем сотрудникам сразу — менеджер нажал, скопировал в буфер, вставил в чат/документ.
+
+**Что сделано (только `public/js/tab-plan.js`, без серверной части):**
+
+1. В state `_plan` добавлено поле `selectedDayDate` (YYYY-MM-DD, по умолчанию сегодня).
+
+2. В шапку «План-факт контроль» (`_planRenderHeader`, между «Сводка» и «Обновить») добавлены:
+   - `<input type="date">` с `min/max` ограничением по текущему выбранному месяцу (`prCurrentPeriod`)
+   - Кнопка `📅 День · Кратко` → `_planExportDayAll(true)`
+   - Кнопка `📋 День · Детали` → `_planExportDayAll(false)`
+
+3. Новая функция `_planExportDayAll(brief)`:
+   - Фильтрует `_plan.data.elapsed` по `CREATED_DATE.startsWith(dateStr)` — **точнее чем `_pr.rows`**, т.к. elapsed содержит реальные даты записей времени
+   - Группирует по `devId → taskId → minutes` (использует `SECONDS` с fallback на `MINUTES`)
+   - Идёт по `ACTIVE_DEV_IDS` в привычном порядке (как в чипах)
+   - Разрабов с 0ч за день помечает как «простой»
+   - Считает ИТОГО: часы, сумма (часы × `prGetRate`), кол-во задач
+   - Склонение «задача/задачи/задач» через `_planPluralTasks(n)`
+   - Форматирование даты '25 июня 2026' через `_planFormatDateRuLong(dateStr)`
+   - Копирование в `navigator.clipboard` с fallback на `document.execCommand('copy')`
+   - Визуальный фидбек: кнопка меняет текст на «Скопировано!» на 1.5 сек (как у «Сводка»)
+   - Событие пишется в лог через `_planLogEvent('Экспорт', ...)`
+
+4. Хелперы:
+   - `_planOnDayDateChange(val)` — обработчик смены даты
+   - `_planPadName(name)` — выравнивание имени пробелами до 18 символов
+   - `_planPluralTasks(n)` — склонение
+   - `_planFormatDateRuLong(dateStr)` — 'YYYY-MM-DD' → '25 июня 2026'
+
+**Формат «Кратко»:**
+```
+Дневной отчёт · 25 июня 2026 (кратко)
+═══════════════════════════════════════════
+Иванов Иван        6.0ч │ 3 000₽ │ 5 задач
+Сидорова Анна       —    │     0₽ │ простой
+═══════════════════════════════════════════
+ИТОГО: 28.5ч │ 16 500₽ │ 15 задач
+Активных: 5 из 7 · Простаивают: 2
+```
+
+**Формат «Детали»** — под каждым активным разрабом список:
+```
+  • [1234] Правки в каталоге (Бигап) — 3.0ч
+  • [1235] Баг корзины (ВДЛ) — 2.0ч
+```
+
+**Cache-bust:** `?v=11.0.0` → `?v=11.1.0` во всех `<script src>` в `index.html` (14 ссылок). Без этого браузер берёт старый закэшированный `tab-plan.js` и новые кнопки не появляются.
+
+**Версия:** `APP_VERSION` в `core.js` поднята `ПР-9.2.0` → `ПР-9.3.0`.
+
+**Жёсткие ограничения (с предыдущих сессий):** НЕ создавать новый tab-plan.js, НЕ менять дизайн, НЕ улучшать UI, НЕ переписывать CSS. Только добавлять функционал и минимальные правки в существующий код.
+
+**Sync:** после изменений `public/` → `static/` (зеркало), затем `git push` → GitHub → Vercel auto-deploy.
+
+### ПР-7.3.0 — Bugfix: формула + штрафы
 
 1. **Формула calculatePayrollAmount** (payroll-projection.js:278)
    - **Было**: `return Math.round(hours * rate) + (base || 0)` — добавляла base на КАЖДУЮ задачу
