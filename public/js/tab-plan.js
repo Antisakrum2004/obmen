@@ -31,7 +31,8 @@ var _plan = {
   adminChangedDevs: {},    /* devId -> true for green highlight */
   prevMonthTotals: null,   /* {plan, fact} from previous month for delta */
   topTasksExpanded: false,  /* toggle for top-5 tasks */
-  taskDescCache: {}         /* taskId -> {description, deadline, statusText} */
+  taskDescCache: {},        /* taskId -> {description, deadline, statusText} */
+  selectedDayDate: ''       /* YYYY-MM-DD для дневного отчёта по всем */
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -442,6 +443,21 @@ function _planRenderHeader() {
 
   /* Фича 10: Кнопка экспорта сводки */
   h += '<button class="plan-btn plan-btn-ghost" onclick="_planExportSummary()">&#128203; Сводка</button>';
+
+  /* Фича 11: Дневной отчёт по всем разрабам (кратко + детально) */
+  if (!_plan.selectedDayDate) {
+    var _n = new Date();
+    _plan.selectedDayDate = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0');
+  }
+  var _mm = String(prCurrentPeriod.month).padStart(2,'0');
+  var _yy = prCurrentPeriod.year;
+  var _range = prGetMonthRange(_yy, prCurrentPeriod.month);
+  var _minDate = _yy + '-' + _mm + '-01';
+  var _maxDate = _yy + '-' + _mm + '-' + String(_range.days).padStart(2,'0');
+  h += '<input type="date" class="plan-req-input" value="' + _plan.selectedDayDate + '" min="' + _minDate + '" max="' + _maxDate + '" onchange="_planOnDayDateChange(this.value)" style="padding:4px 8px;font-family:var(--mono);font-size:11px">';
+  h += '<button class="plan-btn plan-btn-ghost plan-btn-day-brief" onclick="_planExportDayAll(true)">&#128197; День · Кратко</button>';
+  h += '<button class="plan-btn plan-btn-ghost plan-btn-day-detail" onclick="_planExportDayAll(false)">&#128203; День · Детали</button>';
+
   h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
   h += '<button class="plan-btn plan-btn-yellow" onclick="_planOpenAdmin()">&#9881; Админка</button>';
   h += '</div>';
@@ -1121,6 +1137,156 @@ function _planExportSummary() {
     document.execCommand('copy');
     document.body.removeChild(ta);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ФИЧА 11: Дневной отчёт по всем разрабам (кратко + детально)
+   ═══════════════════════════════════════════════════════════════ */
+function _planOnDayDateChange(val) {
+  _plan.selectedDayDate = val;
+}
+
+function _planExportDayAll(brief) {
+  /* Получаем выбранную дату */
+  var dateStr = _plan.selectedDayDate;
+  if (!dateStr) {
+    var now = new Date();
+    dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    _plan.selectedDayDate = dateStr;
+  }
+
+  /* Проверка данных */
+  if (!_plan.data || !_plan.data.elapsed) {
+    _planLogEvent('Экспорт', 'Нет данных за ' + _planFormatDateRuLong(dateStr));
+    return;
+  }
+
+  /* Фильтруем elapsed по выбранной дате */
+  var dayElapsed = _plan.data.elapsed.filter(function(e) {
+    return (e.CREATED_DATE || '').substring(0, 10) === dateStr;
+  });
+
+  /* Группируем по devId → taskId → minutes */
+  var devMap = {};
+  dayElapsed.forEach(function(e) {
+    var devId = String(e.USER_ID);
+    var taskId = String(e.TASK_ID);
+    var secs = parseInt(e.SECONDS, 10);
+    var mins;
+    if (!isNaN(secs) && secs > 0) {
+      mins = Math.round(secs / 60);
+    } else {
+      mins = parseInt(e.MINUTES, 10) || 0;
+    }
+    if (!mins) return;
+
+    if (!devMap[devId]) devMap[devId] = { totalMinutes: 0, tasks: {} };
+    devMap[devId].totalMinutes += mins;
+
+    if (!devMap[devId].tasks[taskId]) {
+      var meta = (_plan.data.tasksMeta || {})[taskId] || {};
+      devMap[devId].tasks[taskId] = {
+        minutes: 0,
+        title: meta.title || ('Задача ' + taskId),
+        projectName: meta.groupName || ''
+      };
+    }
+    devMap[devId].tasks[taskId].minutes += mins;
+  });
+
+  /* Заголовок */
+  var dateRu = _planFormatDateRuLong(dateStr);
+  var title = 'Дневной отчёт · ' + dateRu + ' (' + (brief ? 'кратко' : 'детально') + ')';
+  var sep = Array(46).join('═');
+
+  var lines = [title, sep];
+
+  /* Идём по ACTIVE_DEV_IDS в привычном порядке */
+  var activeIds = (typeof ACTIVE_DEV_IDS !== 'undefined') ? ACTIVE_DEV_IDS : [];
+  var totalMinutes = 0, totalTasks = 0, totalAmount = 0, activeCount = 0, idleCount = 0;
+
+  activeIds.forEach(function(id) {
+    var sid = String(id);
+    var name = prGetDevName(sid);
+    var rate = prGetRate(sid);
+    var info = devMap[sid];
+
+    if (!info || info.totalMinutes === 0) {
+      idleCount++;
+      lines.push(_planPadName(name) + '  —    │      0₽ │ простой');
+      return;
+    }
+
+    activeCount++;
+    var hours = safeRound(info.totalMinutes / 60, 1);
+    var amount = Math.round(hours * rate);
+    var taskCount = Object.keys(info.tasks).length;
+    totalMinutes += info.totalMinutes;
+    totalTasks += taskCount;
+    totalAmount += amount;
+
+    lines.push(_planPadName(name) + ' ' + hours.toFixed(1) + 'ч │ ' + _planFmtMoney(amount) + '₽ │ ' + taskCount + ' ' + _planPluralTasks(taskCount));
+
+    if (!brief) {
+      Object.keys(info.tasks).forEach(function(tid) {
+        var t = info.tasks[tid];
+        var tHours = safeRound(t.minutes / 60, 1);
+        var proj = t.projectName ? ' (' + t.projectName + ')' : '';
+        lines.push('  • [' + tid + '] ' + t.title + proj + ' — ' + tHours.toFixed(1) + 'ч');
+      });
+      lines.push('');
+    }
+  });
+
+  /* Итого */
+  lines.push(sep);
+  var totalHours = safeRound(totalMinutes / 60, 1);
+  lines.push('ИТОГО: ' + totalHours.toFixed(1) + 'ч │ ' + _planFmtMoney(totalAmount) + '₽ │ ' + totalTasks + ' ' + _planPluralTasks(totalTasks));
+  lines.push('Активных: ' + activeCount + ' из ' + activeIds.length + ' · Простаивают: ' + idleCount);
+
+  var text = lines.join('\n');
+
+  /* Копирование в буфер */
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      _planLogEvent('Экспорт', 'Дневной отчёт (' + (brief ? 'кратко' : 'детально') + ') за ' + dateRu + ' — ' + activeCount + ' активн., ' + idleCount + ' простаивают');
+      var btnClass = brief ? 'plan-btn-day-brief' : 'plan-btn-day-detail';
+      var btn = document.querySelector('.plan-actions .' + btnClass);
+      if (btn) { var orig = btn.textContent; btn.textContent = 'Скопировано!'; setTimeout(function() { btn.textContent = orig; }, 1500); }
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+/* Хелпер: дополнить имя пробелами справа для выравнивания колонки */
+function _planPadName(name) {
+  if (!name) name = '';
+  if (name.length >= 18) return name;
+  return name + Array(18 - name.length + 1).join(' ');
+}
+
+/* Хелпер: склонение "задача/задачи/задач" */
+function _planPluralTasks(n) {
+  var lastTwo = n % 100;
+  var last = n % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return 'задач';
+  if (last === 1) return 'задача';
+  if (last >= 2 && last <= 4) return 'задачи';
+  return 'задач';
+}
+
+/* Хелпер: '2026-06-25' → '25 июня 2026' */
+function _planFormatDateRuLong(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+  var months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
 }
 
 /* ═══════════════════════════════════════════════════════════════
