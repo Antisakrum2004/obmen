@@ -1,12 +1,6 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/payroll.html" },
-    { "source": "/api/payroll/:period/billing", "destination": "/api/payroll/[period]/billing.js" },
-    { "source": "/api/payroll/(.*)", "destination": "/api/payroll/:period" },
-    { "source": "/api/admin/:action", "destination": "/api/admin/:action" },
-    { "source": "/api/developers", "destination": "/api/developers" },
-    { "source": "/api/projects", "destination": "/api/projects" },
-    { "source": "/api/(.*)", "destination": "/api" }
+    { "source": "/", "destination": "/payroll.html" }
   ],
   "headers": [
     {
