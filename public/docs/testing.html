@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll API — Инструкция по тестированию</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+:root{--bg:#0B0F17;--bg1:#111827;--bg2:#151C2C;--bg3:#1E293B;--text:#F3F7FF;--text2:#A1AEC3;--text3:#6B7A90;--accent:#4f8bff;--green:#22d47e;--red:#ff4f6a;--yellow:#f5a623;--cyan:#00d4ff;--orange:#ff8c42;--mono:'JetBrains Mono','Fira Code',monospace;--sans:'Inter',system-ui,sans-serif;--radius:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.7;scroll-behavior:smooth}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 80% 50% at 20% 80%,rgba(18,48,95,.35),transparent),radial-gradient(ellipse 60% 40% at 85% 15%,rgba(22,55,100,.25),transparent),linear-gradient(180deg,#070a12 0%,#0B0F17 100%)}
+body>*{position:relative;z-index:1}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(79,139,255,.3)}
+a:hover{color:#60A5FA;border-bottom-color:#60A5FA}
+h1{font-size:28px;font-weight:700;margin:0 0 8px;letter-spacing:-.5px}
+h2{font-size:22px;font-weight:700;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.08);color:var(--cyan)}
+h3{font-size:17px;font-weight:600;margin:28px 0 12px;color:var(--accent)}
+h4{font-size:15px;font-weight:600;margin:20px 0 8px;color:var(--green)}
+.container{max-width:880px;margin:0 auto;padding:32px 24px}
+.hero{background:linear-gradient(135deg,rgba(79,139,255,.12),rgba(0,212,255,.08));border:1px solid rgba(79,139,255,.2);border-radius:var(--radius);padding:28px 32px;margin-bottom:36px}
+.hero p{color:var(--text2);margin-top:8px;font-size:15px}
+.arch-diagram{background:var(--bg1);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:24px;margin:20px 0;font-family:var(--mono);font-size:14px;line-height:2;overflow-x:auto;color:var(--text2)}
+.arch-diagram .box{display:inline-block;padding:4px 14px;border-radius:6px;font-weight:600}
+.arch-diagram .door{background:rgba(79,139,255,.15);border:1px solid rgba(79,139,255,.4);color:var(--accent)}
+.arch-diagram .bridge{background:rgba(0,212,255,.12);border:1px solid rgba(0,212,255,.35);color:var(--cyan)}
+.arch-diagram .flow{background:rgba(34,212,126,.12);border:1px solid rgba(34,212,126,.35);color:var(--green)}
+.arch-diagram .arrow{color:var(--yellow);font-weight:700;margin:0 6px}
+.step{background:var(--bg1);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:20px 24px;margin:16px 0}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;margin-right:10px;flex-shrink:0}
+.step-title{font-weight:600;font-size:16px}
+.step-body{margin-top:10px;color:var(--text2)}
+.code-block{background:var(--bg3);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px 18px;margin:12px 0;font-family:var(--mono);font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre;color:var(--text2)}
+.code-block .comment{color:var(--text3)}
+.code-block .url{color:var(--cyan)}
+.code-block .key{color:var(--yellow)}
+.code-block .method{color:var(--green)}
+.result{background:rgba(34,212,126,.06);border:1px solid rgba(34,212,126,.2);border-radius:8px;padding:14px 18px;margin:12px 0;font-family:var(--mono);font-size:13px;line-height:1.5;overflow-x:auto}
+.result.bad{background:rgba(255,79,106,.06);border-color:rgba(255,79,106,.2)}
+.warn{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.25);border-radius:8px;padding:14px 18px;margin:12px 0;font-size:14px;color:var(--yellow)}
+.warn::before{content:'⚠ ';font-weight:700}
+.info{background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.2);border-radius:8px;padding:14px 18px;margin:12px 0;font-size:14px;color:var(--cyan)}
+.info::before{content:'ℹ ';font-weight:700}
+.checklist{list-style:none;padding:0;margin:12px 0}
+.checklist li{padding:6px 0 6px 28px;position:relative;color:var(--text2)}
+.checklist li::before{content:'☐';position:absolute;left:0;color:var(--accent);font-size:16px}
+.checklist li.done::before{content:'☑';color:var(--green)}
+.table-wrap{overflow-x:auto;margin:12px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:var(--bg3);color:var(--text);font-weight:600;text-align:left;padding:10px 14px;border-bottom:2px solid rgba(255,255,255,.1)}
+td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--text2);vertical-align:top}
+td code,th code{font-family:var(--mono);font-size:12px;background:var(--bg3);padding:2px 6px;border-radius:4px;color:var(--cyan)}
+.toc{background:var(--bg1);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:20px 28px;margin:20px 0 32px}
+.toc h3{margin:0 0 12px;color:var(--accent);font-size:16px}
+.toc ol{padding-left:20px;color:var(--text2)}
+.toc li{padding:3px 0}
+.toc a{color:var(--text2);border:none}
+.toc a:hover{color:var(--accent)}
+.footer{text-align:center;padding:32px 0;color:var(--text3);font-size:13px;border-top:1px solid rgba(255,255,255,.06);margin-top:48px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;font-family:var(--mono);margin-right:6px}
+.tag-get{background:rgba(34,212,126,.15);color:var(--green)}
+.tag-post{background:rgba(79,139,255,.15);color:var(--accent)}
+.tag-err{background:rgba(255,79,106,.15);color:var(--red)}
+@media(max-width:640px){.container{padding:20px 16px}h1{font-size:22px}h2{font-size:18px}.code-block,.result{font-size:11px;padding:10px 12px}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ═══ ЗАГОЛОВОК ═══ -->
+<div class="hero">
+<h1>Payroll Review API — Инструкция по тестированию</h1>
+<p>Версия ПР-9.3.2 · 30.06.2026 · <a href="/docs/">Swagger UI</a> · <a href="/docs/openapi.yaml">OpenAPI Spec</a></p>
+</div>
+
+<!-- ═══ ОГЛАВЛЕНИЕ ═══ -->
+<div class="toc">
+<h3>Содержание</h3>
+<ol>
+<li><a href="#arch">Архитектура: как всё связано</a></li>
+<li><a href="#requirements">Что нужно для тестирования</a></li>
+<li><a href="#auth">Аутентификация</a></li>
+<li><a href="#step0">Шаг 0: Проверка доступности</a></li>
+<li><a href="#step1">Шаг 1: Справочник проектов</a></li>
+<li><a href="#step2">Шаг 2: Справочник разработчиков</a></li>
+<li><a href="#step3">Шаг 3: Зарплатный снапшот</a></li>
+<li><a href="#step4">Шаг 4: Выгрузка для 1С (billing)</a></li>
+<li><a href="#step5">Шаг 5: Отметка обработанных задач</a></li>
+<li><a href="#step6">Шаг 6: Проверка защиты от дублей</a></li>
+<li><a href="#full-flow">Полный сценарий «как будет работать 1С»</a></li>
+<li><a href="#errors">Справочник ошибок</a></li>
+<li><a href="#faq">FAQ</a></li>
+</ol>
+</div>
+
+<!-- ═══ 1. АРХИТЕКТУРА ═══ -->
+<h2 id="arch">1. Архитектура: как всё связано</h2>
+
+<p>Твоя метафора точная. Вот как это работает:</p>
+
+<div class="arch-diagram">
+<span class="box door">Дашборд менеджера</span>
+<span class="arrow">→ сохраняет данные →</span>
+<span class="box bridge">API (Vercel)</span>
+<span class="arrow">← запрашивает 1С ←</span>
+<span class="box flow">1С / внешнее флоу</span>
+</div>
+
+<p><strong>Дверь 1 — Дашборд менеджера</strong> (<code>obmen-atilab.vercel.app</code>)</p>
+<ul style="margin:8px 0 8px 20px;color:var(--text2)">
+<li>Менеджер видит часы, ставки, задачи</li>
+<li>Нажимает «Сохранить» → данные летят в API → сохраняются в Vercel Blob</li>
+<li><strong>Без сохранённого снапшота API вернёт 404</strong> — это частая ошибка при тестировании</li>
+</ul>
+
+<p><strong>Мостик — API</strong> (эндпоинты на Vercel)</p>
+<ul style="margin:8px 0 8px 20px;color:var(--text2)">
+<li>Хранит снапшоты и processed-файлы в Vercel Blob Storage</li>
+<li>Отдаёт данные по запросу (GET)</li>
+<li>Принимает обратную связь от 1С (POST mark-processed)</li>
+</ul>
+
+<p><strong>Дверь 2 — 1С / внешнее флоу</strong></p>
+<ul style="margin:8px 0 8px 20px;color:var(--text2)">
+<li>Запрашивает: какие задачи в «Счёт» и «Оплата»?</li>
+<li>Формирует счета клиентам и выплаты разрабам</li>
+<li>Сообщает API: «я обработал задачи 123, 456» — чтобы не выгрузить повторно</li>
+</ul>
+
+<div class="info">
+API <strong>не меняет стадии задач в Bitrix24</strong>. Перевод задач по стадиям делает менеджер вручную. API только читает текущее состояние.
+</div>
+
+<!-- ═══ 2. ЧТО НУЖНО ═══ -->
+<h2 id="requirements">2. Что нужно для тестирования</h2>
+
+<h3>Обязательное</h3>
+<ul class="checklist">
+<li>Доступ в интернет</li>
+<li>API-ключ: <code>pr_api_2026</code></li>
+<li>Любой HTTP-клиент (curl, Postman, браузер, 1С HTTPЗапрос)</li>
+</ul>
+
+<h3>Рекомендуемое</h3>
+<ul class="checklist">
+<li><a href="https://www.postman.com/downloads/" target="_blank">Postman</a> — удобнее чем curl, есть GUI</li>
+<li>Браузер — для Swagger UI: <a href="/docs/" target="_blank">obmen-atilab.vercel.app/docs/</a></li>
+<li>Доступ к дашборду — чтобы сохранить снапшот перед тестом</li>
+</ul>
+
+<h3>Критически важное условие</h3>
+<div class="warn">
+Перед тестированием API менеджер ДОЛЖЕН открыть дашборд и нажать «Сохранить». Без сохранённого снапшота эндпоинты <code>/api/payroll</code>, <code>/api/developers</code>, <code>/api/payroll/.../billing</code> вернут <strong>404 No data found</strong>.
+
+Если видишь 404 — это не баг, это значит что данных нет. Зайди в дашборд → дождись загрузки → нажми «Сохранить» → повтори запрос.
+</div>
+
+<!-- ═══ 3. АУТЕНТИФИКАЦИЯ ═══ -->
+<h2 id="auth">3. Аутентификация</h2>
+
+<p>Все эндпоинты (кроме прокси Bitrix24) требуют API-ключ. Два способа передачи:</p>
+
+<div class="step">
+<div class="step-title">Способ 1: Query-параметр</div>
+<div class="step-body">
+<div class="code-block"><span class="url">GET</span> https://obmen-atilab.vercel.app/api/projects<span class="key">?key=pr_api_2026</span></div>
+</div>
+</div>
+
+<div class="step">
+<div class="step-title">Способ 2: HTTP-заголовок</div>
+<div class="step-body">
+<div class="code-block"><span class="url">GET</span> https://obmen-atilab.vercel.app/api/projects
+<span class="key">X-API-Key:</span> pr_api_2026</div>
+</div>
+</div>
+
+<div class="info">
+Для 1С рекомендуем заголовок <code>X-API-Key</code> — ключ не логируется в URL и не попадает в access-логи.
+</div>
+
+<!-- ═══ 4. ШАГ 0 ═══ -->
+<h2 id="step0">4. Шаг 0: Проверка доступности</h2>
+
+<p>Перед тестированием API убедись что сервер отвечает.</p>
+
+<div class="step">
+<span class="step-num">0</span>
+<span class="step-title">Проверить что сервер жив</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s -o /dev/null -w "%{http_code}" https://obmen-atilab.vercel.app/api/projects?key=pr_api_2026</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<div class="result">200</div>
+<p>Если <code>200</code> — сервер работает, API доступен, ключ верный. Идём дальше.</p>
+<p style="margin-top:8px"><strong>Если не 200:</strong></p>
+<div class="result bad">403 → неверный API-ключ (проверь key=pr_api_2026)<br>
+000 / ERR_CONNECTION → сервер недоступен (проверь VPN/доступ)<br>
+502 / 503 → Vercel перезапускается, подожди 30с и повтори</div>
+</div>
+</div>
+
+<!-- ═══ 5. ШАГ 1 ═══ -->
+<h2 id="step1">5. Шаг 1: Справочник проектов</h2>
+
+<p><span class="tag tag-get">GET</span> Самый простой эндпоинт. Не зависит от снапшота — данные статичны. Идеален для первой проверки.</p>
+
+<div class="step">
+<span class="step-num">1</span>
+<span class="step-title">Получить список проектов со стадиями</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/projects?key=pr_api_2026" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<div class="result">{
+  "generatedAt": "2026-06-30T10:00:00.000Z",
+  "projectsCount": <strong>22</strong>,
+  "projects": [
+    {
+      "projectId": 4,
+      "projectName": "Живое пиво",
+      "stagesCount": 10,
+      "stages": [
+        {"id": 80,  "name": "Новые",  "paymentStatus": "not_ready"},
+        ...
+        {"id": 408, "name": "Счет",   "paymentStatus": "invoice"},
+        {"id": 410, "name": "Оплата",  "paymentStatus": "paid"}
+      ],
+      <strong>"invoiceStageId": 408</strong>,
+      <strong>"paidStageId": 410</strong>,
+      <strong>"closedStageId": 84</strong>
+    },
+    ...
+  ],
+  "paymentStatusLegend": { ... }
+}</div>
+
+<h4>Что проверяем:</h4>
+<ul class="checklist">
+<li><code>projectsCount > 0</code> — проекты есть</li>
+<li>У каждого проекта есть <code>invoiceStageId</code> и <code>paidStageId</code> — это ID стадий «Счёт» и «Оплата»</li>
+<li><code>paymentStatus</code> принимает только значения: <code>not_ready</code>, <code>invoice</code>, <code>paid</code>, <code>closed</code></li>
+<li>Стадия «Счёт» = <code>invoice</code>, «Оплата» = <code>paid</code> — именно они нужны 1С</li>
+</ul>
+</div>
+</div>
+
+<!-- ═══ 6. ШАГ 2 ═══ -->
+<h2 id="step2">6. Шаг 2: Справочник разработчиков</h2>
+
+<p><span class="tag tag-get">GET</span> Реквизиты разработчиков для 1С (ИНН, банк, договор). Зависит от сохранённого снапшота!</p>
+
+<div class="step">
+<span class="step-num">2</span>
+<span class="step-title">Получить список разработчиков</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/developers?key=pr_api_2026" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат (если снапшот сохранён):</strong></p>
+<div class="result">{
+  "period": "2026-06",
+  "savedAt": "2026-06-25T10:30:00.000Z",
+  "developers": [
+    {
+      "devId": 82,
+      "fullName": "Иванов Иван Иванович",
+      "inn": "7700000000",
+      "selfEmployed": "Самозанятый",
+      "bank": "Тинькофф",
+      "contract": "Договор №123",
+      "contractDate": "2026-01-15",
+      "rate": 1000,
+      "clientRate": 1800,
+      "base": 80000,
+      "active": true
+    },
+    ...
+  ]
+}</div>
+
+<p style="margin-top:8px"><strong>Если результат 404:</strong></p>
+<div class="result bad">{
+  "error": "No data found",
+  "hint": "Manager needs to save data first from the payroll dashboard"
+}</div>
+<p>→ <strong>Это нормально если снапшот не сохранён.</strong> Зайди в дашборд, дождись загрузки данных, нажми «Сохранить», повтори запрос.</p>
+
+<h4>Что проверяем:</h4>
+<ul class="checklist">
+<li><code>developers</code> — непустой массив</li>
+<li>У каждого разработчика есть <code>inn</code>, <code>bank</code>, <code>contract</code> — реквизиты для 1С</li>
+<li><code>rate</code> — ставка разработчика (руб./час), <code>clientRate</code> — для клиента</li>
+<li><code>active: true</code> — разработчик активен в текущем месяце</li>
+</ul>
+</div>
+</div>
+
+<!-- ═══ 7. ШАГ 3 ═══ -->
+<h2 id="step3">7. Шаг 3: Зарплатный снапшот</h2>
+
+<p><span class="tag tag-get">GET</span> Полные данные за месяц. Два режима: summary (сводка) и details (детализация).</p>
+
+<div class="step">
+<span class="step-num">3а</span>
+<span class="step-title">Получить сводку за месяц</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/payroll/2026-06?key=pr_api_2026" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<div class="result">{
+  "period": "2026-06",
+  "savedAt": "2026-06-25T10:30:00.000Z",
+  "version": 1,
+  "developers": [ ... ],
+  "totals": {
+    "totalHours": 480.5,
+    "totalPayroll": 480500,
+    "totalClientAmount": 864900
+  }
+}</div>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">3б</span>
+<span class="step-title">Получить детализацию</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/payroll/2026-06?key=pr_api_2026&view=details" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Отличие от summary:</strong> вместо <code>totals</code> будет массив <code>details</code> — по каждой задаче каждого разработчика:</p>
+<div class="result">{
+  "period": "2026-06",
+  "developers": [ ... ],
+  "details": [
+    {
+      "taskId": 7114,
+      "taskTitle": "Разработка модуля отчётности",
+      "devId": 82,
+      "projectId": 4,
+      "billableHours": 24.5,
+      "payrollAmount": 24500,
+      "clientAmount": 44100,
+      "stageId": 408,
+      "stageName": "Счет",
+      "paymentStatus": "invoice"
+    },
+    ...
+  ]
+}</div>
+
+<h4>Что проверяем:</h4>
+<ul class="checklist">
+<li><code>details[]</code> содержит задачи с <code>paymentStatus</code></li>
+<li>Задачи в «Счёт» имеют <code>paymentStatus: "invoice"</code></li>
+<li>Задачи в «Оплата» имеют <code>paymentStatus: "paid"</code></li>
+<li>Задачи в других стадиях имеют <code>paymentStatus: "not_ready"</code> или <code>"closed"</code></li>
+</ul>
+</div>
+</div>
+
+<!-- ═══ 8. ШАГ 4 ═══ -->
+<h2 id="step4">8. Шаг 4: Выгрузка для 1С (billing) — главный эндпоинт</h2>
+
+<p><span class="tag tag-get">GET</span> <strong>Это то, ради чего всё построено.</strong> Возвращает задачи, готовые к финансовой обработке.</p>
+
+<div class="step">
+<span class="step-num">4</span>
+<span class="step-title">Получить счета и выплаты</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/payroll/2026-06/billing?key=pr_api_2026" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<div class="result">{
+  "period": "2026-06",
+  "generatedAt": "2026-06-30T10:00:00.000Z",
+  <strong>"invoices": [ ... ]</strong>,   ← задачи на стадии «Счёт» — 1С формирует счёт клиенту
+  <strong>"payouts": [ ... ]</strong>,    ← задачи на стадии «Оплата» — 1С формирует акт + выплату разрабу
+  "totals": {
+    "invoicesCount": 5,
+    "invoicesAmount": 125000,         ← сумма к выплате разрабам (счета)
+    "invoicesClientAmount": 225000,   ← сумма для клиентов (счета)
+    "payoutsCount": 3,
+    "payoutsAmount": 78000,           ← сумма к выплате разрабам (оплаты)
+    "payoutsClientAmount": 140400,    ← сумма для клиентов (оплаты)
+    "processedCount": 0               ← уже обработано (двойная защита)
+  }
+}</div>
+
+<h4>Структура каждого элемента invoices/payouts:</h4>
+<div class="table-wrap">
+<table>
+<tr><th>Поле</th><th>Тип</th><th>Описание</th></tr>
+<tr><td><code>taskId</code></td><td>int</td><td>ID задачи в Bitrix24</td></tr>
+<tr><td><code>taskTitle</code></td><td>string</td><td>Название задачи</td></tr>
+<tr><td><code>projectId</code> / <code>projectName</code></td><td>int / string</td><td>Проект</td></tr>
+<tr><td><code>stageId</code> / <code>stageName</code></td><td>int / string</td><td>Стадия</td></tr>
+<tr><td><code>developer</code></td><td>object</td><td>ФИО, ИНН, банк, договор</td></tr>
+<tr><td><code>hours</code></td><td>float</td><td>Биллинговые часы</td></tr>
+<tr><td><code>rate</code></td><td>int</td><td>Ставка разраба (руб./час)</td></tr>
+<tr><td><code>amount</code></td><td>int</td><td>Сумма к выплате разрабу</td></tr>
+<tr><td><code>clientRate</code></td><td>int</td><td>Ставка для клиента (руб./час)</td></tr>
+<tr><td><code>clientAmount</code></td><td>int</td><td>Сумма для выставления клиенту</td></tr>
+</table>
+</div>
+
+<h4>Что проверяем:</h4>
+<ul class="checklist">
+<li><code>invoices</code> — задачи именно со стадии «Счёт» (<code>paymentStatus = invoice</code>)</li>
+<li><code>payouts</code> — задачи именно со стадии «Оплата» (<code>paymentStatus = paid</code>)</li>
+<li>Каждый элемент содержит <code>developer</code> с реквизитами</li>
+<li><code>amount = hours × rate</code> (сумма к выплате разработчику)</li>
+<li><code>clientAmount = hours × clientRate</code> (сумма для клиента)</li>
+<li>Задачи, которые уже были отмечены через mark-processed, <strong>не появляются</strong></li>
+</ul>
+
+<div class="warn">
+Если invoices и payouts пустые — это может быть нормально: нет задач в стадиях «Счёт» и «Оплата». Менеджер должен перевести хотя бы одну задачу в «Счёт» в Bitrix24, потом пересохранить снапшот.
+</div>
+</div>
+</div>
+
+<!-- ═══ 9. ШАГ 5 ═══ -->
+<h2 id="step5">9. Шаг 5: Отметка обработанных задач</h2>
+
+<p><span class="tag tag-post">POST</span> Обратная связь от 1С: «я обработал эти задачи, не выгружай повторно».</p>
+
+<div class="step">
+<span class="step-num">5</span>
+<span class="step-title">Отправить список обработанных задач</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -X POST "https://obmen-atilab.vercel.app/api/admin/mark-processed?key=pr_api_2026" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "period": "2026-06",
+    "items": [
+      {"taskId": 7114, "action": "invoice_created", "processedAt": "2026-06-30T10:00:00Z"},
+      {"taskId": 7916, "action": "paid_out", "processedAt": "2026-06-30T10:05:00Z"}
+    ]
+  }'</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<div class="result">{
+  "ok": true,
+  "period": "2026-06",
+  "itemsCount": 2,
+  "url": "https://...payroll-processed-2026-06.json",
+  "updatedAt": "2026-06-30T10:10:00.000Z"
+}</div>
+
+<h4>Параметры action:</h4>
+<div class="table-wrap">
+<table>
+<tr><th>action</th><th>Когда вызывать</th><th>Описание</th></tr>
+<tr><td><code>invoice_created</code></td><td>1С сформировала счёт клиенту</td><td>Для задач из <code>invoices[]</code></td></tr>
+<tr><td><code>paid_out</code></td><td>1С провела акт + выплату разрабу</td><td>Для задач из <code>payouts[]</code></td></tr>
+</table>
+</div>
+
+<h4>Что проверяем:</h4>
+<ul class="checklist">
+<li>Ответ <code>ok: true</code></li>
+<li><code>itemsCount</code> совпадает с количеством отправленных задач</li>
+<li>Повторный вызов с теми же taskId обновляет записи (не дублирует)</li>
+</ul>
+</div>
+</div>
+
+<!-- ═══ 10. ШАГ 6 ═══ -->
+<h2 id="step6">10. Шаг 6: Проверка защиты от дублей</h2>
+
+<p>Самый важный тест для 1С — убедиться что обработанные задачи не появятся снова.</p>
+
+<div class="step">
+<span class="step-num">6а</span>
+<span class="step-title">Вызвать billing повторно</span>
+<div class="step-body">
+<div class="code-block"><span class="method">curl</span> -s "https://obmen-atilab.vercel.app/api/payroll/2026-06/billing?key=pr_api_2026" | python3 -m json.tool</div>
+<p style="margin-top:8px"><strong>Ожидаемый результат:</strong></p>
+<ul>
+<li>Задачи с <code>taskId: 7114</code> и <code>taskId: 7916</code> <strong>не должны появиться</strong> в invoices/payouts</li>
+<li><code>totals.processedCount</code> должен быть ≥ 2</li>
+</ul>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">6б</span>
+<span class="step-title">Проверить что НОВЫЕ задачи всё ещё видны</span>
+<div class="step-body">
+<p>Если менеджер перевёл ещё одну задачу в «Счёт» и пересохранил снапшот — она должна появиться в invoices.</p>
+<p>Защита от дублей работает <strong>только для обработанных задач</strong>. Новые задачи видны всегда.</p>
+</div>
+</div>
+
+<!-- ═══ 11. ПОЛНЫЙ СЦЕНАРИЙ ═══ -->
+<h2 id="full-flow">11. Полный сценарий «как будет работать 1С»</h2>
+
+<div class="arch-diagram">
+<strong>Ежемесячный цикл:</strong>
+
+1. Менеджер работает в дашборде весь месяц
+   - Видит часы, задачи, ставки
+   - Переводит задачи по стадиям в Bitrix24
+   - Нажимает «Сохранить» → снапшот летит в API
+
+2. В конце месяца 1С запускает выгрузку:
+   → <span class="box bridge">GET /api/payroll/2026-06/billing</span>
+   ← Получает invoices[] (счета клиентам) + payouts[] (выплаты разрабам)
+
+3. 1С обрабатывает каждую задачу:
+   invoices[] → формирует счёт клиенту
+   payouts[]  → формирует акт + выплату разрабу
+
+4. 1С подтверждает обработку:
+   → <span class="box bridge">POST /api/admin/mark-processed</span>
+   ← Отправляет taskId + action для каждой обработанной задачи
+
+5. При следующей выгрузке обработанные задачи не появятся
+   (защита от двойного выставления счетов)
+</div>
+
+<div class="info">
+<strong>API НЕ триггерит смену стадий в Bitrix24.</strong> Менеджер переводит задачи вручную. API только читает текущее состояние. Если менеджер не перевёл задачу в «Счёт» — она не появится в invoices[], даже если работа выполнена.
+</div>
+
+<!-- ═══ 12. СПРАВОЧНИК ОШИБОК ═══ -->
+<h2 id="errors">12. Справочник ошибок</h2>
+
+<div class="table-wrap">
+<table>
+<tr><th>HTTP</th><th>error</th><th>Причина</th><th>Что делать</th></tr>
+
+<tr><td><code>400</code></td>
+<td><code>Invalid period format</code></td>
+<td>Неверный формат периода</td>
+<td>Используй YYYY-MM, например <code>2026-06</code></td></tr>
+
+<tr><td><code>400</code></td>
+<td><code>Missing period or items[]</code></td>
+<td>Не указан period или items в теле POST</td>
+<td>Проверь тело запроса: <code>{"period":"2026-06","items":[...]}</code></td></tr>
+
+<tr><td><code>403</code></td>
+<td><code>Invalid API key</code></td>
+<td>Неверный или отсутствующий API-ключ</td>
+<td>Добавь <code>?key=pr_api_2026</code> или заголовок <code>X-API-Key: pr_api_2026</code></td></tr>
+
+<tr><td><code>404</code></td>
+<td><code>No data found for this period</code></td>
+<td>Снапшот за этот месяц не сохранён</td>
+<td>Зайди в дашборд → дождись загрузки → нажми «Сохранить»</td></tr>
+
+<tr><td><code>405</code></td>
+<td><code>Method not allowed</code></td>
+<td>Неправильный HTTP-метод</td>
+<td>GET для чтения, POST для записи. Проверь метод запроса</td></tr>
+
+<tr><td><code>500</code></td>
+<td><code>Vercel Blob not configured</code></td>
+<td>Не настроен Vercel Blob Storage</td>
+<td>Администратор: включи Blob в Vercel Dashboard → Storage</td></tr>
+
+<tr><td><code>502</code></td>
+<td><code>Proxy error</code></td>
+<td>Прокси к Bitrix24 не может достучаться</td>
+<td>Проверь что Bitrix24 доступен. Этот эндпоинт нужен только дашборду, не 1С</td></tr>
+
+<tr><td><code>502</code></td>
+<td><code>Failed to fetch snapshot from storage</code></td>
+<td>Снапшот есть в списке, но файл не читается</td>
+<td>Пересохрани снапшот из дашборда</td></tr>
+</table>
+</div>
+
+<h3>Как интерпретировать ответы</h3>
+
+<div class="step">
+<div class="step-title"><span class="tag tag-get" style="font-size:10px">2xx</span> Всё хорошо</div>
+<div class="step-body">
+<p><code>200</code> — запрос выполнен, данные в теле ответа.</p>
+<p>Сверь структуру с примерами выше. Если поля <code>invoices</code>/<code>payouts</code> пустые — это не ошибка, просто нет задач в нужных стадиях.</p>
+</div>
+</div>
+
+<div class="step">
+<div class="step-title"><span class="tag tag-err" style="font-size:10px">4xx</span> Ошибка на вашей стороне</div>
+<div class="step-body">
+<p>Неверный запрос: неправильный ключ, формат, метод. Исправь и повтори.</p>
+<p>Особенно часто: <code>404 No data found</code> — забыл сохранить снапшот в дашборде.</p>
+</div>
+</div>
+
+<div class="step">
+<div class="step-title"><span class="tag tag-err" style="font-size:10px">5xx</span> Ошибка на стороне сервера</div>
+<div class="step-body">
+<p>Что-то сломалось на нашей стороне. Если ошибка повторяется — сообщи разработчику.</p>
+<p><code>500 Vercel Blob not configured</code> — нужна настройка Blob Storage (разовая операция).</p>
+</div>
+</div>
+
+<!-- ═══ 13. FAQ ═══ -->
+<h2 id="faq">13. FAQ</h2>
+
+<h3>Зачем нужен mark-processed? Почему бы просто не смотреть на стадии?</h3>
+<p>Стадия в Bitrix24 показывает текущее состояние задачи. Но между «1С получил выгрузку» и «1С обработал» может пройти время. Если 1С запросит billing повторно (например, перезапуск обработки), задачи появятся снова. <code>mark-processed</code> — это дополнительный уровень защиты от дублей поверх стадий.</p>
+
+<h3>Что если менеджер перевёл задачу обратно из «Счёт» в «Работа»?</h3>
+<p>При следующем сохранении снапшота задача пропадёт из <code>invoices[]</code>. API всегда отражает текущее состояние снапшота. Если задача была в <code>mark-processed</code> но потом вернулась в «Счёт» — она появится снова (это правильно, задача требует повторной обработки).</p>
+
+<h3>Можно ли вызывать billing несколько раз за месяц?</h3>
+<p>Да, это штатный сценарий. 1С может запрашивать billing каждый день или раз в неделю. Каждый раз получит только необработанные задачи + новые.</p>
+
+<h3>Что если 1С не вызовет mark-processed?</h3>
+<p>Ничего не сломается. Просто при следующем запросе billing те же задачи появятся снова. 1С должен самостоятельно отслеживать, что уже обработал (по taskId). mark-processed — удобная, но необязательная функция.</p>
+
+<h3>Сколько живёт снапшот?</h3>
+<p>Снапшот хранится в Vercel Blob Storage бессрочно. Каждый новый «Сохранить» перезаписывает снапшот за тот же месяц. Данные за прошлые месяцы не удаляются автоматически.</p>
+
+<h3>Нужно ли 1С знать про /api/bx/*?</h3>
+<p>Нет. Это CORS-прокси для браузера. 1С может ходить в Bitrix24 напрямую (у него нет CORS-ограничений). Для 1С нужны только эндпоинты <code>/api/payroll</code>, <code>/api/developers</code>, <code>/api/projects</code> и <code>/api/admin/mark-processed</code>.</p>
+
+<h3>Как тестировать в Postman?</h3>
+<p>Импортируй коллекцию из Swagger: <a href="/docs/" target="_blank">obmen-atilab.vercel.app/docs/</a> → кнопка «Try it out». Либо создавай запросы вручную, указывая URL + API-ключ.</p>
+
+<h3>Как тестировать из 1С?</h3>
+<p>Используй <code>HTTPСоединение</code> и <code>HTTPЗапрос</code>:</p>
+<div class="code-block"><span class="comment">// 1С: пример GET-запроса</span>
+Соединение = Новый HTTPСоединение("obmen-atilab.vercel.app", 443, , , , , Новый ЗащищенноеСоединениеOpenSSL);
+Запрос = Новый HTTPЗапрос("/api/payroll/2026-06/billing?key=pr_api_2026");
+Ответ = Соединение.Получить(Запрос);
+ТелоОтвета = Ответ.ПолучитьТелоКакСтроку();
+
+<span class="comment">// 1С: пример POST-запроса (mark-processed)</span>
+Запрос2 = Новый HTTPЗапрос("/api/admin/mark-processed?key=pr_api_2026");
+Запрос2.Заголовки.Вставить("Content-Type", "application/json");
+Запрос2.УстановитьТелоИзСтроки('{"period":"2026-06","items":[...]}');
+Ответ2 = Соединение.ОтправитьДляОбработки(Запрос2);</div>
+
+<div class="footer">
+Payroll Review API v9.3.2 · <a href="/docs/">Swagger UI</a> · <a href="/docs/openapi.yaml">OpenAPI</a>
+</div>
+
+</div>
+</body>
+</html>
