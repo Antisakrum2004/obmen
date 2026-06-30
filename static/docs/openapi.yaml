@@ -1,0 +1,994 @@
+openapi: 3.0.3
+info:
+  title: Payroll Review API — 1С-АйтиЛаб
+  description: |
+    API зарплатного дашборда для интеграции с 1С.
+
+    ## Аутентификация
+    Все методы (кроме прокси Bitrix24) требуют API-ключ.
+    Передайте ключ одним из способов:
+    - Query-параметр: `?key=pr_api_2026`
+    - HTTP-заголовок: `X-API-Key: pr_api_2026`
+
+    ## Архитектура
+    - **/api/bx/\*** — CORS-прокси к Bitrix24 (используется дашбордом, 1С не нужен)
+    - **/api/payroll/\*** — выгрузка зарплатных снапшотов
+    - **/api/developers** — справочник разработчиков
+    - **/api/projects** — справочник проектов со стадиями
+    - **/api/admin/\*** — сохранение данных и обратная связь от 1С
+
+    ## Хранение данных
+    Снапшоты и processed-файлы хранятся в Vercel Blob Storage.
+    Требуется переменная окружения `BLOB_READ_WRITE_TOKEN` в проекте Vercel.
+
+    ## Финансовый конвейер
+    Задачи проходят стадии: Новые → Оценка → Работа → Правки → Тест → Релиз → Готово → Пауза → **Счёт** → **Оплата**
+    
+    - `paymentStatus = invoice` → стадия «Счёт» — 1С формирует счёт клиенту
+    - `paymentStatus = paid` → стадия «Оплата» — клиент оплатил, 1С формирует акт + выплату разрабу
+  version: 9.3.2
+  contact:
+    name: 1С-АйтиЛаб
+    url: https://obmen-atilab.vercel.app
+
+servers:
+  - url: https://obmen-atilab.vercel.app
+    description: Production
+  - url: http://localhost:5000
+    description: Локальная разработка (Flask)
+
+# ─── Компоненты ───
+components:
+  securitySchemes:
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: key
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    # ─── Примитивы ───
+    Period:
+      type: string
+      pattern: '^\d{4}-\d{2}$'
+      example: '2026-06'
+      description: Месяц в формате YYYY-MM
+
+    # ─── Разработчик ───
+    Developer:
+      type: object
+      properties:
+        devId:
+          type: integer
+          example: 82
+          description: ID пользователя в Bitrix24
+        fullName:
+          type: string
+          example: 'Иванов Иван Иванович'
+        inn:
+          type: string
+          example: '7700000000'
+          description: ИНН для 1С
+        selfEmployed:
+          type: string
+          example: 'Самозанятый'
+          description: Статус (Самозанятый / ИП / Физлицо)
+        bank:
+          type: string
+          example: 'Тинькофф'
+          description: Банк для выплат
+        contract:
+          type: string
+          example: 'Договор №123'
+        contractDate:
+          type: string
+          example: '2026-01-15'
+        rate:
+          type: integer
+          example: 1000
+          description: Часовая ставка разработчика (руб.)
+        clientRate:
+          type: integer
+          example: 1800
+          description: Часовая ставка для клиента (руб.)
+        base:
+          type: integer
+          example: 80000
+          description: Базовая часть (руб./мес)
+        fine:
+          type: integer
+          example: 0
+          description: Штраф (руб.)
+        fineComment:
+          type: string
+          example: ''
+        fines:
+          type: array
+          items:
+            type: object
+          description: Массив штрафов
+        notes:
+          type: string
+          example: ''
+        active:
+          type: boolean
+          example: true
+
+    # ─── Стадия проекта ───
+    Stage:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 408
+          description: ID стадии в Bitrix24
+        name:
+          type: string
+          example: 'Счет'
+        color:
+          type: string
+          example: '1db7f1'
+          description: HEX-цвет (без #)
+        paymentStatus:
+          type: string
+          enum: [not_ready, invoice, paid, closed]
+          example: 'invoice'
+
+    # ─── Проект ───
+    Project:
+      type: object
+      properties:
+        projectId:
+          type: integer
+          example: 4
+        projectName:
+          type: string
+          example: 'Живое пиво'
+        stagesCount:
+          type: integer
+          example: 10
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stage'
+        invoiceStageId:
+          type: integer
+          nullable: true
+          example: 408
+          description: ID стадии «Счёт» для этого проекта
+        paidStageId:
+          type: integer
+          nullable: true
+          example: 410
+          description: ID стадии «Оплата» для этого проекта
+        closedStageId:
+          type: integer
+          nullable: true
+          example: 84
+          description: ID стадии «Готово» для этого проекта
+
+    # ─── Разработчик для billing ───
+    BillingDeveloper:
+      type: object
+      properties:
+        devId:
+          type: integer
+          example: 82
+        fullName:
+          type: string
+          example: 'Иванов Иван Иванович'
+        inn:
+          type: string
+          example: '7700000000'
+        selfEmployed:
+          type: string
+          example: 'Самозанятый'
+        bank:
+          type: string
+          example: 'Тинькофф'
+        contract:
+          type: string
+          example: 'Договор №123'
+        contractDate:
+          type: string
+          example: '2026-01-15'
+
+    # ─── Элемент счета/выплаты ───
+    BillingItem:
+      type: object
+      properties:
+        taskId:
+          type: integer
+          example: 7114
+        taskTitle:
+          type: string
+          example: 'Разработка модуля отчётности'
+        projectId:
+          type: integer
+          example: 4
+        projectName:
+          type: string
+          example: 'Живое пиво'
+        stageId:
+          type: integer
+          example: 408
+        stageName:
+          type: string
+          example: 'Счет'
+        developer:
+          $ref: '#/components/schemas/BillingDeveloper'
+        hours:
+          type: number
+          example: 24.5
+          description: Биллинговые часы
+        rate:
+          type: integer
+          example: 1000
+          description: Ставка разработчика (руб./час)
+        amount:
+          type: integer
+          example: 24500
+          description: Сумма к выплате разработчику (руб.)
+        clientRate:
+          type: integer
+          example: 1800
+          description: Ставка для клиента (руб./час)
+        clientAmount:
+          type: integer
+          example: 44100
+          description: Сумма для выставления клиенту (руб.)
+        date:
+          type: string
+          example: '2026-06-15'
+
+    # ─── Totals ───
+    BillingTotals:
+      type: object
+      properties:
+        invoicesCount:
+          type: integer
+          example: 5
+          description: Количество задач к выставлению счёта
+        invoicesAmount:
+          type: integer
+          example: 125000
+          description: Общая сумма выплат разрабам (счета)
+        invoicesClientAmount:
+          type: integer
+          example: 225000
+          description: Общая сумма для клиентов (счета)
+        payoutsCount:
+          type: integer
+          example: 3
+          description: Количество задач к оплате
+        payoutsAmount:
+          type: integer
+          example: 78000
+          description: Общая сумма выплат разрабам (оплаты)
+        payoutsClientAmount:
+          type: integer
+          example: 140400
+          description: Общая сумма для клиентов (оплаты)
+        processedCount:
+          type: integer
+          example: 12
+          description: Количество уже обработанных задач
+
+    # ─── Snapshot summary ───
+    PayrollSnapshotSummary:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/Period'
+        savedAt:
+          type: string
+          format: date-time
+          example: '2026-06-25T10:30:00.000Z'
+        version:
+          type: integer
+          example: 1
+        developers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Developer'
+        totals:
+          type: object
+          description: Итоговые суммы за период
+          additionalProperties: true
+
+    # ─── Snapshot details ───
+    PayrollSnapshotDetails:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/Period'
+        savedAt:
+          type: string
+          format: date-time
+          example: '2026-06-25T10:30:00.000Z'
+        version:
+          type: integer
+          example: 1
+        developers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Developer'
+        details:
+          type: array
+          items:
+            type: object
+          description: Детализация по задачам и разработчикам
+
+    # ─── Mark-processed item ───
+    ProcessedItem:
+      type: object
+      required: [taskId, action]
+      properties:
+        taskId:
+          type: integer
+          example: 7114
+          description: ID задачи в Bitrix24
+        action:
+          type: string
+          enum: [invoice_created, paid_out]
+          example: 'invoice_created'
+          description: |
+            - `invoice_created` — 1С сформировала счёт клиенту (для задач из invoices)
+            - `paid_out` — 1С провела акт + выплату разрабу (для задач из payouts)
+        processedAt:
+          type: string
+          format: date-time
+          example: '2026-06-02T10:00:00Z'
+          description: Время обработки (если не указано — текущее)
+
+    # ─── Ошибки ───
+    Error400:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'Invalid period format. Use YYYY-MM, e.g. 2026-05'
+
+    Error403:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'Invalid API key'
+
+    Error404:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'No data found for this period'
+        period:
+          type: string
+          example: '2026-13'
+        hint:
+          type: string
+          example: 'Manager needs to save data first from the payroll dashboard'
+
+    Error500:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'Vercel Blob not configured. Enable Blob storage in your Vercel project dashboard.'
+        details:
+          type: string
+
+  parameters:
+    Period:
+      name: period
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Period'
+      description: Месяц в формате YYYY-MM
+    ApiKey:
+      name: key
+      in: query
+      required: true
+      schema:
+        type: string
+        example: 'pr_api_2026'
+      description: API-ключ (можно также передать через заголовок X-API-Key)
+
+# ═══════════════════════════════════════════════════════════
+# ПУТИ
+# ═══════════════════════════════════════════════════════════
+paths:
+  # ─── Прокси Bitrix24 ───
+  /api/bx/{method}:
+    post:
+      tags: [Bitrix24 Proxy]
+      summary: CORS-прокси к Bitrix24 REST API
+      description: |
+        Проксирует запросы к Bitrix24 REST API, обходя CORS-ограничения браузера.
+        Используется только фронтендом дашборда. **1С этот эндпоинт не нужен** — 
+        1С может ходить в Bitrix24 напрямую.
+
+        Список используемых методов:
+        - `task.elapseditem.getlist` — затраченное время по задачам
+        - `tasks.task.list` — список задач
+        - `batch` — пакетные запросы
+        - `user.get` — данные пользователей
+
+        **Формат тела**: Bitrix24 принимает как объект `{}`, так и массив `[]`.
+        Для `task.elapseditem.getlist` обязательно массив:
+        ```
+        [ORDER, FILTER, DATE_FILTER, SELECT]
+        ```
+      operationId: bxProxy
+      parameters:
+        - name: method
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - task.elapseditem.getlist
+              - tasks.task.list
+              - batch
+              - user.get
+          description: Метод Bitrix24 REST API
+        - name: hook
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 'https://1c-cms.bitrix24.ru/rest/116/48yuunr8ss2u18qm/'
+          description: URL входящего вебхука Bitrix24. Если не указан — используется дефолтный.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                - type: array
+              description: Тело запроса к Bitrix24 (объект или массив)
+            examples:
+              elapsedArray:
+                summary: Запрос elapsed за день (массив)
+                value: [0, {}, {">=CREATED_DATE": "2026-06-25", "<=CREATED_DATE": "2026-06-25 23:59:59"}, ["ID", "TASK_ID", "USER_ID", "MINUTES", "SECONDS", "CREATED_DATE", "COMMENT_TEXT"]]
+              taskList:
+                summary: Запрос списка задач (объект)
+                value:
+                  filter:
+                    ID: [7114, 7916]
+                  select:
+                    - ID
+                    - TITLE
+                    - STAGE_ID
+                    - PROJECT_ID
+      responses:
+        '200':
+          description: Ответ Bitrix24 (прозрачный прокси)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+              example:
+                result:
+                  - ID: '9824'
+                    TASK_ID: '7114'
+                    USER_ID: '82'
+                    MINUTES: '60'
+                    CREATED_DATE: '2026-06-25T00:57:43+03:00'
+                total: 1
+        '400':
+          description: Не указан метод
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Missing method. Use /api/bx/<method>'
+        '502':
+          description: Ошибка прокси (Bitrix24 недоступен)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Proxy error: fetch failed'
+                  method:
+                    type: string
+                  url:
+                    type: string
+
+    get:
+      tags: [Bitrix24 Proxy]
+      summary: CORS-прокси к Bitrix24 (GET)
+      description: Аналог POST, но для GET-запросов к Bitrix24.
+      operationId: bxProxyGet
+      parameters:
+        - name: method
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: hook
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ответ Bitrix24
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ─── Зарплатный снапшот (сводка) ───
+  /api/payroll/{period}:
+    get:
+      tags: [Payroll]
+      summary: Зарплатный снапшот за месяц
+      description: |
+        Возвращает сохранённый снапшот зарплатных данных за указанный месяц.
+
+        **Сводка (по умолчанию)** — итоговые суммы по разработчикам.
+        **Детализация (view=details)** — по каждой задаче отдельно.
+
+        Снапшот создаётся менеджером в дашборде (кнопка «Сохранить»).
+        Без сохранённого снапшота вернётся 404.
+      operationId: getPayrollPeriod
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: '#/components/parameters/Period'
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, details]
+            default: summary
+          description: |
+            - `summary` — сводка (итоги по разработчикам)
+            - `details` — детализация по задачам
+      responses:
+        '200':
+          description: Зарплатный снапшот
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PayrollSnapshotSummary'
+                  - $ref: '#/components/schemas/PayrollSnapshotDetails'
+        '400':
+          description: Неверный формат периода
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error400'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+        '404':
+          description: Нет данных за период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error404'
+        '500':
+          description: Ошибка сервера (Blob не настроен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error500'
+
+  # ─── Billing для 1С ───
+  /api/payroll/{period}/billing:
+    get:
+      tags: [Payroll, 1С Integration]
+      summary: Выгрузка счетов и выплат для 1С
+      description: |
+        Возвращает задачи, готовые к финансовой обработке, сгруппированные по платёжному статусу:
+
+        - **invoices** — задачи на стадии «Счёт» (`paymentStatus = invoice`). 1С формирует счёт клиенту.
+        - **payouts** — задачи на стадии «Оплата» (`paymentStatus = paid`). 1С формирует акт + выплату разрабу.
+
+        Задачи, уже помеченные как обработанные через `/api/admin/mark-processed`, **исключаются** —
+        защита от двойной выгрузки.
+
+        ### Типичный сценарий 1С
+        1. `GET /api/payroll/2026-06/billing` — получить invoices + payouts
+        2. Сформировать счета клиентам (по invoices[])
+        3. Сформировать акты и выплаты разрабам (по payouts[])
+        4. `POST /api/admin/mark-processed` — отметить обработанные задачи
+        5. При следующем вызове эти задачи не появятся
+      operationId: getPayrollBilling
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: '#/components/parameters/Period'
+      responses:
+        '200':
+          description: Данные для 1С
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    $ref: '#/components/schemas/Period'
+                  generatedAt:
+                    type: string
+                    format: date-time
+                    example: '2026-06-25T12:30:00.000Z'
+                  savedAt:
+                    type: string
+                    format: date-time
+                    description: Время сохранения исходного снапшота
+                  version:
+                    type: integer
+                  invoices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BillingItem'
+                    description: Задачи на стадии «Счёт»
+                  payouts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BillingItem'
+                    description: Задачи на стадии «Оплата»
+                  totals:
+                    $ref: '#/components/schemas/BillingTotals'
+              example:
+                period: '2026-06'
+                generatedAt: '2026-06-25T12:30:00.000Z'
+                savedAt: '2026-06-25T10:00:00.000Z'
+                version: 1
+                invoices:
+                  - taskId: 7114
+                    taskTitle: 'Разработка модуля отчётности'
+                    projectId: 4
+                    projectName: 'Живое пиво'
+                    stageId: 408
+                    stageName: 'Счет'
+                    developer:
+                      devId: 82
+                      fullName: 'Иванов Иван Иванович'
+                      inn: '7700000000'
+                      selfEmployed: 'Самозанятый'
+                      bank: 'Тинькофф'
+                      contract: 'Договор №123'
+                      contractDate: '2026-01-15'
+                    hours: 24.5
+                    rate: 1000
+                    amount: 24500
+                    clientRate: 1800
+                    clientAmount: 44100
+                    date: '2026-06-15'
+                payouts: []
+                totals:
+                  invoicesCount: 1
+                  invoicesAmount: 24500
+                  invoicesClientAmount: 44100
+                  payoutsCount: 0
+                  payoutsAmount: 0
+                  payoutsClientAmount: 0
+                  processedCount: 0
+        '400':
+          description: Неверный формат периода
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error400'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+        '404':
+          description: Нет данных за период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error404'
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error500'
+
+  # ─── Справочник разработчиков ───
+  /api/developers:
+    get:
+      tags: [Справочники]
+      summary: Справочник разработчиков
+      description: |
+        Возвращает список разработчиков с реквизитами для 1С:
+        ставки, ИНН, статус самозанятости, банк, договор.
+
+        Данные берутся из последнего сохранённого снапшота.
+      operationId: getDevelopers
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      responses:
+        '200':
+          description: Справочник разработчиков
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    $ref: '#/components/schemas/Period'
+                    description: Период снапшота, из которого взяты данные
+                  savedAt:
+                    type: string
+                    format: date-time
+                  developers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Developer'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+        '404':
+          description: Нет сохранённых снапшотов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error404'
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error500'
+
+  # ─── Справочник проектов ───
+  /api/projects:
+    get:
+      tags: [Справочники]
+      summary: Справочник проектов со стадиями
+      description: |
+        Возвращает все проекты из Bitrix24 с маппингом стадий и платёжных статусов.
+
+        Для каждого проекта указаны:
+        - Все стадии с ID, названием, цветом и `paymentStatus`
+        - Удобные shortcuts: `invoiceStageId`, `paidStageId`, `closedStageId`
+
+        Данные статичны — берутся из STAGE_MAP (задано в коде).
+      operationId: getProjects
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      responses:
+        '200':
+          description: Справочник проектов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt:
+                    type: string
+                    format: date-time
+                  projectsCount:
+                    type: integer
+                    example: 22
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  paymentStatusLegend:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    example:
+                      not_ready: 'Работа ещё не готова к оплате'
+                      invoice: 'Стадия «Счет» — 1С формирует счёт клиенту'
+                      paid: 'Стадия «Оплата» — клиент оплатил, 1С формирует акт+выплату разрабу'
+                      closed: 'Стадия «Готово» — задача закрыта'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+
+  # ─── Сохранение снапшота ───
+  /api/admin/save:
+    post:
+      tags: [Admin]
+      summary: Сохранить зарплатный снапшот
+      description: |
+        Сохраняет текущее состояние дашборда в Vercel Blob Storage.
+
+        Вызывается дашбордом автоматически при изменении данных (debounce 3с),
+        либо вручную кнопкой «Сохранить».
+
+        **1С этот метод не вызывает** — он только читает данные через GET.
+      operationId: adminSave
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period]
+              properties:
+                period:
+                  $ref: '#/components/schemas/Period'
+                developers:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Developer'
+                totals:
+                  type: object
+                  additionalProperties: true
+                details:
+                  type: array
+                  items:
+                    type: object
+            description: Полный снапшот данных дашборда
+      responses:
+        '200':
+          description: Снапшот сохранён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  period:
+                    $ref: '#/components/schemas/Period'
+                  url:
+                    type: string
+                    example: 'https://xxx.public.blob.vercel-storage.com/payroll-snapshot-2026-06.json'
+                  savedAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Не указан period
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error400'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+        '500':
+          description: Ошибка сохранения (Blob не настроен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error500'
+
+  # ─── Отметка обработанных ───
+  /api/admin/mark-processed:
+    post:
+      tags: [Admin, 1С Integration]
+      summary: Отметить задачи как обработанные 1С
+      description: |
+        Обратная связь от 1С — отмечает задачи, которые уже обработаны,
+        чтобы при следующей выгрузке они не попали повторно.
+
+        ### Как работает
+        1. 1С вызывает `GET /api/payroll/2026-06/billing` → получает invoices + payouts
+        2. 1С формирует счета/акты
+        3. 1С вызывает `POST /api/admin/mark-processed` с обработанными задачами
+        4. При следующем вызове billing эти задачи **не появятся**
+
+        ### Merge-логика
+        - Если файл `payroll-processed-{period}.json` уже существует — новые записи 
+          добавляются к существующим
+        - Если задача уже отмечена (по taskId) — запись обновляется
+        - Данные хранятся до конца периода, потом можно очистить вручную
+      operationId: adminMarkProcessed
+      security:
+        - ApiKeyQuery: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period, items]
+              properties:
+                period:
+                  $ref: '#/components/schemas/Period'
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProcessedItem'
+                  minItems: 1
+            example:
+              period: '2026-06'
+              items:
+                - taskId: 7114
+                  action: 'invoice_created'
+                  processedAt: '2026-06-02T10:00:00Z'
+                - taskId: 7916
+                  action: 'paid_out'
+                  processedAt: '2026-06-02T10:05:00Z'
+      responses:
+        '200':
+          description: Задачи отмечены как обработанные
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  period:
+                    $ref: '#/components/schemas/Period'
+                  itemsCount:
+                    type: integer
+                    example: 14
+                    description: Общее количество отмеченных задач (включая ранее отмеченные)
+                  url:
+                    type: string
+                    example: 'https://xxx.public.blob.vercel-storage.com/payroll-processed-2026-06.json'
+                  updatedAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Не указан period или items[]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error400'
+        '403':
+          description: Неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error403'
+        '500':
+          description: Ошибка сохранения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error500'
+
+tags:
+  - name: Bitrix24 Proxy
+    description: CORS-прокси к Bitrix24 REST API (используется только фронтендом)
+  - name: Payroll
+    description: Зарплатные снапшоты и выгрузка для 1С
+  - name: Справочники
+    description: Справочники разработчиков и проектов
+  - name: Admin
+    description: Административные методы (сохранение, обработка)
+  - name: 1С Integration
+    description: Методы для интеграции с 1С
