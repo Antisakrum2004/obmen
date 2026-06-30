@@ -1,6 +1,7 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/payroll.html" }
+    { "source": "/", "destination": "/payroll.html" },
+    { "source": "/api/bx/:method", "destination": "/api/bx-proxy.js?method=:method" }
   ],
   "headers": [
     {

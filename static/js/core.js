@@ -3,7 +3,7 @@
    Совместим с архитектурой dashboard V187
    ═══════════════════════════════════════════════════════════════ */
 
-var APP_VERSION = 'ПР-9.3.0';
+var APP_VERSION = 'ПР-9.3.2';
 
 /* ─── Константы ─── */
 var PH = 7;
@@ -738,7 +738,7 @@ var _bxAbortControllers = {};
 function bxPost(method, body, timeoutMs) {
   body = body || {};
   if (!HOOK) return Promise.resolve(null);
-  var u = '/api/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
+  var u = '/api/bx/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
   var tMs = timeoutMs || 30000;
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, tMs);
@@ -766,7 +766,7 @@ function bxPostAsDev(method, body, devId) {
   if (!HOOK) return Promise.resolve(null);
   body.params = body.params || {};
   body.params.USER_ID = parseInt(devId);
-  var u = '/api/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
+  var u = '/api/bx/' + method + '?hook=' + encodeURIComponent(HOOK.trim());
   return fetch(u, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},

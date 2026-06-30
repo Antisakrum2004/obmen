@@ -594,7 +594,7 @@ function _prLoadElapsedByDev(fromStr, toStr, progressCb) {
       dateIdx++;
       activeCount++;
 
-      var u = '/api/task.elapseditem.getlist?hook=' + encodeURIComponent(hook);
+      var u = '/api/bx/task.elapseditem.getlist?hook=' + encodeURIComponent(hook);
       var b = JSON.stringify([0, {}, {'>=CREATED_DATE': ds, '<=CREATED_DATE': ds + ' 23:59:59'}, ['ID', 'TASK_ID', 'USER_ID', 'MINUTES', 'SECONDS', 'CREATED_DATE', 'COMMENT_TEXT']]);
 
       fetch(u, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: b})
