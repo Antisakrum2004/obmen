@@ -1,4 +1,9 @@
-import { head, list } from '@vercel/blob';
+/* ─── GET /api/payroll/{period} ───
+   Возвращает данные зарплатного дашборда за период.
+   Читает снапшот из Vercel Blob (public store).
+   ──────────────────────────────────── */
+
+import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -40,7 +45,7 @@ export default async function handler(req, res) {
       });
     }
 
-    /* Загружаем снапшот */
+    /* Загружаем снапшот (public store — URL доступен напрямую) */
     const snapshotResp = await fetch(blobs[0].url);
     if (!snapshotResp.ok) {
       return res.status(502).json({ error: 'Failed to fetch snapshot from storage' });

@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  /* API-ключ */
   const apiKey = req.query.key || req.headers['x-api-key'] || '';
   const validKey = process.env.PAYROLL_API_KEY || 'pr_api_2026';
   if (apiKey !== validKey) {
