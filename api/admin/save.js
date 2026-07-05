@@ -39,9 +39,8 @@ export default async function handler(req, res) {
       version: 1
     };
 
-    /* Сохраняем в Vercel Blob */
+    /* Сохраняем в Vercel Blob (private store — без access: 'public') */
     const blob = await put(blobKey, JSON.stringify(snapshot), {
-      access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false
     });

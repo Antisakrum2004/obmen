@@ -96,7 +96,6 @@ export default async function handler(req, res) {
     };
 
     const blob = await put(blobKey, JSON.stringify(payload), {
-      access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false
     });
