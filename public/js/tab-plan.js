@@ -170,6 +170,8 @@ function _planLoadData() {
     }
     _planBuildDailyMap();
     _planRenderAll();
+    /* Авто-сохранение снапшота в API при загрузке данных */
+    _planSaveToApi();
   }).catch(function(e) {
     console.error('_planLoadData error', e);
     _plan.loading = false;
@@ -459,6 +461,7 @@ function _planRenderHeader() {
   h += '<button class="plan-btn plan-btn-ghost plan-btn-day-detail" onclick="_planExportDayAll(false)">&#128203; День · Детали</button>';
 
   h += '<button class="plan-btn plan-btn-ghost" onclick="window.TabPlan.refresh()">&#8635; Обновить</button>';
+  h += '<button class="plan-btn plan-btn-green" onclick="_planSaveToApi()" title="Сохранить данные в API для 1С">&#128190; Сохранить в API</button>';
   h += '<button class="plan-btn plan-btn-yellow" onclick="_planOpenAdmin()">&#9881; Админка</button>';
   h += '</div>';
 
