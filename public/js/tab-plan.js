@@ -1563,6 +1563,10 @@ function _planBuildApiSnapshot() {
 }
 
 function _planSaveToApi() {
+  /* Визуальный фидбек */
+  var btn = document.querySelector('.plan-btn-green');
+  if (btn) { btn.textContent = '⏳ Сохранение...'; btn.disabled = true; }
+  
   try {
     var snapshot = _planBuildApiSnapshot();
     var periodKey = snapshot.period;
@@ -1574,14 +1578,30 @@ function _planSaveToApi() {
     }).then(function(r) { return r.json(); }).then(function(data) {
       if (data.ok) {
         console.log('[API] Снапшот сохранён: ' + periodKey + ' → ' + data.url);
+        if (btn) { btn.textContent = '✅ Сохранено!'; btn.style.background = '#22c55e'; }
+        setTimeout(function() {
+          if (btn) { btn.textContent = '💾 Сохранить в API'; btn.style.background = ''; btn.disabled = false; }
+        }, 3000);
       } else {
         console.warn('[API] Ошибка сохранения:', data.error);
+        if (btn) { btn.textContent = '❌ Ошибка: ' + (data.error || 'неизвестная'); btn.style.background = '#ef4444'; btn.style.color = '#fff'; }
+        setTimeout(function() {
+          if (btn) { btn.textContent = '💾 Сохранить в API'; btn.style.background = ''; btn.style.color = ''; btn.disabled = false; }
+        }, 5000);
       }
     }).catch(function(e) {
       console.warn('[API] Сеть:', e.message);
+      if (btn) { btn.textContent = '❌ Сеть: ' + e.message; btn.style.background = '#ef4444'; btn.style.color = '#fff'; }
+      setTimeout(function() {
+        if (btn) { btn.textContent = '💾 Сохранить в API'; btn.style.background = ''; btn.style.color = ''; btn.disabled = false; }
+      }, 5000);
     });
   } catch(e) {
     console.warn('[API] Ошибка формирования снапшота:', e.message);
+    if (btn) { btn.textContent = '❌ ' + e.message; btn.style.background = '#ef4444'; btn.style.color = '#fff'; btn.disabled = false; }
+    setTimeout(function() {
+      if (btn) { btn.textContent = '💾 Сохранить в API'; btn.style.background = ''; btn.style.color = ''; btn.disabled = false; }
+    }, 5000);
   }
 }
 
